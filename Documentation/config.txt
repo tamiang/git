@@ -998,6 +998,12 @@ core.gvfs::
 		is first accessed and brought down to the client. Git.exe can't
 		currently tell the first access vs subsequent accesses so this
 		flag just blocks them from occurring at all.
+	GVFS_SKIP_MERGE_IN_CHECKOUT::
+		Bit value 128
+		Speed up "git checkout -b foo" by skipping much of the work of a
+		full checkout command.  This changs the behavior as it will skip
+		merging the trees and updating the index and instead only create
+		and switch to the new ref.
 --
 
 core.sparseCheckout::

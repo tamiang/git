@@ -24,6 +24,7 @@
 #include "submodule-config.h"
 #include "submodule.h"
 #include "advice.h"
+#include "gvfs.h"
 
 static const char * const checkout_usage[] = {
 	N_("git checkout [<options>] <branch>"),
@@ -42,6 +43,10 @@ struct checkout_opts {
 	int ignore_skipworktree;
 	int ignore_other_worktrees;
 	int show_progress;
+	/*
+	 * If new checkout options are added, needs_working_tree_merge
+	 * should be updated accordingly.
+	 */
 
 	const char *new_branch;
 	const char *new_branch_force;
@@ -474,6 +479,89 @@ static void setup_branch_path(struct branch_info *branch)
 	branch->path = strbuf_detach(&buf, NULL);
 }
 
+static int needs_working_tree_merge(const struct checkout_opts *opts,
+	const struct branch_info *old,
+	const struct branch_info *new)
+{
+	/*
+	 * We must do the merge if we are actually moving to a new
+	 * commit tree.
+	 */
+	if (!old->commit || !new->commit ||
+		oidcmp(get_commit_tree_oid(old->commit),
+		       get_commit_tree_oid(new->commit)))
+		return 1;
+
+	/*
+	 * opts->patch_mode cannot be used with switching branches so is
+	 * not tested here
+	 */
+
+	/*
+	 * opts->quiet only impacts output so doesn't require a merge
+	 */
+
+	/*
+	 * Honor the explicit request for a three-way merge or to throw away
+	 * local changes
+	 */
+	if (opts->merge || opts->force)
+		return 1;
+
+	/*
+	 * --detach is documented as "updating the index and the files in the
+	 * working tree" but this optimization skips those steps so fall through
+	 * to the regular code path.
+	 */
+	if (opts->force_detach)
+		return 1;
+
+	/*
+	 * opts->writeout_stage cannot be used with switching branches so is
+	 * not tested here
+	 */
+
+	/*
+	 * Honor the explicit ignore requests
+	 */
+	if (!opts->overwrite_ignore || opts->ignore_skipworktree ||
+		opts->ignore_other_worktrees)
+		return 1;
+
+	/*
+	 * opts->show_progress only impacts output so doesn't require a merge
+	 */
+
+	/*
+	 * If we aren't creating a new branch any changes or updates will
+	 * happen in the existing branch.  Since that could only be updating
+	 * the index and working directory, we don't want to skip those steps
+	 * or we've defeated any purpose in running the command.
+	 */
+	if (!opts->new_branch)
+		return 1;
+
+	/*
+	 * new_branch_force is defined to "create/reset and checkout a branch"
+	 * so needs to go through the merge to do the reset
+	 */
+	if (opts->new_branch_force)
+		return 1;
+
+	/*
+	 * A new orphaned branch requrires the index and the working tree to be
+	 * adjusted to <start_point>
+	 */
+	if (opts->new_orphan_branch)
+		return 1;
+
+	/*
+	 * Remaining variables are not checkout options but used to track state
+	 */
+
+	return 0;
+}
+
 static int merge_working_tree(const struct checkout_opts *opts,
 			      struct branch_info *old_branch_info,
 			      struct branch_info *new_branch_info,
@@ -481,6 +569,15 @@ static int merge_working_tree(const struct checkout_opts *opts,
 {
 	int ret;
 	struct lock_file lock_file = LOCK_INIT;
+
+	/*
+	 * Skip merging the trees, updating the index, and work tree only if we
+	 * are simply creating a new branch via "git checkout -b foo."  Any
+	 * other options or usage will continue to do all these steps.
+	 */
+	if (gvfs_config_is_set(GVFS_SKIP_MERGE_IN_CHECKOUT) &&
+	    !needs_working_tree_merge(opts, old_branch_info, new_branch_info))
+		return 0;
 
 	hold_locked_index(&lock_file, LOCK_DIE_ON_ERROR);
 	if (read_cache_preload(NULL) < 0)
