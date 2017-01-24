@@ -11,4 +11,8 @@ test_perf "read_cache/discard_cache $count times" "
 	test-tool read-cache $count
 "
 
+test_perf "read_cache/discard_cache $count times with core.gvfs flag on" "
+	git config core.gvfs 1
+	test-read-cache $count
+"
 test_done
