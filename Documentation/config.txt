@@ -958,6 +958,9 @@ core.useReplaceRefs::
 	option was given on the command line. See linkgit:git[1] and
 	linkgit:git-replace[1] for more information.
 
+core.gvfs::
+	Enable the features needed for GVFS.
+
 core.sparseCheckout::
 	Enable "sparse checkout" feature. See section "Sparse checkout" in
 	linkgit:git-read-tree[1] for more information.
