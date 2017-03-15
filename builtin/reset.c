@@ -28,6 +28,7 @@
 #include "dir.h"
 #include "strbuf.h"
 #include "quote.h"
+#include "dir.h"
 
 #define REFRESH_INDEX_DELAY_WARNING_IN_MS (2 * 1000)
 
