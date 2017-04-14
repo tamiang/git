@@ -1666,12 +1666,7 @@ static int verify_hdr(struct cache_header *hdr, unsigned long size)
 	if (!verify_index_checksum)
 		return 0;
 
-	/*
-	Since gitmodules_config runs this code
-	and is called before git_config(git_default_config, ...)
-	the config values are not loaded and has to be retrieved directly here.
-	*/
-	if (gvfs_config_load_and_is_set(GVFS_SKIP_SHA_ON_INDEX))
+	if (gvfs_config_is_set(GVFS_SKIP_SHA_ON_INDEX))
 		return 0;
 
 	the_hash_algo->init_fn(&c);
