@@ -474,9 +474,53 @@ static unsigned msb(unsigned long val)
 	return r;
 }
 
+struct minimum_abbrev_data {
+	int init_len;
+	int cur_len;
+	char *hex;
+};
+
+inline char get_hex_char_from_oid(const struct object_id *oid, int i)
+{
+	static const char hex[] = "0123456789abcdef";
+
+	if ((i & 1) == 0)
+	{
+		return hex[oid->hash[i >> 1] >> 4];
+	}
+	else
+	{
+		return hex[oid->hash[i >> 1] & 0xF];
+	}
+}
+
+int extend_abbrev_len(const struct object_id *oid, void *cb_data)
+{
+	struct minimum_abbrev_data *mad = cb_data;
+
+	int i = mad->cur_len - 1;
+	while (i >= mad->init_len) {
+		if (get_hex_char_from_oid(oid, i) != mad->hex[i]) {
+			return 1;
+		}
+		i--;
+	}
+
+	i = mad->cur_len;
+	while (i < GIT_MAX_RAWSZ &&
+		get_hex_char_from_oid(oid, i) == mad->hex[i])
+		i++;
+
+	if (i == GIT_MAX_RAWSZ)
+		return 0;
+
+	mad->cur_len = i;
+	return 1;
+}
+
 int find_unique_abbrev_r(char *hex, const unsigned char *sha1, int len)
 {
-	int status, exists;
+	int status;
 
 	if (len < 0) {
 		unsigned long count = approximate_object_count();
@@ -503,19 +547,40 @@ int find_unique_abbrev_r(char *hex, const unsigned char *sha1, int len)
 	sha1_to_hex_r(hex, sha1);
 	if (len == GIT_SHA1_HEXSZ || !len)
 		return GIT_SHA1_HEXSZ;
-	exists = has_sha1_file(sha1);
-	while (len < GIT_SHA1_HEXSZ) {
+
+	if (has_sha1_file(sha1)) {
+		struct disambiguate_state ds;
+		struct minimum_abbrev_data mad;
 		struct object_id oid_ret;
-		status = get_short_oid(hex, len, &oid_ret, GET_OID_QUIETLY);
-		if (exists
-		    ? !status
-		    : status == SHORT_NAME_NOT_FOUND) {
-			hex[len] = 0;
-			return len;
+
+		if (init_object_disambiguation(hex, len, &ds) < 0)
+			return -1;
+
+		mad.init_len = len;
+		mad.cur_len = len;
+		mad.hex = hex;
+
+		ds.fn = extend_abbrev_len;
+		ds.cb_data = (void*)&mad;
+
+		find_short_object_filename(&ds);
+		find_short_packed_object(&ds);
+		(void)finish_object_disambiguation(&ds, &oid_ret);
+
+		hex[mad.cur_len] = 0;
+		return mad.cur_len;
+	} else {
+		while (len < GIT_SHA1_HEXSZ) {
+			struct object_id oid_ret;
+			status = get_short_oid(hex, len, &oid_ret, GET_OID_QUIETLY);
+			if (status == SHORT_NAME_NOT_FOUND) {
+				hex[len] = 0;
+				return len;
+			}
+			len++;
 		}
-		len++;
+		return len;
 	}
-	return len;
 }
 
 const char *find_unique_abbrev(const unsigned char *sha1, int len)
