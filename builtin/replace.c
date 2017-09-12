@@ -362,7 +362,7 @@ static void check_one_mergetag(struct commit *commit,
 	tag = lookup_tag(the_repository, &tag_oid);
 	if (!tag)
 		die(_("bad mergetag in commit '%s'"), ref);
-	if (parse_tag_buffer(tag, extra->value, extra->len))
+	if (parse_tag_buffer(the_repository, tag, extra->value, extra->len))
 		die(_("malformed mergetag in commit '%s'"), ref);
 
 	/* iterate over new parents */

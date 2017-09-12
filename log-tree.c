@@ -511,7 +511,7 @@ static void show_one_mergetag(struct commit *commit,
 		return; /* error message already given */
 
 	strbuf_init(&verify_message, 256);
-	if (parse_tag_buffer(tag, extra->value, extra->len))
+	if (parse_tag_buffer(the_repository, tag, extra->value, extra->len))
 		strbuf_addstr(&verify_message, "malformed mergetag\n");
 	else if (is_common_merge(commit) &&
 		 !oidcmp(&tag->tagged->oid,
