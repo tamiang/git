@@ -1006,6 +1006,9 @@ core.gvfs::
 		and switch to the new ref.
 --
 
+core.midx::
+	Enable "multi-pack-index" feature. Set to true to read and write MIDX files.
+
 core.sparseCheckout::
 	Enable "sparse checkout" feature. See section "Sparse checkout" in
 	linkgit:git-read-tree[1] for more information.
