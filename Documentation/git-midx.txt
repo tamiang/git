@@ -1,0 +1,55 @@
+git-midx(1)
+============
+
+NAME
+----
+git-midx - Write and verify multi-pack-indexes (MIDX files).
+
+
+SYNOPSIS
+--------
+[verse]
+'git midx' [--pack-dir <pack_dir>]
+
+DESCRIPTION
+-----------
+Write or verify a MIDX file.
+
+OPTIONS
+-------
+
+--pack-dir <pack_dir>::
+	Use given directory for the location of packfiles, pack-indexes,
+	and MIDX files.
+
+--write::
+	If specified, write a new midx file to the pack directory using
+	the packfiles present. Outputs the hash of the result midx file.
+
+EXAMPLES
+--------
+
+* Write a MIDX file for the packfiles in your local .git folder and
+* update midx-head to point to that file.
++
+------------------------------------------------
+$ git midx --write
+------------------------------------------------
+
+* Write a MIDX file for the packfiles in a different folder
++
+---------------------------------------------------------
+$ git midx --write --pack-dir ../../.gitObjectCache/pack/
+---------------------------------------------------------
+
+CONFIGURATION
+-------------
+
+core.midx::
+	The midx command will fail if core.midx is false.
+	Also, the written MIDX files will be ignored by other commands
+	unless core.midx is true.
+
+GIT
+---
+Part of the linkgit:git[1] suite

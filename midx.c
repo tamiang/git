@@ -373,7 +373,7 @@ const char *write_midx_file(
 		}
 	}
 
-	hashclose(f, final_hash, CSUM_CLOSE);
+	finalize_hashfile(f, final_hash, CSUM_CLOSE | CSUM_FSYNC | CSUM_HASH_IN_STREAM);
 
 	if (rename_needed)
 	{
