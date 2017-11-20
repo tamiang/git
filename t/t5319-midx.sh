@@ -153,4 +153,10 @@ test_expect_success \
      git midx --read --pack-dir . >midx-read-out-4-head &&
      cmp midx-read-out-4-head midx-read-expect-4'
 
+test_expect_success \
+    'midx --clear' \
+    'git midx --clear --pack-dir . &&
+     ! test -f "midx-${midx4}.midx" &&
+     ! test -f "midx-head"'
+
 test_done

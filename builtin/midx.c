@@ -13,6 +13,7 @@ static char const * const builtin_midx_usage[] ={
 	N_("git midx [--pack-dir <packdir>]"),
 	N_("git midx --write [--pack-dir <packdir>] [--update-head]"),
 	N_("git midx --read [--midx-id=<oid>]"),
+	N_("git midx --clear [--pack-dir <packdir>]"),
 	NULL
 };
 
@@ -22,6 +23,7 @@ static struct opts_midx {
 	int update_head;
 	int read;
 	const char *midx_id;
+	int clear;
 	int has_existing;
 	struct object_id old_midx_oid;
 } opts;
@@ -224,6 +226,33 @@ static int cmd_midx_read(void)
 	return 0;
 }
 
+static int cmd_midx_clear(void)
+{
+	struct strbuf old_path = STRBUF_INIT;
+	struct strbuf head_path = STRBUF_INIT;
+
+	if (!opts.has_existing)
+		return 0;
+
+	strbuf_addstr(&head_path, opts.pack_dir);
+	strbuf_addstr(&head_path, "/");
+	strbuf_addstr(&head_path, "midx-head");
+	if (remove_path(head_path.buf))
+		die("Failed to remove path %s", head_path.buf);
+
+	strbuf_addstr(&old_path, opts.pack_dir);
+	strbuf_addstr(&old_path, "/midx-");
+	strbuf_addstr(&old_path, oid_to_hex(&opts.old_midx_oid));
+	strbuf_addstr(&old_path, ".midx");
+
+	if (remove_path(old_path.buf))
+		die("Failed to remove path %s", old_path.buf);
+
+	strbuf_release(&old_path);
+	strbuf_release(&head_path);
+	return 0;
+}
+
 int cmd_midx(int argc, const char **argv, const char *prefix)
 {
 	static struct option builtin_midx_options[] = {
@@ -236,6 +265,8 @@ int cmd_midx(int argc, const char **argv, const char *prefix)
 			N_("update midx-head to written midx file")),
 		OPT_BOOL('r', "read", &opts.read,
 			N_("read midx file")),
+		OPT_BOOL('c', "clear", &opts.clear,
+			N_("clear midx file and midx-head")),
 		{ OPTION_STRING, 'M', "midx-id", &opts.midx_id,
 			N_("oid"),
 			N_("An OID for a specific midx file in the pack-dir."),
@@ -254,7 +285,7 @@ int cmd_midx(int argc, const char **argv, const char *prefix)
 			     builtin_midx_options,
 			     builtin_midx_usage, 0);
 
-	if (opts.write + opts.read > 1)
+	if (opts.write + opts.read + opts.clear > 1)
 		usage_with_options(builtin_midx_usage, builtin_midx_options);
 
 	if (!opts.pack_dir) {
@@ -270,6 +301,8 @@ int cmd_midx(int argc, const char **argv, const char *prefix)
 		return cmd_midx_write();
 	if (opts.read)
 		return cmd_midx_read();
+	if (opts.clear)
+		return cmd_midx_clear();
 
 	return 0;
 }

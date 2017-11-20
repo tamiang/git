@@ -22,10 +22,14 @@ OPTIONS
 	Use given directory for the location of packfiles, pack-indexes,
 	and MIDX files.
 
+--clear::
+	If specified, delete the midx file specified by midx-head, and
+	midx-head. (Cannot be combined with --write or --read.)
+
 --read::
 	If specified, read a midx file specified by the midx-head file
 	and output basic details about the midx file. (Cannot be combined
-	with --write.)
+	with --write or --clear.)
 
 --midx-id <oid>::
 	If specified with --read, use the given oid to read midx-[oid].midx
@@ -34,7 +38,7 @@ OPTIONS
 --write::
 	If specified, write a new midx file to the pack directory using
 	the packfiles present. Outputs the hash of the result midx file.
-	(Cannot be combined with --read.)
+	(Cannot be combined with --read or --clear.)
 
 --update-head::
 	If specified with --write, update the midx-head file to point to
