@@ -36,7 +36,15 @@ test_expect_success \
     'write-midx from index version 1' \
     'pack1=$(git pack-objects --index-version=1 test-1 <obj-list) &&
      midx1=$(git midx --write --pack-dir .) &&
-     test -f midx-${midx1}.midx'
+     test -f midx-${midx1}.midx &&
+     git midx --read --pack-dir . --midx-id=${midx1} >midx-read-out-1 &&
+     echo "header: 4d494458 80000001 01 14 00 05 00000001" >midx-read-expect-1 &&
+     echo "num_objects: 17" >>midx-read-expect-1 &&
+     echo "chunks: pack_lookup pack_names oid_fanout oid_lookup object_offsets" >>midx-read-expect-1 &&
+     echo "pack_names:" >>midx-read-expect-1 &&
+     echo "test-1-${pack1}.pack" >>midx-read-expect-1 &&
+     echo "pack_dir: ." >>midx-read-expect-1 &&
+     cmp midx-read-out-1 midx-read-expect-1'
 
 test_expect_success \
     'write-midx from index version 2' \
@@ -44,7 +52,14 @@ test_expect_success \
      pack2=$(git pack-objects --index-version=2 test-2 <obj-list) &&
      midx2=$(git midx --write --pack-dir .) &&
      test -f midx-${midx2}.midx &&
-     ! test -f midx-head'
+     git midx --read --pack-dir . --midx-id=${midx2} >midx-read-out-2 &&
+     echo "header: 4d494458 80000001 01 14 00 05 00000001" >midx-read-expect-2 &&
+     echo "num_objects: 17" >>midx-read-expect-2 &&
+     echo "chunks: pack_lookup pack_names oid_fanout oid_lookup object_offsets" >>midx-read-expect-2 &&
+     echo "pack_names:" >>midx-read-expect-2 &&
+     echo "test-2-${pack2}.pack" >>midx-read-expect-2 &&
+     echo "pack_dir: ." >>midx-read-expect-2 &&
+     cmp midx-read-out-2 midx-read-expect-2'
 
 test_expect_success \
     'Add more objects' \
@@ -75,7 +90,16 @@ test_expect_success \
     'write-midx with two packs' \
     'pack3=$(git pack-objects --index-version=2 test-3 <obj-list) &&
      midx3=$(git midx --write --pack-dir .) &&
-     test -f midx-${midx3}.midx'
+     test -f midx-${midx3}.midx &&
+     git midx --read --pack-dir . --midx-id=${midx3} >midx-read-out-3 &&
+     echo "header: 4d494458 80000001 01 14 00 05 00000002" >midx-read-expect-3 &&
+     echo "num_objects: 33" >>midx-read-expect-3 &&
+     echo "chunks: pack_lookup pack_names oid_fanout oid_lookup object_offsets" >>midx-read-expect-3 &&
+     echo "pack_names:" >>midx-read-expect-3 &&
+     echo "test-2-${pack2}.pack" >>midx-read-expect-3 &&
+     echo "test-3-${pack3}.pack" >>midx-read-expect-3 &&
+     echo "pack_dir: ." >>midx-read-expect-3 &&
+     cmp midx-read-out-3 midx-read-expect-3'
 
 test_expect_success \
     'Add more packs' \
@@ -107,6 +131,14 @@ test_expect_success \
 test_expect_success \
     'write-midx with twelve packs' \
     'midx4=$(git midx --write --pack-dir .) &&
-     test -f midx-${midx4}.midx'
+     test -f midx-${midx4}.midx &&
+     git midx --read --pack-dir . --midx-id=${midx4} >midx-read-out-4 &&
+     echo "header: 4d494458 80000001 01 14 00 05 0000000d" >midx-read-expect-4 &&
+     echo "num_objects: 77" >>midx-read-expect-4 &&
+     echo "chunks: pack_lookup pack_names oid_fanout oid_lookup object_offsets" >>midx-read-expect-4 &&
+     echo "pack_names:" >>midx-read-expect-4 &&
+     ls test-*.pack | sort >>midx-read-expect-4 &&
+     echo "pack_dir: ." >>midx-read-expect-4 &&
+     cmp midx-read-out-4 midx-read-expect-4'
 
 test_done

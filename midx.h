@@ -27,6 +27,74 @@ struct pack_midx_entry {
 	off_t offset;
 };
 
+struct pack_midx_header {
+	uint32_t midx_signature;
+	uint32_t midx_version;
+	unsigned char hash_version;
+	unsigned char hash_len;
+	unsigned char num_base_midx;
+	unsigned char num_chunks;
+	uint32_t num_packs;
+};
+
+struct midxed_git {
+	struct midxed_git *next;
+
+	int midx_fd;
+
+	/* the mmap'd data for the midx file */
+	const unsigned char *data;
+	size_t data_len;
+
+	/* points into the mmap'd data */
+	struct pack_midx_header *hdr;
+
+	/* can construct filename from obj_dir + "/packs/midx-" + oid + ".midx" */
+	struct object_id oid;
+
+	/* derived from the fanout chunk */
+	uint32_t num_objects;
+
+	/* converted number of packs */
+	uint32_t num_packs;
+
+	/* hdr->num_packs * 4 bytes */
+	const unsigned char *chunk_pack_lookup;
+	const unsigned char *chunk_pack_names;
+
+	/* 256 * 4 bytes */
+	const unsigned char *chunk_oid_fanout;
+
+	/* num_objects * hdr->hash_len bytes */
+	const unsigned char *chunk_oid_lookup;
+
+	/* num_objects * 8 bytes */
+	const unsigned char *chunk_object_offsets;
+
+	/*
+	 * 8 bytes per large offset.
+	 * (Optional: may be null.)
+	 */
+	const unsigned char *chunk_large_offsets;
+
+	/*
+	 * Points into mmap'd data storing the pack filenames.
+	 */
+	const char **pack_names;
+
+	/*
+	 * Store an array of pack-pointers. If NULL, then the
+	 * pack has not been loaded yet. The array indices
+	 * correspond to the pack_int_ids from the midx storage.
+	 */
+	struct packed_git **packs;
+
+	/* something like ".git/objects/pack" */
+	char pack_dir[FLEX_ARRAY]; /* more */
+};
+
+extern struct midxed_git *get_midxed_git(const char *pack_dir, struct object_id *midx_oid);
+
 /*
  * Write a single MIDX file storing the given entries for the
  * given list of packfiles. If midx_name is null, then a temp

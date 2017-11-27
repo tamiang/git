@@ -10,14 +10,16 @@
 
 static char const * const builtin_midx_usage[] ={
 	N_("git midx [--pack-dir <packdir>]"),
-	N_("git midx --write [--pack-dir <packdir>] [--update-head]"),
+	N_("git midx --write [--pack-dir <packdir>]"),
+	N_("git midx --read [--midx-id=<oid>]"),
 	NULL
 };
 
 static struct opts_midx {
 	const char *pack_dir;
 	int write;
-	int update_head;
+	int read;
+	const char *midx_id;
 	int has_existing;
 	struct object_id old_midx_oid;
 } opts;
@@ -150,14 +152,66 @@ static int cmd_midx_write(void)
 	return 0;
 }
 
+static int cmd_midx_read(void)
+{
+	struct object_id midx_oid;
+	struct midxed_git *midx;
+	uint32_t i;
+
+	if (opts.midx_id && strlen(opts.midx_id) == GIT_MAX_HEXSZ)
+		get_oid_hex(opts.midx_id, &midx_oid);
+	else
+		die("--read requires a --midx-id parameter");
+
+	midx = get_midxed_git(opts.pack_dir, &midx_oid);
+
+	printf("header: %08x %08x %02x %02x %02x %02x %08x\n",
+		ntohl(midx->hdr->midx_signature),
+		ntohl(midx->hdr->midx_version),
+		midx->hdr->hash_version,
+		midx->hdr->hash_len,
+		midx->hdr->num_base_midx,
+		midx->hdr->num_chunks,
+		ntohl(midx->hdr->num_packs));
+	printf("num_objects: %d\n", midx->num_objects);
+	printf("chunks:");
+
+	if (midx->chunk_pack_lookup)
+		printf(" pack_lookup");
+	if (midx->chunk_pack_names)
+		printf(" pack_names");
+	if (midx->chunk_oid_fanout)
+		printf(" oid_fanout");
+	if (midx->chunk_oid_lookup)
+		printf(" oid_lookup");
+	if (midx->chunk_object_offsets)
+		printf(" object_offsets");
+	if (midx->chunk_large_offsets)
+		printf(" large_offsets");
+	printf("\n");
+
+	printf("pack_names:\n");
+	for (i = 0; i < midx->num_packs; i++)
+		printf("%s\n", midx->pack_names[i]);
+
+	printf("pack_dir: %s\n", midx->pack_dir);
+	return 0;
+}
+
 int cmd_midx(int argc, const char **argv, const char *prefix)
 {
 	static struct option builtin_midx_options[] = {
 		{ OPTION_STRING, 'p', "pack-dir", &opts.pack_dir,
-		  N_("dir"),
-		  N_("The pack directory containing set of packfile and pack-index pairs.") },
+			N_("dir"),
+			N_("The pack directory containing set of packfile and pack-index pairs.") },
 		OPT_BOOL('w', "write", &opts.write,
 			N_("write midx file")),
+		OPT_BOOL('r', "read", &opts.read,
+			N_("read midx file")),
+		{ OPTION_STRING, 'M', "midx-id", &opts.midx_id,
+			N_("oid"),
+			N_("An OID for a specific midx file in the pack-dir."),
+			PARSE_OPT_OPTARG, NULL, (intptr_t) "" },
 		OPT_END(),
 	};
 
@@ -172,6 +226,9 @@ int cmd_midx(int argc, const char **argv, const char *prefix)
 			     builtin_midx_options,
 			     builtin_midx_usage, 0);
 
+	if (opts.write + opts.read > 1)
+		usage_with_options(builtin_midx_usage, builtin_midx_options);
+
 	if (!opts.pack_dir) {
 		struct strbuf path = STRBUF_INIT;
 		strbuf_addstr(&path, get_object_directory());
@@ -181,6 +238,8 @@ int cmd_midx(int argc, const char **argv, const char *prefix)
 
 	if (opts.write)
 		return cmd_midx_write();
+	if (opts.read)
+		return cmd_midx_read();
 
 	return 0;
 }

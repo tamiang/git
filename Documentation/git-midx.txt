@@ -22,15 +22,20 @@ OPTIONS
 	Use given directory for the location of packfiles, pack-indexes,
 	and MIDX files.
 
+--read::
+	If specified, read a midx file specified by --midx-id <oid> and
+	output basic details about the midx file. (Cannot be combined
+	with --write.)
+
 --write::
 	If specified, write a new midx file to the pack directory using
 	the packfiles present. Outputs the hash of the result midx file.
+	(Cannot be combined with --read.)
 
 EXAMPLES
 --------
 
-* Write a MIDX file for the packfiles in your local .git folder and
-* update midx-head to point to that file.
+* Write a MIDX file for the packfiles in your local .git folder.
 +
 ------------------------------------------------
 $ git midx --write
@@ -41,6 +46,12 @@ $ git midx --write
 ---------------------------------------------------------
 $ git midx --write --pack-dir ../../.gitObjectCache/pack/
 ---------------------------------------------------------
+
+* Read a MIDX file in the local .git folder.
++
+--------------------------------------------------------------------
+$ git midx --read --midx-id 3e50d982a2257168c7fd0ff12ffe5cf6af38c74e
+--------------------------------------------------------------------
 
 CONFIGURATION
 -------------
