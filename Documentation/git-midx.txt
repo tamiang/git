@@ -23,9 +23,13 @@ OPTIONS
 	and MIDX files.
 
 --read::
-	If specified, read a midx file specified by --midx-id <oid> and
-	output basic details about the midx file. (Cannot be combined
+	If specified, read a midx file specified by the midx-head file
+	and output basic details about the midx file. (Cannot be combined
 	with --write.)
+
+--midx-id <oid>::
+	If specified with --read, use the given oid to read midx-[oid].midx
+	instead of using midx-head.
 
 --write::
 	If specified, write a new midx file to the pack directory using

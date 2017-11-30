@@ -21,6 +21,8 @@
 #define MIDX_HASH_VERSION MIDX_HASH_VERSION_SHA1
 #define MIDX_HASH_LEN MIDX_HASH_LEN_SHA1
 
+extern struct object_id *get_midx_head_oid(const char *pack_dir, struct object_id *oid);
+
 struct pack_midx_entry {
 	struct object_id oid;
 	uint32_t pack_int_id;

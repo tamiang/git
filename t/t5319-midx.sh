@@ -105,7 +105,9 @@ test_expect_success \
      echo "test-2-${pack2}.pack" >>midx-read-expect-3 &&
      echo "test-3-${pack3}.pack" >>midx-read-expect-3 &&
      echo "pack_dir: ." >>midx-read-expect-3 &&
-     cmp midx-read-out-3 midx-read-expect-3'
+     cmp midx-read-out-3 midx-read-expect-3 &&
+     git midx --read --pack-dir . >midx-read-out-3-head &&
+     cmp midx-read-out-3-head midx-read-expect-3'
 
 test_expect_success \
     'Add more packs' \
@@ -147,6 +149,8 @@ test_expect_success \
      echo "pack_names:" >>midx-read-expect-4 &&
      ls test-*.pack | sort >>midx-read-expect-4 &&
      echo "pack_dir: ." >>midx-read-expect-4 &&
-     cmp midx-read-out-4 midx-read-expect-4'
+     cmp midx-read-out-4 midx-read-expect-4 &&
+     git midx --read --pack-dir . >midx-read-out-4-head &&
+     cmp midx-read-out-4-head midx-read-expect-4'
 
 test_done

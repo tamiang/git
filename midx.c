@@ -6,6 +6,31 @@
 
 #define MIDX_LARGE_OFFSET_NEEDED 0x80000000
 
+struct object_id *get_midx_head_oid(const char *pack_dir, struct object_id *oid)
+{
+	struct strbuf head_filename = STRBUF_INIT;
+	char oid_hex[GIT_MAX_HEXSZ + 1];
+	FILE *f;
+
+	strbuf_addstr(&head_filename, pack_dir);
+	strbuf_addstr(&head_filename, "/midx-head");
+
+	f = fopen(head_filename.buf, "r");
+	strbuf_release(&head_filename);
+
+	if (!f)
+		return 0;
+
+	if (!fgets(oid_hex, sizeof(oid_hex), f))
+		die("Failed to read midx-head");
+
+	fclose(f);
+
+	if (get_oid_hex(oid_hex, oid))
+		return 0;
+	return oid;
+}
+
 struct pack_midx_details_internal {
 	uint32_t pack_int_id;
 	uint32_t internal_offset;
