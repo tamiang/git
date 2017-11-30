@@ -299,6 +299,36 @@ const struct object_id *nth_midxed_object_oid(struct object_id *oid,
 	return oid;
 }
 
+int bsearch_midx(struct midxed_git *m, const unsigned char *sha1, uint32_t *pos)
+{
+	uint32_t last, first = 0;
+
+	if (sha1[0])
+		first = ntohl(*(uint32_t*)(m->chunk_oid_fanout + 4 * (sha1[0] - 1)));
+	last = ntohl(*(uint32_t*)(m->chunk_oid_fanout + 4 * sha1[0]));
+
+	while (first < last) {
+		uint32_t mid = first + (last - first) / 2;
+		const unsigned char *current;
+		int cmp;
+
+		current = m->chunk_oid_lookup + m->hdr->hash_len * mid;
+		cmp = hashcmp(sha1, current);
+		if (!cmp) {
+			*pos = mid;
+			return 1;
+		}
+		if (cmp > 0) {
+			first = mid + 1;
+			continue;
+		}
+		last = mid;
+	}
+
+	*pos = first;
+	return 0;
+}
+
 int contains_pack(struct midxed_git *m, const char *pack_name)
 {
 	uint32_t first = 0, last = m->num_packs;

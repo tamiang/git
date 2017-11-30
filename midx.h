@@ -101,6 +101,15 @@ extern const struct object_id *nth_midxed_object_oid(struct object_id *oid,
 						     struct midxed_git *m,
 						     uint32_t n);
 
+/*
+ * Perform a binary search on the object list in a MIDX file for the given sha1.
+ *
+ * If the object exists, then return 1 and set *pos to the position of the sha1.
+ * Otherwise, return 0 and set *pos to the position of the lex-first object greater
+ * than the given sha1.
+ */
+extern int bsearch_midx(struct midxed_git *m, const unsigned char *sha1, uint32_t *pos);
+
 extern int contains_pack(struct midxed_git *m, const char *pack_name);
 
 /*
