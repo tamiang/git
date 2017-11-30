@@ -316,6 +316,18 @@ void close_pack(struct packed_git *p)
 void close_all_packs(struct raw_object_store *o)
 {
 	struct packed_git *p;
+	struct midxed_git *m;
+
+	for (m = midxed_git; m; m = m->next) {
+		int i;
+		for (i = 0; i < m->num_packs; i++) {
+			p = m->packs[i];
+			if (p && p->do_not_close)
+				die("BUG: want to close pack marked 'do-not-close'");
+			else if (p)
+				close_pack(p);
+		}
+	}
 
 	for (p = o->packed_git; p; p = p->next)
 		if (p->do_not_close)
@@ -942,6 +954,7 @@ void prepare_packed_git_internal(struct repository *r, int midx)
 	rearrange_packed_git(r);
 	prepare_packed_git_mru(r);
 	r->objects->packed_git_initialized = 1;
+	prepare_midxed_git_run_once = midx;
 }
 
 static void prepare_packed_git(struct repository *r)
@@ -1904,7 +1917,13 @@ int find_pack_entry(struct repository *r, const struct object_id *oid, struct pa
 {
 	struct list_head *pos;
 
-	prepare_packed_git(r);
+	if (core_midx) {
+		prepare_packed_git_internal(r, 1);
+		if (fill_pack_entry_midx(oid, e))
+			return 1;
+	} else
+		prepare_packed_git(r);
+
 	if (!r->objects->packed_git)
 		return 0;
 
