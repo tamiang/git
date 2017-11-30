@@ -329,6 +329,90 @@ int bsearch_midx(struct midxed_git *m, const unsigned char *sha1, uint32_t *pos)
 	return 0;
 }
 
+static int prepare_midx_pack(struct midxed_git *m, uint32_t pack_int_id)
+{
+	struct strbuf pack_name = STRBUF_INIT;
+
+	if (pack_int_id >= m->hdr->num_packs)
+		return 1;
+
+	if (m->packs[pack_int_id])
+		return 0;
+
+	strbuf_addstr(&pack_name, m->pack_dir);
+	strbuf_addstr(&pack_name, "/");
+	strbuf_addstr(&pack_name, m->pack_names[pack_int_id]);
+	strbuf_strip_suffix(&pack_name, ".pack");
+	strbuf_addstr(&pack_name, ".idx");
+
+	m->packs[pack_int_id] = add_packed_git(pack_name.buf, pack_name.len, 1);
+	strbuf_release(&pack_name);
+	return !m->packs[pack_int_id];
+}
+
+static int find_pack_entry_midx(const unsigned char *sha1,
+				struct midxed_git *m,
+				struct packed_git **p,
+				off_t *offset)
+{
+	uint32_t pos;
+	struct pack_midx_details d;
+
+	if (!bsearch_midx(m, sha1, &pos) ||
+	    !nth_midxed_object_details(m, pos, &d))
+		return 0;
+
+	if (d.pack_int_id >= m->num_packs)
+		die(_("bad pack-int-id %d"), d.pack_int_id);
+
+	/* load packfile, if necessary */
+	if (prepare_midx_pack(m, d.pack_int_id))
+		return 0;
+
+	*p = m->packs[d.pack_int_id];
+	*offset = d.offset;
+
+	return 1;
+}
+
+int fill_pack_entry_midx(const unsigned char *sha1,
+			 struct pack_entry *e)
+{
+	struct packed_git *p;
+	struct midxed_git *m;
+
+	if (!core_midx)
+		return 0;
+
+	m = midxed_git;
+	while (m)
+	{
+		off_t offset;
+		if (!find_pack_entry_midx(sha1, m, &p, &offset)) {
+			m = m->next;
+			continue;
+		}
+
+		/*
+		* We are about to tell the caller where they can locate the
+		* requested object.  We better make sure the packfile is
+		* still here and can be accessed before supplying that
+		* answer, as it may have been deleted since the MIDX was
+		* loaded!
+		*/
+		if (!is_pack_valid(p))
+			return 0;
+
+		e->offset = offset;
+		e->p = p;
+		hashcpy(e->sha1, sha1);
+
+		return 1;
+	}
+
+	return 0;
+}
+
 int contains_pack(struct midxed_git *m, const char *pack_name)
 {
 	uint32_t first = 0, last = m->num_packs;

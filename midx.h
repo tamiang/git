@@ -11,6 +11,9 @@ extern char *get_midx_head_filename(const char *pack_dir);
 
 extern struct object_id *get_midx_head_oid(const char *pack_dir, struct object_id *oid);
 
+extern int fill_pack_entry_midx(const unsigned char *sha1,
+				struct pack_entry *e);
+
 struct pack_midx_entry {
 	struct object_id oid;
 	uint32_t pack_int_id;

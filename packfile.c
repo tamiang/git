@@ -1883,7 +1883,10 @@ int find_pack_entry(const unsigned char *sha1, struct pack_entry *e)
 {
 	struct mru_entry *p;
 
-	prepare_packed_git();
+	prepare_packed_git_internal(1);
+	if (fill_pack_entry_midx(sha1, e))
+		return 1;
+
 	if (!packed_git)
 		return 0;
 
