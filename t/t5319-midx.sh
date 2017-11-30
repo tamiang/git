@@ -92,7 +92,7 @@ test_expect_success \
 
 test_expect_success \
     'write-midx with two packs' \
-    'pack3=$(git pack-objects --index-version=2 test-3 <obj-list) &&
+    'pack3=$(git pack-objects --index-version=2 test-pack <obj-list) &&
      midx3=$(git midx --write --update-head --pack-dir .) &&
      test -f midx-${midx3}.midx &&
      echo ${midx3} > midx-head-expect &&
@@ -103,7 +103,7 @@ test_expect_success \
      echo "chunks: pack_lookup pack_names oid_fanout oid_lookup object_offsets" >>midx-read-expect-3 &&
      echo "pack_names:" >>midx-read-expect-3 &&
      echo "test-2-${pack2}.pack" >>midx-read-expect-3 &&
-     echo "test-3-${pack3}.pack" >>midx-read-expect-3 &&
+     echo "test-pack-${pack3}.pack" >>midx-read-expect-3 &&
      echo "pack_dir: ." >>midx-read-expect-3 &&
      cmp midx-read-out-3 midx-read-expect-3 &&
      git midx --read --pack-dir . >midx-read-out-3-head &&
@@ -131,7 +131,7 @@ test_expect_success \
          git ls-tree $tree | sed -e "s/.* \\([0-9a-f]*\\)	.*/\\1/"
          } >obj-list &&
          git update-ref HEAD $commit &&
-         git pack-objects --index-version=2 test-4 <obj-list &&
+         git pack-objects --index-version=2 test-pack <obj-list &&
          i=$(expr $i + 1) || return 1 &&
          j=$(expr $j + 1) || return 1
      done'

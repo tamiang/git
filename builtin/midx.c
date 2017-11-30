@@ -31,7 +31,7 @@ static struct opts_midx {
 static int build_midx_from_packs(
 	const char *pack_dir,
 	const char **pack_names, uint32_t nr_packs,
-	const char **midx_id)
+	const char **midx_id, struct midxed_git *midx)
 {
 	struct packed_git **packs;
 	const char **installed_pack_names;
@@ -44,8 +44,17 @@ static int build_midx_from_packs(
 	struct strbuf pack_path = STRBUF_INIT;
 	int baselen;
 
+	if (midx)
+		nr_total_packs += midx->num_packs;
+
 	ALLOC_ARRAY(packs, nr_total_packs);
 	ALLOC_ARRAY(installed_pack_names, nr_total_packs);
+
+	if (midx) {
+		for (i = 0; i < midx->num_packs; i++)
+			installed_pack_names[nr_installed_packs++] = midx->pack_names[i];
+		pack_offset = midx->num_packs;
+	}
 
 	strbuf_addstr(&pack_path, pack_dir);
 	strbuf_addch(&pack_path, '/');
@@ -76,8 +85,14 @@ static int build_midx_from_packs(
 		return 1;
 	}
 
+	if (midx)
+		nr_objects += midx->num_objects;
+
 	ALLOC_ARRAY(objects, nr_objects);
 	nr_objects = 0;
+
+	for (i = 0; midx && i < midx->num_objects; i++)
+		nth_midxed_object_entry(midx, i, &objects[nr_objects++]);
 
 	for (i = pack_offset; i < nr_installed_packs; i++) {
 		struct packed_git *p = packs[i];
@@ -140,6 +155,10 @@ static int cmd_midx_write(void)
 	const char *midx_id;
 	DIR *dir;
 	struct dirent *de;
+	struct midxed_git *m = NULL;
+
+	if (opts.has_existing)
+		m = get_midxed_git(opts.pack_dir, &opts.old_midx_oid);
 
 	dir = opendir(opts.pack_dir);
 	if (!dir) {
@@ -157,17 +176,23 @@ static int cmd_midx_write(void)
 			continue;
 
 		if (ends_with(de->d_name, ".pack")) {
-			char *t = xstrdup(de->d_name);
+			if (m && contains_pack(m, de->d_name))
+				continue;
 
 			ALLOC_GROW(pack_names, i + 1, nr_packs);
-			pack_names[i++] = t;
+			pack_names[i++] = xstrdup(de->d_name);
 		}
 	}
 
 	nr_packs = i;
 	closedir(dir);
 
-	if (build_midx_from_packs(opts.pack_dir, pack_names, nr_packs, &midx_id))
+	if (!nr_packs && opts.has_existing) {
+		printf("%s\n", oid_to_hex(&opts.old_midx_oid));
+		goto cleanup;
+	}
+
+	if (build_midx_from_packs(opts.pack_dir, pack_names, nr_packs, &midx_id, m))
 		die("Failed to build MIDX.");
 
 	printf("%s\n", midx_id);
@@ -175,6 +200,7 @@ static int cmd_midx_write(void)
 	if (opts.update_head)
 		update_head_file(opts.pack_dir, midx_id);
 
+cleanup:
 	if (pack_names)
 		FREE_AND_NULL(pack_names);
 	return 0;
