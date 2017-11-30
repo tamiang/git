@@ -803,7 +803,8 @@ static void prepare_packed_git_one(char *objdir, int local)
 		if (ends_with(de->d_name, ".idx") ||
 		    ends_with(de->d_name, ".pack") ||
 		    ends_with(de->d_name, ".bitmap") ||
-		    ends_with(de->d_name, ".keep"))
+		    ends_with(de->d_name, ".keep") ||
+		    ends_with(de->d_name, ".midx"))
 			string_list_append(&garbage, path.buf);
 		else
 			report_garbage(PACKDIR_FILE_GARBAGE, path.buf);
@@ -828,9 +829,12 @@ unsigned long approximate_object_count(void)
 	static unsigned long count;
 	if (!approximate_object_count_valid) {
 		struct packed_git *p;
+		struct midxed_git *m;
 
-		prepare_packed_git();
+		prepare_packed_git_internal(1);
 		count = 0;
+		for (m = midxed_git; m; m = m->next)
+			count += m->num_objects;
 		for (p = packed_git; p; p = p->next) {
 			if (open_pack_index(p))
 				continue;
