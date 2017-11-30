@@ -3,6 +3,7 @@
 #include "config.h"
 #include "dir.h"
 #include "git-compat-util.h"
+#include "lockfile.h"
 #include "packfile.h"
 #include "parse-options.h"
 #include "midx.h"
@@ -10,7 +11,7 @@
 
 static char const * const builtin_midx_usage[] ={
 	N_("git midx [--pack-dir <packdir>]"),
-	N_("git midx --write [--pack-dir <packdir>]"),
+	N_("git midx --write [--pack-dir <packdir>] [--update-head]"),
 	N_("git midx --read [--midx-id=<oid>]"),
 	NULL
 };
@@ -18,6 +19,7 @@ static char const * const builtin_midx_usage[] ={
 static struct opts_midx {
 	const char *pack_dir;
 	int write;
+	int update_head;
 	int read;
 	const char *midx_id;
 	int has_existing;
@@ -108,6 +110,27 @@ static int build_midx_from_packs(
 	return 0;
 }
 
+static void update_head_file(const char *pack_dir, const char *midx_id)
+{
+	struct strbuf head_path = STRBUF_INIT;
+	FILE* f;
+	struct lock_file lk = LOCK_INIT;
+
+	strbuf_addstr(&head_path, pack_dir);
+	strbuf_addstr(&head_path, "/");
+	strbuf_addstr(&head_path, "midx-head");
+
+	hold_lock_file_for_update(&lk, head_path.buf, LOCK_DIE_ON_ERROR);
+	strbuf_release(&head_path);
+
+	f = fdopen_lock_file(&lk, "w");
+	if (!f)
+		die_errno("unable to fdopen midx-head");
+
+	fprintf(f, "%s", midx_id);
+	commit_lock_file(&lk);
+}
+
 static int cmd_midx_write(void)
 {
 	const char **pack_names = NULL;
@@ -146,6 +169,9 @@ static int cmd_midx_write(void)
 		die("Failed to build MIDX.");
 
 	printf("%s\n", midx_id);
+
+	if (opts.update_head)
+		update_head_file(opts.pack_dir, midx_id);
 
 	if (pack_names)
 		FREE_AND_NULL(pack_names);
@@ -206,6 +232,8 @@ int cmd_midx(int argc, const char **argv, const char *prefix)
 			N_("The pack directory containing set of packfile and pack-index pairs.") },
 		OPT_BOOL('w', "write", &opts.write,
 			N_("write midx file")),
+		OPT_BOOL('u', "update-head", &opts.update_head,
+			N_("update midx-head to written midx file")),
 		OPT_BOOL('r', "read", &opts.read,
 			N_("read midx file")),
 		{ OPTION_STRING, 'M', "midx-id", &opts.midx_id,

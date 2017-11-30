@@ -32,6 +32,10 @@ OPTIONS
 	the packfiles present. Outputs the hash of the result midx file.
 	(Cannot be combined with --read.)
 
+--update-head::
+	If specified with --write, update the midx-head file to point to
+	the written midx file.
+
 EXAMPLES
 --------
 
@@ -39,6 +43,13 @@ EXAMPLES
 +
 ------------------------------------------------
 $ git midx --write
+------------------------------------------------
+
+* Write a MIDX file for the packfiles in your local .git folder and
+* update the midx-head file.
++
+------------------------------------------------
+$ git midx --write --update-head
 ------------------------------------------------
 
 * Write a MIDX file for the packfiles in a different folder

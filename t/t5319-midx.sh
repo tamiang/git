@@ -37,6 +37,7 @@ test_expect_success \
     'pack1=$(git pack-objects --index-version=1 test-1 <obj-list) &&
      midx1=$(git midx --write --pack-dir .) &&
      test -f midx-${midx1}.midx &&
+     ! test -f midx-head &&
      git midx --read --pack-dir . --midx-id=${midx1} >midx-read-out-1 &&
      echo "header: 4d494458 80000001 01 14 00 05 00000001" >midx-read-expect-1 &&
      echo "num_objects: 17" >>midx-read-expect-1 &&
@@ -50,8 +51,11 @@ test_expect_success \
     'write-midx from index version 2' \
     'rm "test-1-${pack1}.pack" &&
      pack2=$(git pack-objects --index-version=2 test-2 <obj-list) &&
-     midx2=$(git midx --write --pack-dir .) &&
+     midx2=$(git midx --write --update-head --pack-dir .) &&
      test -f midx-${midx2}.midx &&
+     test -f midx-head &&
+     echo ${midx2} >midx-head-expect &&
+     cmp -n 40 midx-head midx-head-expect &&
      git midx --read --pack-dir . --midx-id=${midx2} >midx-read-out-2 &&
      echo "header: 4d494458 80000001 01 14 00 05 00000001" >midx-read-expect-2 &&
      echo "num_objects: 17" >>midx-read-expect-2 &&
@@ -89,8 +93,10 @@ test_expect_success \
 test_expect_success \
     'write-midx with two packs' \
     'pack3=$(git pack-objects --index-version=2 test-3 <obj-list) &&
-     midx3=$(git midx --write --pack-dir .) &&
+     midx3=$(git midx --write --update-head --pack-dir .) &&
      test -f midx-${midx3}.midx &&
+     echo ${midx3} > midx-head-expect &&
+     cmp -n 40 midx-head midx-head-expect &&
      git midx --read --pack-dir . --midx-id=${midx3} >midx-read-out-3 &&
      echo "header: 4d494458 80000001 01 14 00 05 00000002" >midx-read-expect-3 &&
      echo "num_objects: 33" >>midx-read-expect-3 &&
@@ -130,8 +136,10 @@ test_expect_success \
 
 test_expect_success \
     'write-midx with twelve packs' \
-    'midx4=$(git midx --write --pack-dir .) &&
+    'midx4=$(git midx --write --update-head --pack-dir .) &&
      test -f midx-${midx4}.midx &&
+     echo ${midx4} > midx-head-expect &&
+     cmp -n 40 midx-head midx-head-expect &&
      git midx --read --pack-dir . --midx-id=${midx4} >midx-read-out-4 &&
      echo "header: 4d494458 80000001 01 14 00 05 0000000d" >midx-read-expect-4 &&
      echo "num_objects: 77" >>midx-read-expect-4 &&
