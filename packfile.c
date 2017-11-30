@@ -901,7 +901,7 @@ static void prepare_packed_git_mru(struct repository *r)
 }
 
 static int prepare_midxed_git_run_once = 0;
-static void prepare_packed_git_internal(struct repository *r, int midx)
+void prepare_packed_git_internal(struct repository *r, int midx)
 {
 	struct alternate_object_database *alt;
 	char *obj_dir;
