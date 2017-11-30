@@ -33,6 +33,12 @@ test_expect_success \
      git update-ref HEAD $commit'
 
 test_expect_success \
+    'Verify normal git operations succeed' \
+    'git rev-list --all --objects | wc -l >rev-list-out-1 &&
+     echo 18 >rev-list-expect-1 &&
+     cmp -n 2 rev-list-out-1 rev-list-expect-1'
+
+test_expect_success \
     'write-midx from index version 1' \
     'pack1=$(git pack-objects --index-version=1 test-1 <obj-list) &&
      midx1=$(git midx --write --pack-dir .) &&
@@ -46,6 +52,12 @@ test_expect_success \
      echo "test-1-${pack1}.pack" >>midx-read-expect-1 &&
      echo "pack_dir: ." >>midx-read-expect-1 &&
      cmp midx-read-out-1 midx-read-expect-1'
+
+test_expect_success \
+    'Verify normal git operations succeed' \
+    'git rev-list --all --objects | wc -l >rev-list-out-2 &&
+     echo 18 >rev-list-expect-2 &&
+     cmp -n 2 rev-list-out-2 rev-list-expect-2'
 
 test_expect_success \
     'write-midx from index version 2' \
@@ -64,6 +76,12 @@ test_expect_success \
      echo "test-2-${pack2}.pack" >>midx-read-expect-2 &&
      echo "pack_dir: ." >>midx-read-expect-2 &&
      cmp midx-read-out-2 midx-read-expect-2'
+
+test_expect_success \
+    'Verify normal git operations succeed' \
+    'git rev-list --all --objects | wc -l >rev-list-out-3 &&
+     echo 18 >rev-list-expect-3 &&
+     cmp -n 2 rev-list-out-3 rev-list-expect-3'
 
 test_expect_success \
     'Add more objects' \
@@ -88,12 +106,18 @@ test_expect_success \
 	 echo $tree &&
 	 git ls-tree $tree | sed -e "s/.* \\([0-9a-f]*\\)	.*/\\1/"
      } >obj-list &&
-     git update-ref HEAD $commit'
+     git update-ref HEAD $commit &&
+     pack3=$(git pack-objects --index-version=2 test-pack <obj-list)'
+
+test_expect_success \
+    'Verify normal git operations succeed in mixed mode' \
+    'git rev-list --all --objects | wc -l >rev-list-out-4 &&
+     echo 35 >rev-list-expect-4 &&
+     cmp -n 2 rev-list-out-4 rev-list-expect-4'
 
 test_expect_success \
     'write-midx with two packs' \
-    'pack3=$(git pack-objects --index-version=2 test-pack <obj-list) &&
-     midx3=$(git midx --write --update-head --delete-expired --pack-dir .) &&
+    'midx3=$(git midx --write --update-head --delete-expired --pack-dir .) &&
      test -f midx-${midx3}.midx &&
      ! test -f midx-${midx2}.midx &&
      echo ${midx3} > midx-head-expect &&
@@ -109,6 +133,12 @@ test_expect_success \
      cmp midx-read-out-3 midx-read-expect-3 &&
      git midx --read --pack-dir . >midx-read-out-3-head &&
      cmp midx-read-out-3-head midx-read-expect-3'
+
+test_expect_success \
+    'Verify normal git operations succeed' \
+    'git rev-list --all --objects | wc -l >rev-list-out-5 &&
+     echo 35 >rev-list-expect-5 &&
+     cmp -n 2 rev-list-out-5 rev-list-expect-5'
 
 test_expect_success \
     'Add more packs' \
@@ -138,6 +168,12 @@ test_expect_success \
      done'
 
 test_expect_success \
+    'Verify normal git operations succeed in mixed mode' \
+    'git rev-list --all --objects | wc -l >rev-list-out-6 &&
+     echo 90 >rev-list-expect-6 &&
+     cmp -n 2 rev-list-out-6 rev-list-expect-6'
+
+test_expect_success \
     'write-midx with twelve packs' \
     'midx4=$(git midx --write --update-head --delete-expired --pack-dir .) &&
      test -f midx-${midx4}.midx &&
@@ -156,9 +192,21 @@ test_expect_success \
      cmp midx-read-out-4-head midx-read-expect-4'
 
 test_expect_success \
+    'Verify normal git operations succeed' \
+    'git rev-list --all --objects | wc -l >rev-list-out-7 &&
+     echo 90 >rev-list-expect-7 &&
+     cmp -n 2 rev-list-out-7 rev-list-expect-7'
+
+test_expect_success \
     'midx --clear' \
     'git midx --clear --pack-dir . &&
      ! test -f "midx-${midx4}.midx" &&
      ! test -f "midx-head"'
+
+test_expect_success \
+    'Verify normal git operations succeed' \
+    'git rev-list --all --objects | wc -l >rev-list-out-8 &&
+     echo 90 >rev-list-expect-8 &&
+     cmp -n 2 rev-list-out-8 rev-list-expect-8'
 
 test_done

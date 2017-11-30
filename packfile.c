@@ -15,6 +15,7 @@
 #include "tree-walk.h"
 #include "tree.h"
 #include "object-store.h"
+#include "midx.h"
 
 char *odb_pack_name(struct strbuf *buf,
 		    const unsigned char *sha1,
@@ -760,6 +761,7 @@ static void prepare_packed_git_one(struct repository *r, char *objdir, int local
 	dirnamelen = path.len;
 	while ((de = readdir(dir)) != NULL) {
 		struct packed_git *p;
+		struct midxed_git *m;
 		size_t base_len;
 
 		if (is_dot_or_dotdot(de->d_name))
@@ -770,7 +772,15 @@ static void prepare_packed_git_one(struct repository *r, char *objdir, int local
 
 		base_len = path.len;
 		if (strip_suffix_mem(path.buf, &base_len, ".idx")) {
+			struct strbuf pack_name = STRBUF_INIT;
+			strbuf_addstr(&pack_name, de->d_name);
+			strbuf_setlen(&pack_name, pack_name.len - 3);
+			strbuf_add(&pack_name, "pack", 4);
+
 			/* Don't reopen a pack we already have. */
+			for (m = midxed_git; m; m = m->next)
+				if (contains_pack(m, pack_name.buf))
+					break;
 			for (p = r->objects->packed_git; p;
 			     p = p->next) {
 				size_t len;
@@ -779,7 +789,7 @@ static void prepare_packed_git_one(struct repository *r, char *objdir, int local
 				    !memcmp(p->pack_name, path.buf, len))
 					break;
 			}
-			if (p == NULL &&
+			if (m == NULL && p == NULL &&
 			    /*
 			     * See if it really is a valid .idx file with
 			     * corresponding .pack file that we can map.
@@ -887,19 +897,53 @@ static void prepare_packed_git_mru(struct repository *r)
 		list_add_tail(&p->mru, &r->objects->packed_git_mru);
 }
 
-static void prepare_packed_git(struct repository *r)
+static int prepare_midxed_git_run_once = 0;
+static void prepare_packed_git_internal(struct repository *r, int midx)
 {
 	struct alternate_object_database *alt;
+	char *obj_dir;
+
+	if (prepare_midxed_git_run_once) {
+		if (!midx) {
+			prepare_midxed_git_run_once = 0;
+			close_all_midx();
+			reprepare_packed_git(r);
+		}
+		return;
+	}
 
 	if (r->objects->packed_git_initialized)
 		return;
-	prepare_packed_git_one(r, r->objects->objectdir, 1);
+
+	obj_dir = r->objects->objectdir;
+	if (midx) {
+		struct strbuf pack_dir = STRBUF_INIT;
+		strbuf_addstr(&pack_dir, obj_dir);
+		strbuf_addstr(&pack_dir, "/pack");
+		prepare_midxed_git_head(pack_dir.buf, 1);
+		strbuf_release(&pack_dir);
+	}
+
+	prepare_packed_git_one(r, obj_dir, 1);
 	prepare_alt_odb(r);
-	for (alt = r->objects->alt_odb_list; alt; alt = alt->next)
+	for (alt = r->objects->alt_odb_list; alt; alt = alt->next) {
+		if (midx) {
+			struct strbuf alt_pack_dir = STRBUF_INIT;
+			strbuf_addstr(&alt_pack_dir, alt->path);
+			strbuf_addstr(&alt_pack_dir, "/pack");
+			prepare_midxed_git_head(alt_pack_dir.buf, 0);
+			strbuf_release(&alt_pack_dir);
+		}
 		prepare_packed_git_one(r, alt->path, 0);
+	}
 	rearrange_packed_git(r);
 	prepare_packed_git_mru(r);
 	r->objects->packed_git_initialized = 1;
+}
+
+static void prepare_packed_git(struct repository *r)
+{
+	prepare_packed_git_internal(r, 0);
 }
 
 void reprepare_packed_git(struct repository *r)
