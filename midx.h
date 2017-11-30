@@ -97,6 +97,8 @@ struct midxed_git {
 
 extern struct midxed_git *get_midxed_git(const char *pack_dir, struct object_id *midx_oid);
 
+extern int contains_pack(struct midxed_git *m, const char *pack_name);
+
 /*
  * Write a single MIDX file storing the given entries for the
  * given list of packfiles. If midx_name is null, then a temp
