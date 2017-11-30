@@ -97,6 +97,18 @@ struct midxed_git {
 
 extern struct midxed_git *get_midxed_git(const char *pack_dir, struct object_id *midx_oid);
 
+struct pack_midx_details {
+	uint32_t pack_int_id;
+	off_t offset;
+};
+
+extern struct pack_midx_details *nth_midxed_object_details(struct midxed_git *m,
+							   uint32_t n,
+							   struct pack_midx_details *d);
+extern struct pack_midx_entry *nth_midxed_object_entry(struct midxed_git *m,
+						       uint32_t n,
+						       struct pack_midx_entry *e);
+
 extern int contains_pack(struct midxed_git *m, const char *pack_name);
 
 /*

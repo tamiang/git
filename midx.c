@@ -167,6 +167,49 @@ struct midxed_git *get_midxed_git(const char *pack_dir, struct object_id *midx_o
 	return m;
 }
 
+struct pack_midx_details *nth_midxed_object_details(struct midxed_git *m,
+						    uint32_t n,
+						    struct pack_midx_details *d)
+{
+	struct pack_midx_details_internal *d_internal;
+	const unsigned char *details = m->chunk_object_offsets;
+
+	if (n >= m->num_objects) {
+		return NULL;
+	}
+
+	d_internal = (struct pack_midx_details_internal*)(details + 8 * n);
+	d->pack_int_id = ntohl(d_internal->pack_int_id);
+	d->offset = ntohl(d_internal->internal_offset);
+
+	if (m->chunk_large_offsets && d->offset & MIDX_LARGE_OFFSET_NEEDED) {
+		uint32_t large_offset = d->offset ^ MIDX_LARGE_OFFSET_NEEDED;
+		const unsigned char *large_offsets = m->chunk_large_offsets + 8 * large_offset;
+
+		d->offset =  (((uint64_t)ntohl(*((uint32_t *)(large_offsets + 0)))) << 32) |
+					 ntohl(*((uint32_t *)(large_offsets + 4)));
+	}
+
+	return d;
+}
+
+struct pack_midx_entry *nth_midxed_object_entry(struct midxed_git *m,
+						uint32_t n,
+						struct pack_midx_entry *e)
+{
+	struct pack_midx_details details;
+	const unsigned char *index = m->chunk_oid_lookup;
+
+	if (!nth_midxed_object_details(m, n, &details))
+		return NULL;
+
+	memcpy(e->oid.hash, index + m->hdr->hash_len * n, m->hdr->hash_len);
+	e->pack_int_id = details.pack_int_id;
+	e->offset = details.offset;
+
+	return e;
+}
+
 int contains_pack(struct midxed_git *m, const char *pack_name)
 {
 	uint32_t first = 0, last = m->num_packs;
