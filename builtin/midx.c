@@ -11,7 +11,7 @@
 
 static char const * const builtin_midx_usage[] ={
 	N_("git midx [--pack-dir <packdir>]"),
-	N_("git midx --write [--pack-dir <packdir>] [--update-head]"),
+	N_("git midx --write [--pack-dir <packdir>] [--update-head] [--delete-expired]"),
 	N_("git midx --read [--midx-id=<oid>]"),
 	N_("git midx --clear [--pack-dir <packdir>]"),
 	NULL
@@ -21,6 +21,7 @@ static struct opts_midx {
 	const char *pack_dir;
 	int write;
 	int update_head;
+	int delete_expired;
 	int read;
 	const char *midx_id;
 	int clear;
@@ -200,6 +201,21 @@ static int cmd_midx_write(void)
 	if (opts.update_head)
 		update_head_file(opts.pack_dir, midx_id);
 
+	if (opts.delete_expired && opts.update_head && opts.has_existing &&
+	    strcmp(midx_id, oid_to_hex(&opts.old_midx_oid))) {
+		struct strbuf old_path = STRBUF_INIT;
+		strbuf_addstr(&old_path, opts.pack_dir);
+		strbuf_addstr(&old_path, "/midx-");
+		strbuf_addstr(&old_path, oid_to_hex(&opts.old_midx_oid));
+		strbuf_addstr(&old_path, ".midx");
+
+		close_midx(m);
+		if (remove_path(old_path.buf))
+			die("Failed to remove path %s", old_path.buf);
+
+		strbuf_release(&old_path);
+	}
+
 cleanup:
 	if (pack_names)
 		FREE_AND_NULL(pack_names);
@@ -289,6 +305,8 @@ int cmd_midx(int argc, const char **argv, const char *prefix)
 			N_("write midx file")),
 		OPT_BOOL('u', "update-head", &opts.update_head,
 			N_("update midx-head to written midx file")),
+		OPT_BOOL('d', "delete-expired", &opts.delete_expired,
+			N_("delete expired head midx file")),
 		OPT_BOOL('r', "read", &opts.read,
 			N_("read midx file")),
 		OPT_BOOL('c', "clear", &opts.clear,

@@ -44,6 +44,10 @@ OPTIONS
 	If specified with --write, update the midx-head file to point to
 	the written midx file.
 
+--delete-expired::
+	If specified with --write and --update-head, delete the midx file
+	previously pointed to by midx-head (if changed).
+
 EXAMPLES
 --------
 

@@ -93,8 +93,9 @@ test_expect_success \
 test_expect_success \
     'write-midx with two packs' \
     'pack3=$(git pack-objects --index-version=2 test-pack <obj-list) &&
-     midx3=$(git midx --write --update-head --pack-dir .) &&
+     midx3=$(git midx --write --update-head --delete-expired --pack-dir .) &&
      test -f midx-${midx3}.midx &&
+     ! test -f midx-${midx2}.midx &&
      echo ${midx3} > midx-head-expect &&
      cmp -n 40 midx-head midx-head-expect &&
      git midx --read --pack-dir . --midx-id=${midx3} >midx-read-out-3 &&
@@ -138,8 +139,9 @@ test_expect_success \
 
 test_expect_success \
     'write-midx with twelve packs' \
-    'midx4=$(git midx --write --update-head --pack-dir .) &&
+    'midx4=$(git midx --write --update-head --delete-expired --pack-dir .) &&
      test -f midx-${midx4}.midx &&
+     ! test -f midx-${midx3}.midx &&
      echo ${midx4} > midx-head-expect &&
      cmp -n 40 midx-head midx-head-expect &&
      git midx --read --pack-dir . --midx-id=${midx4} >midx-read-out-4 &&

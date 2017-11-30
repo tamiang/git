@@ -611,3 +611,16 @@ const char *write_midx_file(
 
 	return final_hex;
 }
+
+extern int close_midx(struct midxed_git *m)
+{
+	if (m->midx_fd < 0)
+		return 0;
+
+	munmap((void *)m->data, m->data_len);
+	m->data = 0;
+
+	close(m->midx_fd);
+	m->midx_fd = -1;
+	return 1;
+}
