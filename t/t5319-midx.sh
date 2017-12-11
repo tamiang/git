@@ -8,8 +8,15 @@ test_expect_success \
     'rm -rf .git &&
      git init &&
      git config core.midx true &&
-     git config pack.threads 1 &&
-     i=1 &&
+     git config pack.threads 1'
+
+test_expect_success \
+    'write-midx with no packs' \
+    'git midx --write --update-head --delete-expired --pack-dir .'
+
+test_expect_success \
+    'create packs' \
+    'i=1 &&
      while test $i -le 5
      do
          iii=$(printf '%03i' $i)
@@ -196,6 +203,12 @@ test_expect_success \
     'git rev-list --all --objects | wc -l >rev-list-out-7 &&
      echo 90 >rev-list-expect-7 &&
      cmp -n 2 rev-list-out-7 rev-list-expect-7'
+
+test_expect_success \
+    'write-midx with nothing new' \
+    'midx5=$(git midx --write --update-head --delete-expired --pack-dir .) &&
+     echo ${midx5} > midx-head-5 &&
+     cmp -n 40 midx-head-5 midx-head-expect'
 
 test_expect_success \
     'midx --clear' \

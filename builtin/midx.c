@@ -64,6 +64,9 @@ static int build_midx_from_packs(
 		strbuf_setlen(&pack_path, baselen);
 		strbuf_addstr(&pack_path, pack_names[i]);
 
+		if (midx && contains_pack(midx, pack_names[i]))
+			continue;
+
 		strbuf_strip_suffix(&pack_path, ".pack");
 		strbuf_addstr(&pack_path, ".idx");
 
@@ -81,9 +84,13 @@ static int build_midx_from_packs(
 	strbuf_release(&pack_path);
 
 	if (!nr_objects || !nr_installed_packs) {
+		if (opts.has_existing)
+			*midx_id = oid_to_hex(&opts.old_midx_oid);
+		else
+			*midx_id = 0;
 		free(packs);
 		free(installed_pack_names);
-		return 1;
+		return 0;
 	}
 
 	if (midx)
@@ -131,35 +138,34 @@ static int build_midx_from_packs(
 static void update_head_file(const char *pack_dir, const char *midx_id)
 {
 	struct strbuf head_path = STRBUF_INIT;
-	FILE* f;
+	int fd;
 	struct lock_file lk = LOCK_INIT;
 
 	strbuf_addstr(&head_path, pack_dir);
 	strbuf_addstr(&head_path, "/");
 	strbuf_addstr(&head_path, "midx-head");
 
-	hold_lock_file_for_update(&lk, head_path.buf, LOCK_DIE_ON_ERROR);
+	fd = hold_lock_file_for_update(&lk, head_path.buf, LOCK_DIE_ON_ERROR);
 	strbuf_release(&head_path);
 
-	f = fdopen_lock_file(&lk, "w");
-	if (!f)
-		die_errno("unable to fdopen midx-head");
+	if (fd < 0)
+		die_errno("unable to open midx-head");
 
-	fprintf(f, "%s", midx_id);
+	write_in_full(fd, midx_id, GIT_MAX_HEXSZ);
 	commit_lock_file(&lk);
 }
 
-static int cmd_midx_write(void)
+static int midx_write(void)
 {
 	const char **pack_names = NULL;
 	uint32_t i, nr_packs = 0;
-	const char *midx_id;
+	const char *midx_id = 0;
 	DIR *dir;
 	struct dirent *de;
-	struct midxed_git *m = NULL;
+	struct midxed_git *midx = NULL;
 
 	if (opts.has_existing)
-		m = get_midxed_git(opts.pack_dir, &opts.old_midx_oid);
+		midx = get_midxed_git(opts.pack_dir, &opts.old_midx_oid);
 
 	dir = opendir(opts.pack_dir);
 	if (!dir) {
@@ -168,7 +174,7 @@ static int cmd_midx_write(void)
 		return 1;
 	}
 
-	nr_packs = 8;
+	nr_packs = 256;
 	ALLOC_ARRAY(pack_names, nr_packs);
 
 	i = 0;
@@ -177,9 +183,6 @@ static int cmd_midx_write(void)
 			continue;
 
 		if (ends_with(de->d_name, ".pack")) {
-			if (m && contains_pack(m, de->d_name))
-				continue;
-
 			ALLOC_GROW(pack_names, i + 1, nr_packs);
 			pack_names[i++] = xstrdup(de->d_name);
 		}
@@ -188,13 +191,14 @@ static int cmd_midx_write(void)
 	nr_packs = i;
 	closedir(dir);
 
-	if (!nr_packs && opts.has_existing) {
-		printf("%s\n", oid_to_hex(&opts.old_midx_oid));
+	if (!nr_packs)
 		goto cleanup;
-	}
 
-	if (build_midx_from_packs(opts.pack_dir, pack_names, nr_packs, &midx_id, m))
-		die("Failed to build MIDX.");
+	if (build_midx_from_packs(opts.pack_dir, pack_names, nr_packs, &midx_id, midx))
+		die("failed to build MIDX");
+
+	if (!midx_id)
+		goto cleanup;
 
 	printf("%s\n", midx_id);
 
@@ -203,17 +207,12 @@ static int cmd_midx_write(void)
 
 	if (opts.delete_expired && opts.update_head && opts.has_existing &&
 	    strcmp(midx_id, oid_to_hex(&opts.old_midx_oid))) {
-		struct strbuf old_path = STRBUF_INIT;
-		strbuf_addstr(&old_path, opts.pack_dir);
-		strbuf_addstr(&old_path, "/midx-");
-		strbuf_addstr(&old_path, oid_to_hex(&opts.old_midx_oid));
-		strbuf_addstr(&old_path, ".midx");
+		char *old_path = get_midx_head_filename_oid(opts.pack_dir, &opts.old_midx_oid);
+		close_midx(midx);
+		if (remove_path(old_path))
+			die("failed to remove path %s", old_path);
 
-		close_midx(m);
-		if (remove_path(old_path.buf))
-			die("Failed to remove path %s", old_path.buf);
-
-		strbuf_release(&old_path);
+		free(old_path);
 	}
 
 cleanup:
@@ -222,7 +221,7 @@ cleanup:
 	return 0;
 }
 
-static int cmd_midx_read(void)
+static int midx_read(void)
 {
 	struct object_id midx_oid;
 	struct midxed_git *midx;
@@ -268,10 +267,10 @@ static int cmd_midx_read(void)
 	return 0;
 }
 
-static int cmd_midx_clear(void)
+static int midx_clear(void)
 {
-	struct strbuf old_path = STRBUF_INIT;
 	struct strbuf head_path = STRBUF_INIT;
+	char *old_path;
 
 	if (!opts.has_existing)
 		return 0;
@@ -280,18 +279,14 @@ static int cmd_midx_clear(void)
 	strbuf_addstr(&head_path, "/");
 	strbuf_addstr(&head_path, "midx-head");
 	if (remove_path(head_path.buf))
-		die("Failed to remove path %s", head_path.buf);
-
-	strbuf_addstr(&old_path, opts.pack_dir);
-	strbuf_addstr(&old_path, "/midx-");
-	strbuf_addstr(&old_path, oid_to_hex(&opts.old_midx_oid));
-	strbuf_addstr(&old_path, ".midx");
-
-	if (remove_path(old_path.buf))
-		die("Failed to remove path %s", old_path.buf);
-
-	strbuf_release(&old_path);
+		die("failed to remove path %s", head_path.buf);
 	strbuf_release(&head_path);
+
+	old_path = get_midx_head_filename_oid(opts.pack_dir, &opts.old_midx_oid);
+	if (remove_path(old_path))
+		die("failed to remove path %s", old_path);
+	free(old_path);
+
 	return 0;
 }
 
@@ -342,11 +337,11 @@ int cmd_midx(int argc, const char **argv, const char *prefix)
 	opts.has_existing = !!get_midx_head_oid(opts.pack_dir, &opts.old_midx_oid);
 
 	if (opts.write)
-		return cmd_midx_write();
+		return midx_write();
 	if (opts.read)
-		return cmd_midx_read();
+		return midx_read();
 	if (opts.clear)
-		return cmd_midx_clear();
+		return midx_clear();
 
 	return 0;
 }

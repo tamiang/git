@@ -51,6 +51,12 @@ OPTIONS
 EXAMPLES
 --------
 
+* Read the midx-head file and output the OID of the head MIDX file.
++
+------------------------------------------------
+$ git midx
+------------------------------------------------
+
 * Write a MIDX file for the packfiles in your local .git folder.
 +
 ------------------------------------------------
