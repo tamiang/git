@@ -667,17 +667,16 @@ const char *write_midx_file(const char *pack_dir,
 
 		QSORT(sorted_by_sha, nr_objects, midx_oid_compare);
 
-		count_distinct = 1;
 		for (i = 0; i < nr_objects; i++) {
-			if (!i ||
+			if (i &&
 			    !oidcmp(&sorted_by_sha[i-1]->oid, &sorted_by_sha[i]->oid))
 				continue;
 
 			count_distinct++;
 
-			if (sorted_by_sha[i]->offset >> 31)
+			if (sorted_by_sha[i]->offset > 0x7fffffff)
 				nr_large_offset++;
-			if (sorted_by_sha[i]->offset >> 32)
+			if (sorted_by_sha[i]->offset > 0xffffffff)
 				large_offset_needed = 1;
 		}
 	} else {
@@ -752,7 +751,7 @@ const char *write_midx_file(const char *pack_dir,
 	if (large_offset_needed) {
 		chunk_ids[4] = MIDX_CHUNKID_LARGEOFFSETS;
 		chunk_offsets[5] = chunk_offsets[4] + 8 * (uint64_t)nr_large_offset;
-		chunk_ids[4] = MIDX_CHUNKID_PACKNAMES;
+		chunk_ids[5] = MIDX_CHUNKID_PACKNAMES;
 		chunk_offsets[6] = chunk_offsets[5] + total_name_len;
 		chunk_ids[6] = 0;
 	} else {
