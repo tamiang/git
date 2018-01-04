@@ -22,6 +22,9 @@
 
 #define MIDX_LARGE_OFFSET_NEEDED 0x80000000
 
+/* MIDX-git global storage */
+struct midxed_git *midxed_git = 0;
+
 char* get_midx_filename_oid(const char *pack_dir,
 			    struct object_id *oid)
 {
@@ -195,6 +198,45 @@ struct midxed_git *get_midxed_git(const char *pack_dir, struct object_id *oid)
 	m = load_midxed_git_one(fname, pack_dir);
 	free(fname);
 	return m;
+}
+
+static char* get_midx_filename_dir(const char *pack_dir)
+{
+	struct object_id oid;
+	if (!get_midx_head_oid(pack_dir, &oid))
+		return 0;
+
+	return get_midx_filename_oid(pack_dir, &oid);
+}
+
+static int prepare_midxed_git_head(char *pack_dir, int local)
+{
+	struct midxed_git *m = midxed_git;
+	char *midx_head_path = get_midx_filename_dir(pack_dir);
+
+	if (!core_midx)
+		return 1;
+
+	if (midx_head_path) {
+		midxed_git = load_midxed_git_one(midx_head_path, pack_dir);
+		midxed_git->next = m;
+		FREE_AND_NULL(midx_head_path);
+		return 1;
+	}
+
+	return 0;
+}
+
+int prepare_midxed_git_objdir(char *obj_dir, int local)
+{
+	int ret;
+	struct strbuf pack_dir = STRBUF_INIT;
+	strbuf_addstr(&pack_dir, obj_dir);
+	strbuf_add(&pack_dir, "/pack", 5);
+
+	ret = prepare_midxed_git_head(pack_dir.buf, local);
+	strbuf_release(&pack_dir);
+	return ret;
 }
 
 struct pack_midx_details_internal {
@@ -676,4 +718,19 @@ int close_midx(struct midxed_git *m)
 	free(m->pack_names);
 
 	return 1;
+}
+
+void close_all_midx(void)
+{
+	struct midxed_git *m = midxed_git;
+	struct midxed_git *next;
+
+	while (m) {
+		next = m->next;
+		close_midx(m);
+		free(m);
+		m = next;
+	}
+
+	midxed_git = 0;
 }

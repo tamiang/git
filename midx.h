@@ -27,7 +27,7 @@ struct pack_midx_header {
 	uint32_t num_packs;
 };
 
-struct midxed_git {
+extern struct midxed_git {
 	struct midxed_git *next;
 
 	int midx_fd;
@@ -81,9 +81,10 @@ struct midxed_git {
 
 	/* something like ".git/objects/pack" */
 	char pack_dir[FLEX_ARRAY]; /* more */
-};
+} *midxed_git;
 
 extern struct midxed_git *get_midxed_git(const char *pack_dir, struct object_id *oid);
+extern int prepare_midxed_git_objdir(char *obj_dir, int local);
 
 struct pack_midx_details {
 	uint32_t pack_int_id;
@@ -118,5 +119,6 @@ extern const char *write_midx_file(const char *pack_dir,
 				   uint32_t nr_objects);
 
 extern int close_midx(struct midxed_git *m);
+extern void close_all_midx(void);
 
 #endif
