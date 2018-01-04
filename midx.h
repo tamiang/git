@@ -7,6 +7,9 @@
 
 extern char *get_midx_filename_oid(const char *pack_dir,
 				   struct object_id *oid);
+extern char *get_midx_head_filename(const char *pack_dir);
+
+extern struct object_id *get_midx_head_oid(const char *pack_dir, struct object_id *oid);
 
 struct pack_midx_entry {
 	struct object_id oid;

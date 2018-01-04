@@ -34,6 +34,37 @@ char* get_midx_filename_oid(const char *pack_dir,
 	return strbuf_detach(&head_path, NULL);
 }
 
+char *get_midx_head_filename(const char *pack_dir)
+{
+	struct strbuf head_filename = STRBUF_INIT;
+	strbuf_addstr(&head_filename, pack_dir);
+	strbuf_addstr(&head_filename, "/midx-head");
+	return strbuf_detach(&head_filename, NULL);
+}
+
+struct object_id *get_midx_head_oid(const char *pack_dir,
+				    struct object_id *oid)
+{
+	char oid_hex[GIT_MAX_HEXSZ + 1];
+	FILE *f;
+	char *head_filename = get_midx_head_filename(pack_dir);
+
+	f = fopen(head_filename, "r");
+	FREE_AND_NULL(head_filename);
+
+	if (!f)
+		return 0;
+
+	if (!fgets(oid_hex, sizeof(oid_hex), f))
+		die("failed to read midx-head");
+
+	fclose(f);
+
+	if (get_oid_hex(oid_hex, oid))
+		return 0;
+	return oid;
+}
+
 struct pack_midx_details_internal {
 	uint32_t pack_int_id;
 	uint32_t internal_offset;

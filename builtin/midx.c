@@ -9,13 +9,17 @@
 #include "midx.h"
 
 static char const * const builtin_midx_usage[] = {
-	N_("git midx --write [--pack-dir <packdir>]"),
+	N_("git midx [--pack-dir <packdir>]"),
+	N_("git midx --write [--update-head] [--pack-dir <packdir>]"),
 	NULL
 };
 
 static struct opts_midx {
 	const char *pack_dir;
 	int write;
+	int update_head;
+	int has_existing;
+	struct object_id old_midx_oid;
 } opts;
 
 static int build_midx_from_packs(
@@ -109,6 +113,22 @@ static int build_midx_from_packs(
 	return 0;
 }
 
+static void update_head_file(const char *pack_dir, const char *midx_id)
+{
+	int fd;
+	struct lock_file lk = LOCK_INIT;
+	char *head_path = get_midx_head_filename(pack_dir);
+
+	fd = hold_lock_file_for_update(&lk, head_path, LOCK_DIE_ON_ERROR);
+	FREE_AND_NULL(head_path);
+
+	if (fd < 0)
+		die_errno("unable to open midx-head");
+
+	write_in_full(fd, midx_id, GIT_MAX_HEXSZ);
+	commit_lock_file(&lk);
+}
+
 static int midx_write(void)
 {
 	const char **pack_names = NULL;
@@ -152,6 +172,9 @@ static int midx_write(void)
 
 	printf("%s\n", midx_id);
 
+	if (opts.update_head)
+		update_head_file(opts.pack_dir, midx_id);
+
 cleanup:
 	if (pack_names)
 		FREE_AND_NULL(pack_names);
@@ -166,6 +189,8 @@ int cmd_midx(int argc, const char **argv, const char *prefix)
 			N_("The pack directory containing set of packfile and pack-index pairs.") },
 		OPT_BOOL('w', "write", &opts.write,
 			N_("write midx file")),
+		OPT_BOOL('u', "update-head", &opts.update_head,
+			N_("update midx-head to written midx file")),
 		OPT_END(),
 	};
 
@@ -187,9 +212,12 @@ int cmd_midx(int argc, const char **argv, const char *prefix)
 		opts.pack_dir = strbuf_detach(&path, NULL);
 	}
 
+	opts.has_existing = !!get_midx_head_oid(opts.pack_dir, &opts.old_midx_oid);
+
 	if (opts.write)
 		return midx_write();
 
-	usage_with_options(builtin_midx_usage, builtin_midx_options);
+	if (opts.has_existing)
+		printf("%s\n", oid_to_hex(&opts.old_midx_oid));
 	return 0;
 }
