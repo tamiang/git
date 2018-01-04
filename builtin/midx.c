@@ -11,11 +11,13 @@
 static char const * const builtin_midx_usage[] = {
 	N_("git midx [--pack-dir <packdir>]"),
 	N_("git midx --write [--update-head] [--pack-dir <packdir>]"),
+	N_("git midx --clear [--pack-dir <packdir>]"),
 	NULL
 };
 
 static struct opts_midx {
 	const char *pack_dir;
+	int clear;
 	int read;
 	const char *midx_id;
 	int write;
@@ -23,6 +25,29 @@ static struct opts_midx {
 	int has_existing;
 	struct object_id old_midx_oid;
 } opts;
+
+static int midx_clear(void)
+{
+	struct strbuf head_path = STRBUF_INIT;
+	char *old_path;
+
+	if (!opts.has_existing)
+		return 0;
+
+	strbuf_addstr(&head_path, opts.pack_dir);
+	strbuf_addstr(&head_path, "/");
+	strbuf_addstr(&head_path, "midx-head");
+	if (remove_path(head_path.buf))
+		die("failed to remove path %s", head_path.buf);
+	strbuf_release(&head_path);
+
+	old_path = get_midx_filename_oid(opts.pack_dir, &opts.old_midx_oid);
+	if (remove_path(old_path))
+		die("failed to remove path %s", old_path);
+	free(old_path);
+
+	return 0;
+}
 
 static int midx_read(void)
 {
@@ -263,6 +288,8 @@ int cmd_midx(int argc, const char **argv, const char *prefix)
 		{ OPTION_STRING, 'p', "pack-dir", &opts.pack_dir,
 			N_("dir"),
 			N_("The pack directory containing set of packfile and pack-index pairs.") },
+		OPT_BOOL('c', "clear", &opts.clear,
+			N_("clear midx file and midx-head")),
 		OPT_BOOL('r', "read", &opts.read,
 			N_("read midx file")),
 		{ OPTION_STRING, 'M', "midx-id", &opts.midx_id,
@@ -287,7 +314,7 @@ int cmd_midx(int argc, const char **argv, const char *prefix)
 			     builtin_midx_options,
 			     builtin_midx_usage, 0);
 
-	if (opts.write + opts.read > 1)
+	if (opts.write + opts.read + opts.clear > 1)
 		usage_with_options(builtin_midx_usage, builtin_midx_options);
 
 	if (!opts.pack_dir) {
@@ -299,6 +326,8 @@ int cmd_midx(int argc, const char **argv, const char *prefix)
 
 	opts.has_existing = !!get_midx_head_oid(opts.pack_dir, &opts.old_midx_oid);
 
+	if (opts.clear)
+		return midx_clear();
 	if (opts.read)
 		return midx_read();
 	if (opts.write)

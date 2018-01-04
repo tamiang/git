@@ -9,7 +9,7 @@ git-midx - Write and verify multi-pack-indexes (MIDX files).
 SYNOPSIS
 --------
 [verse]
-'git midx' [--write|--read] <options> [--pack-dir <pack_dir>]
+'git midx' [--write|--read|--clear] <options> [--pack-dir <pack_dir>]
 
 DESCRIPTION
 -----------
@@ -21,6 +21,10 @@ OPTIONS
 --pack-dir <pack_dir>::
 	Use given directory for the location of packfiles, pack-indexes,
 	and MIDX files.
+
+--clear::
+	If specified, delete the midx file specified by midx-head, and
+	midx-head. (Cannot be combined with --write or --read.)
 
 --read::
 	If specified, read a midx file specified by the midx-head file
@@ -78,6 +82,12 @@ $ git midx --read
 --------------------------------------------------------------------
 $ git midx --read --midx-id 3e50d982a2257168c7fd0ff12ffe5cf6af38c74e
 --------------------------------------------------------------------
+
+* Delete the current midx-head and the file it references.
++
+-----------------------------------------------
+$ git midx --clear
+-----------------------------------------------
 
 CONFIGURATION
 -------------

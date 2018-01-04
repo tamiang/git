@@ -143,4 +143,13 @@ test_expect_success 'write-midx in bare repo' \
      git midx --read >output &&
      cmp output expect'
 
+test_expect_success 'midx --clear' \
+    'git midx --clear &&
+     test_path_is_missing "${baredir}/midx-${midx4}.midx" &&
+     test_path_is_missing "${baredir}/midx-head" &&
+     cd ../full &&
+     git midx --clear &&
+     test_path_is_missing "${packdir}/midx-${midx4}.midx" &&
+     test_path_is_missing "${packdir}/midx-head"'
+
 test_done
