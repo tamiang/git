@@ -75,6 +75,7 @@ test_expect_success 'write-midx with two packs' \
     'pack3=$(git rev-list --objects commit2 ^commit1 | git pack-objects --index-version=2 ${packdir}/test-3) &&
      midx3=$(git midx --write --update-head) &&
      test_path_is_file ${packdir}/midx-${midx3}.midx &&
+     test_path_is_file ${packdir}/midx-${midx2}.midx &&
      test_path_is_file ${packdir}/midx-head &&
      test $(cat ${packdir}/midx-head) = "$midx3" &&
      _midx_read_expect \
@@ -107,8 +108,10 @@ test_expect_success 'Add more packs' \
      done'
 
 test_expect_success 'write-midx with twelve packs' \
-    'midx4=$(git midx --write --update-head) &&
+    'midx4=$(git midx --write --update-head --delete-expired) &&
      test_path_is_file ${packdir}/midx-${midx4}.midx &&
+     test_path_is_missing ${packdir}/midx-${midx3}.midx &&
+     test_path_is_file ${packdir}/midx-${midx2}.midx &&
      test_path_is_file ${packdir}/midx-head &&
      test $(cat ${packdir}/midx-head) = "$midx4" &&
      _midx_read_expect \
@@ -118,7 +121,7 @@ test_expect_success 'write-midx with twelve packs' \
      cmp output expect'
 
 test_expect_success 'write-midx with no new packs' \
-    'midx5=$(git midx --write --update-head) &&
+    'midx5=$(git midx --write --update-head --delete-expired) &&
      test_path_is_file ${packdir}/midx-${midx5}.midx &&
      test "a$midx4" = "a$midx5" &&
      test_path_is_file ${packdir}/midx-head &&
@@ -133,7 +136,7 @@ test_expect_success 'create bare repo' \
      baredir=./objects/pack'
 
 test_expect_success 'write-midx in bare repo' \
-    'midxbare=$(git midx --write --update-head) &&
+    'midxbare=$(git midx --write --update-head --delete-expired) &&
      test_path_is_file ${baredir}/midx-${midxbare}.midx  &&
      test_path_is_file ${baredir}/midx-head &&
      test $(cat ${baredir}/midx-head) = "$midxbare" &&

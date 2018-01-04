@@ -117,4 +117,6 @@ extern const char *write_midx_file(const char *pack_dir,
 				   struct pack_midx_entry **objects,
 				   uint32_t nr_objects);
 
+extern int close_midx(struct midxed_git *m);
+
 #endif

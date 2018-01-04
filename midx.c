@@ -651,3 +651,29 @@ const char *write_midx_file(const char *pack_dir,
 
 	return final_hex;
 }
+
+int close_midx(struct midxed_git *m)
+{
+	int i;
+	if (m->midx_fd < 0)
+		return 0;
+
+	for (i = 0; i < m->num_packs; i++) {
+		if (m->packs[i]) {
+			close_pack(m->packs[i]);
+			free(m->packs[i]);
+			m->packs[i] = NULL;
+		}
+	}
+
+	munmap((void *)m->data, m->data_len);
+	m->data = 0;
+
+	close(m->midx_fd);
+	m->midx_fd = -1;
+
+	free(m->packs);
+	free(m->pack_names);
+
+	return 1;
+}
