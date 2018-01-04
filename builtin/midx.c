@@ -73,7 +73,7 @@ static int midx_read(void)
 static int build_midx_from_packs(
 	const char *pack_dir,
 	const char **pack_names, uint32_t nr_packs,
-	const char **midx_id)
+	const char **midx_id, struct midxed_git *midx)
 {
 	struct packed_git **packs;
 	const char **installed_pack_names;
@@ -86,6 +86,9 @@ static int build_midx_from_packs(
 	struct strbuf pack_path = STRBUF_INIT;
 	int baselen;
 
+	if (midx)
+		nr_total_packs += midx->num_packs;
+
 	if (!nr_total_packs) {
 		*midx_id = NULL;
 		return 0;
@@ -94,12 +97,21 @@ static int build_midx_from_packs(
 	ALLOC_ARRAY(packs, nr_total_packs);
 	ALLOC_ARRAY(installed_pack_names, nr_total_packs);
 
+	if (midx) {
+		for (i = 0; i < midx->num_packs; i++)
+			installed_pack_names[nr_installed_packs++] = midx->pack_names[i];
+		pack_offset = midx->num_packs;
+	}
+
 	strbuf_addstr(&pack_path, pack_dir);
 	strbuf_addch(&pack_path, '/');
 	baselen = pack_path.len;
 	for (i = 0; i < nr_packs; i++) {
 		strbuf_setlen(&pack_path, baselen);
 		strbuf_addstr(&pack_path, pack_names[i]);
+
+		if (midx && contains_pack(midx, pack_names[i]))
+			continue;
 
 		strbuf_strip_suffix(&pack_path, ".pack");
 		strbuf_addstr(&pack_path, ".idx");
@@ -120,12 +132,23 @@ static int build_midx_from_packs(
 	if (!nr_objects || !nr_installed_packs) {
 		FREE_AND_NULL(packs);
 		FREE_AND_NULL(installed_pack_names);
-		*midx_id = NULL;
+
+		if (opts.has_existing)
+			*midx_id = oid_to_hex(&opts.old_midx_oid);
+		else
+			*midx_id = NULL;
+
 		return 0;
 	}
 
+	if (midx)
+		nr_objects += midx->num_objects;
+
 	ALLOC_ARRAY(objects, nr_objects);
 	nr_objects = 0;
+
+	for (i = 0; midx && i < midx->num_objects; i++)
+		nth_midxed_object_entry(midx, i, &objects[nr_objects++]);
 
 	for (i = pack_offset; i < nr_installed_packs; i++) {
 		struct packed_git *p = packs[i];
@@ -184,6 +207,10 @@ static int midx_write(void)
 	const char *midx_id = 0;
 	DIR *dir;
 	struct dirent *de;
+	struct midxed_git *midx = NULL;
+
+	if (opts.has_existing)
+		midx = get_midxed_git(opts.pack_dir, &opts.old_midx_oid);
 
 	dir = opendir(opts.pack_dir);
 	if (!dir) {
@@ -212,7 +239,8 @@ static int midx_write(void)
 	if (!nr_packs)
 		goto cleanup;
 
-	if (build_midx_from_packs(opts.pack_dir, pack_names, nr_packs, &midx_id))
+	if (build_midx_from_packs(opts.pack_dir, pack_names,
+				  nr_packs, &midx_id, midx))
 		die("failed to build MIDX");
 
 	if (midx_id == NULL)

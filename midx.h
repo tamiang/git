@@ -100,6 +100,8 @@ extern const struct object_id *nth_midxed_object_oid(struct object_id *oid,
 						     struct midxed_git *m,
 						     uint32_t n);
 
+extern int contains_pack(struct midxed_git *m, const char *pack_name);
+
 /*
  * Write a single MIDX file storing the given entries for the
  * given list of packfiles. If midx_name is null, then a temp

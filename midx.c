@@ -257,6 +257,29 @@ const struct object_id *nth_midxed_object_oid(struct object_id *oid,
 	return oid;
 }
 
+int contains_pack(struct midxed_git *m, const char *pack_name)
+{
+	uint32_t first = 0, last = m->num_packs;
+
+	while (first < last) {
+		uint32_t mid = first + (last - first) / 2;
+		const char *current;
+		int cmp;
+
+		current = m->pack_names[mid];
+		cmp = strcmp(pack_name, current);
+		if (!cmp)
+			return 1;
+		if (cmp > 0) {
+			first = mid + 1;
+			continue;
+		}
+		last = mid;
+	}
+
+	return 0;
+}
+
 static int midx_sha1_compare(const void *_a, const void *_b)
 {
 	struct pack_midx_entry *a = *(struct pack_midx_entry **)_a;
