@@ -85,6 +85,21 @@ struct midxed_git {
 
 extern struct midxed_git *get_midxed_git(const char *pack_dir, struct object_id *oid);
 
+struct pack_midx_details {
+	uint32_t pack_int_id;
+	off_t offset;
+};
+
+extern struct pack_midx_details *nth_midxed_object_details(struct midxed_git *m,
+							   uint32_t n,
+							   struct pack_midx_details *d);
+extern struct pack_midx_entry *nth_midxed_object_entry(struct midxed_git *m,
+						       uint32_t n,
+						       struct pack_midx_entry *e);
+extern const struct object_id *nth_midxed_object_oid(struct object_id *oid,
+						     struct midxed_git *m,
+						     uint32_t n);
+
 /*
  * Write a single MIDX file storing the given entries for the
  * given list of packfiles. If midx_name is null, then a temp
