@@ -516,8 +516,8 @@ static void show_submodule_header(struct diff_options *o, const char *path,
 	 * Attempt to lookup the commit references, and determine if this is
 	 * a fast forward or fast backwards update.
 	 */
-	*left = lookup_commit_reference(one);
-	*right = lookup_commit_reference(two);
+	*left = lookup_commit_reference(the_repository, one);
+	*right = lookup_commit_reference(the_repository, two);
 
 	/*
 	 * Warn about missing commits in the submodule project, but only if
@@ -1800,9 +1800,9 @@ int merge_submodule(struct object_id *result, const char *path,
 		return 0;
 	}
 
-	if (!(commit_base = lookup_commit_reference(base)) ||
-	    !(commit_a = lookup_commit_reference(a)) ||
-	    !(commit_b = lookup_commit_reference(b))) {
+	if (!(commit_base = lookup_commit_reference(the_repository, base)) ||
+	    !(commit_a = lookup_commit_reference(the_repository, a)) ||
+	    !(commit_b = lookup_commit_reference(the_repository, b))) {
 		MERGE_WARNING(path, "commits not present");
 		return 0;
 	}

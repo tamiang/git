@@ -280,8 +280,8 @@ static int try_difference(const char *arg)
 		if (symmetric) {
 			struct commit_list *exclude;
 			struct commit *a, *b;
-			a = lookup_commit_reference(&start_oid);
-			b = lookup_commit_reference(&end_oid);
+			a = lookup_commit_reference(the_repository, &start_oid);
+			b = lookup_commit_reference(the_repository, &end_oid);
 			exclude = get_merge_bases(a, b);
 			while (exclude) {
 				struct commit *commit = pop_commit(&exclude);
@@ -333,7 +333,7 @@ static int try_parent_shorthands(const char *arg)
 		return 0;
 	}
 
-	commit = lookup_commit_reference(&oid);
+	commit = lookup_commit_reference(the_repository, &oid);
 	if (exclude_parent &&
 	    exclude_parent > commit_list_count(commit->parents)) {
 		*dotdot = '^';
