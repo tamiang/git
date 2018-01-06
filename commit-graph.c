@@ -261,7 +261,7 @@ static int fill_commit_in_graph(struct commit *item, struct commit_graph *g, uin
 	item->graph_pos = pos;
 
 	hashcpy(oid.hash, commit_data);
-	item->tree = lookup_tree(&oid);
+	item->tree = lookup_tree(the_repository, &oid);
 
 	date_high = get_be32(commit_data + g->hash_len + 8) & 0x3;
 	date_low = get_be32(commit_data + g->hash_len + 12);
