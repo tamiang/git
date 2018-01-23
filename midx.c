@@ -231,11 +231,18 @@ struct midxed_git *get_midxed_git(const char *pack_dir, struct object_id *oid)
 static int prepare_midxed_git_head(char *pack_dir, int local)
 {
 	struct midxed_git *m = midxed_git;
-	char *midx_head_path = get_midx_head_filename_dir(pack_dir);
+	struct midxed_git *m_search;
+	char *midx_head_path;
 
 	if (!core_midx)
 		return 1;
 
+	for (m_search = midxed_git; m_search; m_search = m_search->next) {
+		if (!strcmp(pack_dir, m_search->pack_dir))
+			return 1;
+	}
+
+	midx_head_path = get_midx_head_filename_dir(pack_dir);
 	if (midx_head_path) {
 		midxed_git = load_midxed_git_one(midx_head_path, pack_dir);
 		midxed_git->next = m;

@@ -844,7 +844,7 @@ unsigned long approximate_object_count(void)
 		struct packed_git *p;
 		struct midxed_git *m;
 
-		prepare_packed_git(the_repository);
+		prepare_packed_git_internal(the_repository, USE_MIDX);
 		count = 0;
 		for (m = midxed_git; m; m = m->next)
 			count += m->num_objects;
@@ -913,39 +913,87 @@ static void prepare_packed_git_mru(struct repository *r)
 		list_add_tail(&p->mru, &r->objects->packed_git_mru);
 }
 
-static int prepare_midxed_git_run_once = 0;
-void prepare_packed_git_internal(struct repository *r, int use_midx)
+/**
+ * We have a few states that we can be in.
+ *
+ * N: No MIDX or packfiles loaded
+ * P: No MIDX loaded, all packfiles loaded into packed_git
+ * M: MIDX loaded, packfiles not in MIDX loaded into packed_git
+ *
+ * In state M, we load the MIDX first and only load packfiles
+ * that are not in the MIDX.
+ *
+ * We begin in state N.
+ *
+ * We can change states with a call to
+ * prepare_packed_git_internal(use_midx), depending on the value
+ * of use_midx.
+ *
+ * Here are the transition cases:
+ *
+ * - State N, use_midx = 0 -> P
+ *    (only load packfiles, skip MIDX)
+ * - State N, use_midx = 1 -> M
+ *    (load both packfiles and MIDX)
+ * - State M, use_midx = 0 -> P
+ *    (unload MIDX and add packfiles to packed_git)
+ * - State M, use_midx = 1 -> M
+ *    (no-op, unless refresh = 1)
+ * - State P, use_midx = 0 -> P
+ *    (no-op, unless refresh = 1)
+ * - State P, use_midx = 1 -> P
+ *    (no-op, unless refresh = 1)
+ *
+ * We prevent the P -> M transition by setting
+ * prepare_packed_git_midx_state to 0 when transitioning to P.
+ *
+ * Calling reprepare_packed_git_internal(use_midx) signals that we
+ * want to check the ODB for more packfiles or MIDX files, but
+ * should not unload the existing files. However, we do trigger
+ * some transitions. For instance, use_midx = 0 will trigger the
+ * M -> P transition (if we are in state M).
+ */
+static int prepare_packed_git_midx_state = 1;
+static void prepare_packed_git_with_refresh(struct repository *r, int use_midx, int refresh)
 {
 	struct alternate_object_database *alt;
 	char *obj_dir;
 
-	if (prepare_midxed_git_run_once) {
-		if (!use_midx) {
-			prepare_midxed_git_run_once = 0;
-			close_all_midx();
-			reprepare_packed_git(r);
-		}
-		return;
+	if (!use_midx && prepare_packed_git_midx_state) {
+		/*
+		 * If this is the first time called with
+		 * use_midx = 0, then close any MIDX that
+		 * may exist and reprepare the packs.
+		 */
+		close_all_midx();
+		prepare_packed_git_midx_state = 0;
+		refresh = 1;
 	}
 
-	if (r->objects->packed_git_initialized)
+	if (r->objects->packed_git_initialized && !refresh)
 		return;
 
+	r->objects->approximate_object_count_valid = 0;
 	obj_dir = r->objects->objectdir;
-	if (use_midx)
+	if (prepare_packed_git_midx_state) {
 		prepare_midxed_git_objdir(obj_dir, 1);
+		prepare_alt_odb(r);
+		for (alt = r->objects->alt_odb_list; alt; alt = alt->next)
+			prepare_midxed_git_objdir(alt->path, 0);
+	}
 
 	prepare_packed_git_one(r, obj_dir, 1);
 	prepare_alt_odb(r);
-	for (alt = r->objects->alt_odb_list; alt; alt = alt->next) {
-		if (use_midx)
-			prepare_midxed_git_objdir(alt->path, 0);
+	for (alt = r->objects->alt_odb_list; alt; alt = alt->next)
 		prepare_packed_git_one(r, alt->path, 0);
-	}
 	rearrange_packed_git(r);
 	prepare_packed_git_mru(r);
 	r->objects->packed_git_initialized = 1;
-	prepare_midxed_git_run_once = use_midx;
+}
+
+void prepare_packed_git_internal(struct repository *r, int use_midx)
+{
+	prepare_packed_git_with_refresh(r, use_midx, 0);
 }
 
 static void prepare_packed_git(struct repository *r)
@@ -953,16 +1001,19 @@ static void prepare_packed_git(struct repository *r)
 	prepare_packed_git_internal(r, 0);
 }
 
+void reprepare_packed_git_internal(struct repository *r, int use_midx)
+{
+	prepare_packed_git_with_refresh(r, use_midx, 1);
+}
+
 void reprepare_packed_git(struct repository *r)
 {
-	r->objects->approximate_object_count_valid = 0;
-	r->objects->packed_git_initialized = 0;
-	prepare_packed_git(r);
+	prepare_packed_git_with_refresh(r, 0, 1);
 }
 
 struct packed_git *get_packed_git(struct repository *r)
 {
-	prepare_packed_git(r);
+	prepare_packed_git_with_refresh(r, 0, 0);
 	return r->objects->packed_git;
 }
 
@@ -970,6 +1021,7 @@ struct list_head *get_packed_git_mru(struct repository *r)
 {
 	prepare_packed_git(r);
 	return &r->objects->packed_git_mru;
+	prepare_packed_git_with_refresh(r, 0, 1);
 }
 
 unsigned long unpack_object_header_buffer(const unsigned char *buf,
@@ -1909,7 +1961,7 @@ int find_pack_entry(struct repository *r, const struct object_id *oid, struct pa
 	struct list_head *pos;
 
 	if (core_midx) {
-		prepare_packed_git_internal(r, 1);
+		prepare_packed_git_internal(r, USE_MIDX);
 		if (fill_pack_entry_midx(oid, e))
 			return 1;
 	} else
