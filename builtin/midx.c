@@ -114,6 +114,7 @@ static int build_midx_from_packs(
 
 			entry.pack_int_id = i;
 			entry.offset = nth_packed_object_offset(p, j);
+			entry.pack_mtime = p->mtime;
 
 			objects[nr_objects] = entry;
 			nr_objects++;

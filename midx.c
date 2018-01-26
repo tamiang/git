@@ -306,6 +306,9 @@ struct pack_midx_entry *nth_midxed_object_entry(struct midxed_git *m,
 	e->pack_int_id = details.pack_int_id;
 	e->offset = details.offset;
 
+	/* Use zero for mtime so this entry is "older" than new duplicates */
+	e->pack_mtime = 0;
+
 	return e;
 }
 
@@ -462,7 +465,17 @@ static int midx_oid_compare(const void *_a, const void *_b)
 {
 	struct pack_midx_entry *a = *(struct pack_midx_entry **)_a;
 	struct pack_midx_entry *b = *(struct pack_midx_entry **)_b;
-	return oidcmp(&a->oid, &b->oid);
+	int cmp = oidcmp(&a->oid, &b->oid);
+
+	if (cmp)
+		return cmp;
+
+	if (a->pack_mtime > b->pack_mtime)
+		return -1;
+	else if (a->pack_mtime < b->pack_mtime)
+		return 1;
+
+	return a->pack_int_id - b->pack_int_id;
 }
 
 static void write_midx_chunk_packlookup(
