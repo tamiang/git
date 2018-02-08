@@ -42,6 +42,10 @@ With the `--delete-expired` option, delete the graph files in the pack
 directory that are not referred to by the graph-latest file. To avoid race
 conditions, do not delete the file previously referred to by the
 graph-latest file if it is updated by the `--set-latest` option.
++
+With the `--stdin-packs` option, generate the new commit graph by
+walking objects only in the specified packfiles and any commits in
+the existing graph-head.
 
 'read'::
 
@@ -66,6 +70,13 @@ $ git commit-graph write
 +
 ------------------------------------------------
 $ git commit-graph write --set-latest --delete-expired
+------------------------------------------------
+
+* Write a graph file, extending the current graph file using commits
+* in <pack-index>, update graph-latest, and delete stale graph files.
++
+------------------------------------------------
+$ echo <pack-index> | git commit-graph write --set-latest --delete-expired --stdin-packs
 ------------------------------------------------
 
 * Read basic information from a graph file.

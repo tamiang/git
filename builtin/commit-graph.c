@@ -8,7 +8,7 @@
 static char const * const builtin_commit_graph_usage[] = {
 	N_("git commit-graph [--object-dir <objdir>]"),
 	N_("git commit-graph read [--object-dir <objdir>] [--file=<hash>]"),
-	N_("git commit-graph write [--object-dir <objdir>] [--set-latest] [--delete-expired]"),
+	N_("git commit-graph write [--object-dir <objdir>] [--set-latest] [--delete-expired] [--stdin-packs]"),
 	NULL
 };
 
@@ -18,7 +18,7 @@ static const char * const builtin_commit_graph_read_usage[] = {
 };
 
 static const char * const builtin_commit_graph_write_usage[] = {
-	N_("git commit-graph write [--object-dir <objdir>] [--set-latest] [--delete-expired]"),
+	N_("git commit-graph write [--object-dir <objdir>] [--set-latest] [--delete-expired] [--stdin-packs]"),
 	NULL
 };
 
@@ -27,6 +27,7 @@ static struct opts_commit_graph {
 	const char *graph_file;
 	int set_latest;
 	int delete_expired;
+	int stdin_packs;
 } opts;
 
 static int graph_read(int argc, const char **argv)
@@ -149,6 +150,11 @@ static int graph_write(int argc, const char **argv)
 {
 	char *graph_name;
 	char *old_graph_name;
+	const char **pack_indexes = NULL;
+	int nr_packs = 0;
+	const char **lines = NULL;
+	int nr_lines = 0;
+	int alloc_lines = 0;
 
 	static struct option builtin_commit_graph_write_options[] = {
 		{ OPTION_STRING, 'o', "object-dir", &opts.obj_dir,
@@ -158,6 +164,8 @@ static int graph_write(int argc, const char **argv)
 			N_("update graph-head to written graph file")),
 		OPT_BOOL('d', "delete-expired", &opts.delete_expired,
 			N_("delete expired head graph file")),
+		OPT_BOOL('s', "stdin-packs", &opts.stdin_packs,
+			N_("only scan packfiles listed by stdin")),
 		OPT_END(),
 	};
 
@@ -170,7 +178,25 @@ static int graph_write(int argc, const char **argv)
 
 	old_graph_name = get_graph_latest_contents(opts.obj_dir);
 
-	graph_name = write_commit_graph(opts.obj_dir);
+	if (opts.stdin_packs) {
+		struct strbuf buf = STRBUF_INIT;
+		nr_lines = 0;
+		alloc_lines = 128;
+		ALLOC_ARRAY(lines, alloc_lines);
+
+		while (strbuf_getline(&buf, stdin) != EOF) {
+			ALLOC_GROW(lines, nr_lines + 1, alloc_lines);
+			lines[nr_lines++] = buf.buf;
+			strbuf_detach(&buf, NULL);
+		}
+
+		pack_indexes = lines;
+		nr_packs = nr_lines;
+	}
+
+	graph_name = write_commit_graph(opts.obj_dir,
+					pack_indexes,
+					nr_packs);
 
 	if (graph_name) {
 		if (opts.set_latest)

@@ -554,7 +554,9 @@ static void close_reachable(struct packed_oid_list *oids)
 	}
 }
 
-char *write_commit_graph(const char *obj_dir)
+char *write_commit_graph(const char *obj_dir,
+			 const char **pack_indexes,
+			 int nr_packs)
 {
 	struct packed_oid_list oids;
 	struct packed_commit_list commits;
@@ -579,7 +581,27 @@ char *write_commit_graph(const char *obj_dir)
 		oids.alloc = 1024;
 	ALLOC_ARRAY(oids.list, oids.alloc);
 
-	for_each_packed_object(if_packed_commit_add_to_list, &oids, 0);
+	if (pack_indexes) {
+		struct strbuf packname = STRBUF_INIT;
+		int dirlen;
+		strbuf_addf(&packname, "%s/pack/", obj_dir);
+		dirlen = packname.len;
+		for (i = 0; i < nr_packs; i++) {
+			struct packed_git *p;
+			strbuf_setlen(&packname, dirlen);
+			strbuf_addstr(&packname, pack_indexes[i]);
+			p = add_packed_git(packname.buf, packname.len, 1);
+			if (!p)
+				die("error adding pack %s", packname.buf);
+			if (open_pack_index(p))
+				die("error opening index for %s", packname.buf);
+			for_each_object_in_pack(p, if_packed_commit_add_to_list, &oids);
+			close_pack(p);
+		}
+	}
+	else
+		for_each_packed_object(if_packed_commit_add_to_list, &oids, 0);
+
 	close_reachable(&oids);
 
 	QSORT(oids.list, oids.nr, commit_compare);

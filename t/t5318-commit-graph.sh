@@ -180,6 +180,22 @@ test_expect_success 'write graph with nothing new' '
 graph_git_behavior 'cleared graph, commit 8 vs merge 1' commits/8 merge/1
 graph_git_behavior 'cleared graph, commit 8 vs merge 2' commits/8 merge/2
 
+test_expect_success 'build graph from latest pack with closure' '
+	rm $objdir/info/graph-latest &&
+	graph5=$(cat new-idx | git commit-graph write --set-latest --delete-expired --stdin-packs) &&
+	test_path_is_file $objdir/info/$graph5 &&
+	test_path_is_missing $objdir/info/$graph4 &&
+	test_path_is_file $objdir/info/graph-latest &&
+	printf $graph5 >expect &&
+	test_cmp expect $objdir/info/graph-latest &&
+	git commit-graph read --file=$graph5 >output &&
+	graph_read_expect "9" "large_edges" &&
+	test_cmp expect output
+'
+
+graph_git_behavior 'graph from pack, commit 8 vs merge 1' commits/8 merge/1
+graph_git_behavior 'graph from pack, commit 8 vs merge 2' commits/8 merge/2
+
 test_expect_success 'setup bare repo' '
 	cd .. &&
 	git clone --bare --no-local full bare &&
