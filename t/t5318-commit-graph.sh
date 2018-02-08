@@ -8,6 +8,7 @@ test_expect_success 'setup full repo' '
 	mkdir full &&
 	cd full &&
 	git init &&
+	git config core.commitGraph true &&
 	objdir=".git/objects"
 '
 
@@ -24,6 +25,27 @@ test_expect_success 'create commits and repack' '
 	done &&
 	git repack
 '
+
+graph_git_two_modes() {
+	git -c core.graph=true $1 >output
+	git -c core.graph=false $1 >expect
+	test_cmp output expect
+}
+
+graph_git_behavior() {
+	MSG=$1
+	BRANCH=$2
+	COMPARE=$3
+	test_expect_success "check normal git operations: $MSG" '
+		graph_git_two_modes "log --oneline $BRANCH" &&
+		graph_git_two_modes "log --topo-order $BRANCH" &&
+		graph_git_two_modes "log --graph $COMPARE..$BRANCH" &&
+		graph_git_two_modes "branch -vv" &&
+		graph_git_two_modes "merge-base -a $BRANCH $COMPARE"
+	'
+}
+
+graph_git_behavior 'no graph' commits/3 commits/1
 
 graph_read_expect() {
 	OPTIONAL=""
@@ -48,6 +70,8 @@ test_expect_success 'write graph' '
 	graph_read_expect "3" &&
 	test_cmp expect output
 '
+
+graph_git_behavior 'graph exists, no head' commits/3 commits/1
 
 test_expect_success 'Add more commits' '
 	git reset --hard commits/1 &&
@@ -84,7 +108,6 @@ test_expect_success 'Add more commits' '
 # |___/____/
 # 1
 
-
 test_expect_success 'write graph with merges' '
 	graph2=$(git commit-graph write --set-latest)&&
 	test_path_is_file $objdir/info/$graph2 &&
@@ -95,6 +118,10 @@ test_expect_success 'write graph with merges' '
 	graph_read_expect "10" "large_edges" &&
 	test_cmp expect output
 '
+
+graph_git_behavior 'merge 1 vs 2' merge/1 merge/2
+graph_git_behavior 'merge 1 vs 3' merge/1 merge/3
+graph_git_behavior 'merge 2 vs 3' merge/2 merge/3
 
 test_expect_success 'Add one more commit' '
 	test_commit 8 &&
@@ -116,6 +143,9 @@ test_expect_success 'Add one more commit' '
 # |___/____/
 # 1
 
+graph_git_behavior 'mixed mode, commit 8 vs merge 1' commits/8 merge/1
+graph_git_behavior 'mixed mode, commit 8 vs merge 2' commits/8 merge/2
+
 test_expect_success 'write graph with new commit' '
 	graph3=$(git commit-graph write --set-latest --delete-expired) &&
 	test_path_is_file $objdir/info/$graph3 &&
@@ -128,6 +158,9 @@ test_expect_success 'write graph with new commit' '
 	graph_read_expect "11" "large_edges" &&
 	test_cmp expect output
 '
+
+graph_git_behavior 'full graph, commit 8 vs merge 1' commits/8 merge/1
+graph_git_behavior 'full graph, commit 8 vs merge 2' commits/8 merge/2
 
 test_expect_success 'write graph with nothing new' '
 	graph4=$(git commit-graph write --set-latest --delete-expired) &&
@@ -144,12 +177,19 @@ test_expect_success 'write graph with nothing new' '
 	test_cmp expect output
 '
 
+graph_git_behavior 'cleared graph, commit 8 vs merge 1' commits/8 merge/1
+graph_git_behavior 'cleared graph, commit 8 vs merge 2' commits/8 merge/2
+
 test_expect_success 'setup bare repo' '
 	cd .. &&
 	git clone --bare --no-local full bare &&
 	cd bare &&
+	git config core.commitGraph true &&
 	baredir="./objects"
 '
+
+graph_git_behavior 'bare repo, commit 8 vs merge 1' commits/8 merge/1
+graph_git_behavior 'bare repo, commit 8 vs merge 2' commits/8 merge/2
 
 test_expect_success 'write graph in bare repo' '
 	graphbare=$(git commit-graph write --set-latest) &&
@@ -161,6 +201,9 @@ test_expect_success 'write graph in bare repo' '
 	graph_read_expect "11" "large_edges" &&
 	test_cmp expect output
 '
+
+graph_git_behavior 'bare repo with graph, commit 8 vs merge 1' commits/8 merge/1
+graph_git_behavior 'bare repo with graph, commit 8 vs merge 2' commits/8 merge/2
 
 test_done
 

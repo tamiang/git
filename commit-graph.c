@@ -38,6 +38,9 @@
 #define GRAPH_MIN_SIZE (GRAPH_CHUNKLOOKUP_SIZE + GRAPH_FANOUT_SIZE + \
 			GRAPH_OID_LEN + 8)
 
+/* global storage */
+struct commit_graph *commit_graph = NULL;
+
 char *get_graph_latest_filename(const char *obj_dir)
 {
 	struct strbuf fname = STRBUF_INIT;
@@ -182,6 +185,150 @@ struct commit_graph *load_commit_graph_one(const char *graph_file)
 	}
 
 	return graph;
+}
+
+static void prepare_commit_graph_one(const char *obj_dir)
+{
+	struct strbuf graph_file = STRBUF_INIT;
+	char *graph_name;
+
+	if (commit_graph)
+		return;
+
+	graph_name = get_graph_latest_contents(obj_dir);
+
+	if (!graph_name)
+		return;
+
+	strbuf_addf(&graph_file, "%s/info/%s", obj_dir, graph_name);
+
+	commit_graph = load_commit_graph_one(graph_file.buf);
+
+	FREE_AND_NULL(graph_name);
+	strbuf_release(&graph_file);
+}
+
+static int prepare_commit_graph_run_once = 0;
+void prepare_commit_graph(void)
+{
+	struct alternate_object_database *alt;
+	char *obj_dir;
+
+	if (prepare_commit_graph_run_once)
+		return;
+	prepare_commit_graph_run_once = 1;
+
+	obj_dir = get_object_directory();
+	prepare_commit_graph_one(obj_dir);
+	prepare_alt_odb();
+	for (alt = alt_odb_list; !commit_graph && alt; alt = alt->next)
+		prepare_commit_graph_one(alt->path);
+}
+
+static void close_commit_graph(void)
+{
+	if (!commit_graph)
+		return;
+
+	if (commit_graph->graph_fd >= 0) {
+		munmap((void *)commit_graph->data, commit_graph->data_len);
+		commit_graph->data = NULL;
+		close(commit_graph->graph_fd);
+	}
+
+	FREE_AND_NULL(commit_graph);
+}
+
+static int bsearch_graph(struct commit_graph *g, struct object_id *oid, uint32_t *pos)
+{
+	return bsearch_hash(oid->hash, g->chunk_oid_fanout,
+			    g->chunk_oid_lookup, g->hash_len, pos);
+}
+
+static struct commit_list **insert_parent_or_die(struct commit_graph *g,
+						 uint64_t pos,
+						 struct commit_list **pptr)
+{
+	struct commit *c;
+	struct object_id oid;
+	hashcpy(oid.hash, g->chunk_oid_lookup + g->hash_len * pos);
+	c = lookup_commit(&oid);
+	if (!c)
+		die("could not find commit %s", oid_to_hex(&oid));
+	c->graph_pos = pos;
+	return &commit_list_insert(c, pptr)->next;
+}
+
+static int fill_commit_in_graph(struct commit *item, struct commit_graph *g, uint32_t pos)
+{
+	struct object_id oid;
+	uint32_t new_parent_pos;
+	uint32_t *parent_data_ptr;
+	uint64_t date_low, date_high;
+	struct commit_list **pptr;
+	const unsigned char *commit_data = g->chunk_commit_data + (g->hash_len + 16) * pos;
+
+	item->object.parsed = 1;
+	item->graph_pos = pos;
+
+	hashcpy(oid.hash, commit_data);
+	item->tree = lookup_tree(&oid);
+
+	date_high = ntohl(*(uint32_t*)(commit_data + g->hash_len + 8)) & 0x3;
+	date_low = ntohl(*(uint32_t*)(commit_data + g->hash_len + 12));
+	item->date = (timestamp_t)((date_high << 32) | date_low);
+
+	pptr = &item->parents;
+
+	new_parent_pos = ntohl(*(uint32_t*)(commit_data + g->hash_len));
+	if (new_parent_pos == GRAPH_PARENT_NONE)
+		return 1;
+	pptr = insert_parent_or_die(g, new_parent_pos, pptr);
+
+	new_parent_pos = ntohl(*(uint32_t*)(commit_data + g->hash_len + 4));
+	if (new_parent_pos == GRAPH_PARENT_NONE)
+		return 1;
+	if (!(new_parent_pos & GRAPH_LARGE_EDGES_NEEDED)) {
+		pptr = insert_parent_or_die(g, new_parent_pos, pptr);
+		return 1;
+	}
+
+	parent_data_ptr = (uint32_t*)(g->chunk_large_edges +
+			  4 * (uint64_t)(new_parent_pos & GRAPH_EDGE_LAST_MASK));
+	do {
+		new_parent_pos = ntohl(*parent_data_ptr);
+		pptr = insert_parent_or_die(g,
+					    new_parent_pos & GRAPH_EDGE_LAST_MASK,
+					    pptr);
+		parent_data_ptr++;
+	} while (!(new_parent_pos & GRAPH_LAST_EDGE));
+
+	return 1;
+}
+
+int parse_commit_in_graph(struct commit *item)
+{
+	if (!core_commit_graph)
+		return 0;
+	if (item->object.parsed)
+		return 1;
+
+	prepare_commit_graph();
+	if (commit_graph) {
+		uint32_t pos;
+		int found;
+		if (item->graph_pos != COMMIT_NOT_FROM_GRAPH) {
+			pos = item->graph_pos;
+			found = 1;
+		} else {
+			found = bsearch_graph(commit_graph, &(item->object.oid), &pos);
+		}
+
+		if (found)
+			return fill_commit_in_graph(item, commit_graph, pos);
+	}
+
+	return 0;
 }
 
 static void write_graph_chunk_fanout(struct sha1file *f,
@@ -525,6 +672,7 @@ char *write_commit_graph(const char *obj_dir)
 	graph_name = strbuf_detach(&graph_file, NULL);
 	strbuf_addf(&graph_file, "%s/info/%s", obj_dir, graph_name);
 
+	close_commit_graph();
 	if (rename(tmp_file.buf, graph_file.buf))
 		die("failed to rename %s to %s", tmp_file.buf, graph_file.buf);
 
