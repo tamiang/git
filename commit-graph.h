@@ -41,7 +41,9 @@ extern void prepare_commit_graph(void);
 
 extern char *write_commit_graph(const char *obj_dir,
 				const char **pack_indexes,
-				int nr_packs);
+				int nr_packs,
+				const char **commit_hex,
+				int nr_commits);
 
 #endif
 

@@ -45,7 +45,12 @@ graph-latest file if it is updated by the `--set-latest` option.
 +
 With the `--stdin-packs` option, generate the new commit graph by
 walking objects only in the specified packfiles and any commits in
-the existing graph-head.
+the existing graph-head. (Cannot be combined with --stdin-commits.)
++
+With the `--stdin-commits` option, generate the new commit graph by
+walking commits starting at the commits specified in stdin as a list
+of OIDs in hex, one OID per line. (Cannot be combined with
+--stdin-packs.)
 
 'read'::
 
@@ -77,6 +82,14 @@ $ git commit-graph write --set-latest --delete-expired
 +
 ------------------------------------------------
 $ echo <pack-index> | git commit-graph write --set-latest --delete-expired --stdin-packs
+------------------------------------------------
+
+* Write a graph file, extending the current graph file using all
+* commits reachable from refs/heads/*, update graph-latest, and delete
+* stale graph files.
++
+------------------------------------------------
+$ git show-ref -s | git commit-graph write --set-latest --delete-expired --stdin-commits
 ------------------------------------------------
 
 * Read basic information from a graph file.

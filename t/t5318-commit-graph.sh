@@ -196,6 +196,25 @@ test_expect_success 'build graph from latest pack with closure' '
 graph_git_behavior 'graph from pack, commit 8 vs merge 1' commits/8 merge/1
 graph_git_behavior 'graph from pack, commit 8 vs merge 2' commits/8 merge/2
 
+test_expect_success 'build graph from commits with closure' '
+	git tag -a -m "merge" tag/merge merge/2 &&
+	git rev-parse tag/merge >commits-in &&
+	git rev-parse merge/1 >>commits-in &&
+	rm $objdir/info/graph-latest &&
+	graph6=$(cat commits-in | git commit-graph write --set-latest --delete-expired --stdin-commits) &&
+	test_path_is_file $objdir/info/$graph6 &&
+	test_path_is_missing $objdir/info/$graph5 &&
+	test_path_is_file $objdir/info/graph-latest &&
+	printf $graph6 >expect &&
+	test_cmp expect $objdir/info/graph-latest &&
+	git commit-graph read --file=$graph6 >output &&
+	graph_read_expect "6" &&
+	test_cmp expect output
+'
+
+graph_git_behavior 'graph from commits, commit 8 vs merge 1' commits/8 merge/1
+graph_git_behavior 'graph from commits, commit 8 vs merge 2' commits/8 merge/2
+
 test_expect_success 'setup bare repo' '
 	cd .. &&
 	git clone --bare --no-local full bare &&

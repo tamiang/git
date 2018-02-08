@@ -556,7 +556,9 @@ static void close_reachable(struct packed_oid_list *oids)
 
 char *write_commit_graph(const char *obj_dir,
 			 const char **pack_indexes,
-			 int nr_packs)
+			 int nr_packs,
+			 const char **commit_hex,
+			 int nr_commits)
 {
 	struct packed_oid_list oids;
 	struct packed_commit_list commits;
@@ -599,7 +601,27 @@ char *write_commit_graph(const char *obj_dir,
 			close_pack(p);
 		}
 	}
-	else
+
+	if (commit_hex) {
+		for (i = 0; i < nr_commits; i++) {
+			const char *end;
+			struct object_id oid;
+			struct commit *result;
+
+			if (commit_hex[i] && parse_oid_hex(commit_hex[i], &oid, &end))
+				continue;
+
+			result = lookup_commit_reference_gently(&oid, 1);
+
+			if (result) {
+				ALLOC_GROW(oids.list, oids.nr + 1, oids.alloc);
+				oidcpy(&oids.list[oids.nr], &(result->object.oid));
+				oids.nr++;
+			}
+		}
+	}
+
+	if (!pack_indexes && !commit_hex)
 		for_each_packed_object(if_packed_commit_add_to_list, &oids, 0);
 
 	close_reachable(&oids);

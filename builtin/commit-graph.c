@@ -8,7 +8,7 @@
 static char const * const builtin_commit_graph_usage[] = {
 	N_("git commit-graph [--object-dir <objdir>]"),
 	N_("git commit-graph read [--object-dir <objdir>] [--file=<hash>]"),
-	N_("git commit-graph write [--object-dir <objdir>] [--set-latest] [--delete-expired] [--stdin-packs]"),
+	N_("git commit-graph write [--object-dir <objdir>] [--set-latest] [--delete-expired] [--stdin-packs|--stdin-commits]"),
 	NULL
 };
 
@@ -18,7 +18,7 @@ static const char * const builtin_commit_graph_read_usage[] = {
 };
 
 static const char * const builtin_commit_graph_write_usage[] = {
-	N_("git commit-graph write [--object-dir <objdir>] [--set-latest] [--delete-expired] [--stdin-packs]"),
+	N_("git commit-graph write [--object-dir <objdir>] [--set-latest] [--delete-expired] [--stdin-packs|--stdin-commits]"),
 	NULL
 };
 
@@ -28,6 +28,7 @@ static struct opts_commit_graph {
 	int set_latest;
 	int delete_expired;
 	int stdin_packs;
+	int stdin_commits;
 } opts;
 
 static int graph_read(int argc, const char **argv)
@@ -152,6 +153,8 @@ static int graph_write(int argc, const char **argv)
 	char *old_graph_name;
 	const char **pack_indexes = NULL;
 	int nr_packs = 0;
+	const char **commit_hex = NULL;
+	int nr_commits = 0;
 	const char **lines = NULL;
 	int nr_lines = 0;
 	int alloc_lines = 0;
@@ -166,6 +169,8 @@ static int graph_write(int argc, const char **argv)
 			N_("delete expired head graph file")),
 		OPT_BOOL('s', "stdin-packs", &opts.stdin_packs,
 			N_("only scan packfiles listed by stdin")),
+		OPT_BOOL('C', "stdin-commits", &opts.stdin_commits,
+			N_("start walk at commits listed by stdin")),
 		OPT_END(),
 	};
 
@@ -173,12 +178,14 @@ static int graph_write(int argc, const char **argv)
 			     builtin_commit_graph_write_options,
 			     builtin_commit_graph_write_usage, 0);
 
+	if (opts.stdin_packs && opts.stdin_commits)
+		die(_("cannot use both --stdin-commits and --stdin-packs"));
 	if (!opts.obj_dir)
 		opts.obj_dir = get_object_directory();
 
 	old_graph_name = get_graph_latest_contents(opts.obj_dir);
 
-	if (opts.stdin_packs) {
+	if (opts.stdin_packs || opts.stdin_commits) {
 		struct strbuf buf = STRBUF_INIT;
 		nr_lines = 0;
 		alloc_lines = 128;
@@ -190,13 +197,21 @@ static int graph_write(int argc, const char **argv)
 			strbuf_detach(&buf, NULL);
 		}
 
-		pack_indexes = lines;
-		nr_packs = nr_lines;
+		if (opts.stdin_packs) {
+			pack_indexes = lines;
+			nr_packs = nr_lines;
+		}
+		if (opts.stdin_commits) {
+			commit_hex = lines;
+			nr_commits = nr_lines;
+		}
 	}
 
 	graph_name = write_commit_graph(opts.obj_dir,
 					pack_indexes,
-					nr_packs);
+					nr_packs,
+					commit_hex,
+					nr_commits);
 
 	if (graph_name) {
 		if (opts.set_latest)
