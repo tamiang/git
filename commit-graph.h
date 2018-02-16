@@ -3,6 +3,8 @@
 
 #include "git-compat-util.h"
 
+extern char *get_graph_latest_filename(const char *obj_dir);
+
 struct commit_graph {
 	int graph_fd;
 

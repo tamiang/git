@@ -12,7 +12,8 @@ test_expect_success 'setup full repo' '
 '
 
 test_expect_success 'write graph with no packs' '
-	git commit-graph write --object-dir .
+	git commit-graph write --object-dir . &&
+	test_path_is_missing info/graph-latest
 '
 
 test_expect_success 'create commits and repack' '
@@ -42,6 +43,7 @@ graph_read_expect() {
 test_expect_success 'write graph' '
 	graph1=$(git commit-graph write) &&
 	test_path_is_file $objdir/info/$graph1 &&
+	test_path_is_missing $objdir/info/graph-latest &&
 	git commit-graph read --file=$graph1 >output &&
 	graph_read_expect "3" &&
 	test_cmp expect output
@@ -84,8 +86,11 @@ test_expect_success 'Add more commits' '
 
 
 test_expect_success 'write graph with merges' '
-	graph2=$(git commit-graph write)&&
+	graph2=$(git commit-graph write --set-latest)&&
 	test_path_is_file $objdir/info/$graph2 &&
+	test_path_is_file $objdir/info/graph-latest &&
+	printf $graph2 >expect &&
+	test_cmp expect $objdir/info/graph-latest &&
 	git commit-graph read --file=$graph2 >output &&
 	graph_read_expect "10" "large_edges" &&
 	test_cmp expect output
@@ -112,19 +117,25 @@ test_expect_success 'Add one more commit' '
 # 1
 
 test_expect_success 'write graph with new commit' '
-	graph3=$(git commit-graph write) &&
+	graph3=$(git commit-graph write --set-latest) &&
 	test_path_is_file $objdir/info/$graph3 &&
+	test_path_is_file $objdir/info/graph-latest &&
+	printf $graph3 >expect &&
+	test_cmp expect $objdir/info/graph-latest &&
 	git commit-graph read --file=$graph3 >output &&
 	graph_read_expect "11" "large_edges" &&
 	test_cmp expect output
 '
 
 test_expect_success 'write graph with nothing new' '
-	graph4=$(git commit-graph write) &&
+	graph4=$(git commit-graph write --set-latest) &&
 	test_path_is_file $objdir/info/$graph4 &&
 	printf $graph3 >expect &&
 	printf $graph4 >output &&
 	test_cmp expect output &&
+	test_path_is_file $objdir/info/graph-latest &&
+	printf $graph4 >expect &&
+	test_cmp expect $objdir/info/graph-latest &&
 	git commit-graph read --file=$graph4 >output &&
 	graph_read_expect "11" "large_edges" &&
 	test_cmp expect output
@@ -138,8 +149,11 @@ test_expect_success 'setup bare repo' '
 '
 
 test_expect_success 'write graph in bare repo' '
-	graphbare=$(git commit-graph write) &&
+	graphbare=$(git commit-graph write --set-latest) &&
 	test_path_is_file $baredir/info/$graphbare &&
+	test_path_is_file $baredir/info/graph-latest &&
+	printf $graphbare >expect &&
+	test_cmp expect $baredir/info/graph-latest &&
 	git commit-graph read --file=$graphbare >output &&
 	graph_read_expect "11" "large_edges" &&
 	test_cmp expect output

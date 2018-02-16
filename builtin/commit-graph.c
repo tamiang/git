@@ -8,7 +8,7 @@
 static char const * const builtin_commit_graph_usage[] = {
 	N_("git commit-graph [--object-dir <objdir>]"),
 	N_("git commit-graph read [--object-dir <objdir>] [--file=<hash>]"),
-	N_("git commit-graph write [--object-dir <objdir>]"),
+	N_("git commit-graph write [--object-dir <objdir>] [--set-latest]"),
 	NULL
 };
 
@@ -18,13 +18,14 @@ static const char * const builtin_commit_graph_read_usage[] = {
 };
 
 static const char * const builtin_commit_graph_write_usage[] = {
-	N_("git commit-graph write [--object-dir <objdir>]"),
+	N_("git commit-graph write [--object-dir <objdir>] [--set-latest]"),
 	NULL
 };
 
 static struct opts_commit_graph {
 	const char *obj_dir;
 	const char *graph_file;
+	int set_latest;
 } opts;
 
 static int graph_read(int argc, const char **argv)
@@ -81,6 +82,22 @@ static int graph_read(int argc, const char **argv)
 	return 0;
 }
 
+static void set_latest_file(const char *obj_dir, const char *graph_file)
+{
+	int fd;
+	struct lock_file lk = LOCK_INIT;
+	char *latest_fname = get_graph_latest_filename(obj_dir);
+
+	fd = hold_lock_file_for_update(&lk, latest_fname, LOCK_DIE_ON_ERROR);
+	FREE_AND_NULL(latest_fname);
+
+	if (fd < 0)
+		die_errno("unable to open graph-head");
+
+	write_in_full(fd, graph_file, strlen(graph_file));
+	commit_lock_file(&lk);
+}
+
 static int graph_write(int argc, const char **argv)
 {
 	char *graph_name;
@@ -89,6 +106,8 @@ static int graph_write(int argc, const char **argv)
 		{ OPTION_STRING, 'o', "object-dir", &opts.obj_dir,
 			N_("dir"),
 			N_("The object directory to store the graph") },
+		OPT_BOOL('u', "set-latest", &opts.set_latest,
+			N_("update graph-head to written graph file")),
 		OPT_END(),
 	};
 
@@ -102,6 +121,9 @@ static int graph_write(int argc, const char **argv)
 	graph_name = write_commit_graph(opts.obj_dir);
 
 	if (graph_name) {
+		if (opts.set_latest)
+			set_latest_file(opts.obj_dir, graph_name);
+
 		printf("%s\n", graph_name);
 		FREE_AND_NULL(graph_name);
 	}

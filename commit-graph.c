@@ -38,6 +38,13 @@
 #define GRAPH_MIN_SIZE (GRAPH_CHUNKLOOKUP_SIZE + GRAPH_FANOUT_SIZE + \
 			GRAPH_OID_LEN + 8)
 
+char *get_graph_latest_filename(const char *obj_dir)
+{
+	struct strbuf fname = STRBUF_INIT;
+	strbuf_addf(&fname, "%s/info/graph-latest", obj_dir);
+	return strbuf_detach(&fname, 0);
+}
+
 static struct commit_graph *alloc_commit_graph(void)
 {
 	struct commit_graph *g = xmalloc(sizeof(*g));
