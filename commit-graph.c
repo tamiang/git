@@ -45,6 +45,29 @@ char *get_graph_latest_filename(const char *obj_dir)
 	return strbuf_detach(&fname, 0);
 }
 
+char *get_graph_latest_contents(const char *obj_dir)
+{
+	struct strbuf graph_file = STRBUF_INIT;
+	char *fname;
+	FILE *f;
+	char buf[64];
+
+	fname = get_graph_latest_filename(obj_dir);
+	f = fopen(fname, "r");
+	FREE_AND_NULL(fname);
+
+	if (!f)
+		return 0;
+
+	while (!feof(f)) {
+		if (fgets(buf, sizeof(buf), f))
+			strbuf_addstr(&graph_file, buf);
+	}
+
+	fclose(f);
+	return strbuf_detach(&graph_file, NULL);
+}
+
 static struct commit_graph *alloc_commit_graph(void)
 {
 	struct commit_graph *g = xmalloc(sizeof(*g));

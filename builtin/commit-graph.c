@@ -8,7 +8,7 @@
 static char const * const builtin_commit_graph_usage[] = {
 	N_("git commit-graph [--object-dir <objdir>]"),
 	N_("git commit-graph read [--object-dir <objdir>] [--file=<hash>]"),
-	N_("git commit-graph write [--object-dir <objdir>] [--set-latest]"),
+	N_("git commit-graph write [--object-dir <objdir>] [--set-latest] [--delete-expired]"),
 	NULL
 };
 
@@ -18,7 +18,7 @@ static const char * const builtin_commit_graph_read_usage[] = {
 };
 
 static const char * const builtin_commit_graph_write_usage[] = {
-	N_("git commit-graph write [--object-dir <objdir>] [--set-latest]"),
+	N_("git commit-graph write [--object-dir <objdir>] [--set-latest] [--delete-expired]"),
 	NULL
 };
 
@@ -26,6 +26,7 @@ static struct opts_commit_graph {
 	const char *obj_dir;
 	const char *graph_file;
 	int set_latest;
+	int delete_expired;
 } opts;
 
 static int graph_read(int argc, const char **argv)
@@ -98,9 +99,56 @@ static void set_latest_file(const char *obj_dir, const char *graph_file)
 	commit_lock_file(&lk);
 }
 
+/*
+ * To avoid race conditions and deleting graph files that are being
+ * used by other processes, look inside a pack directory for all files
+ * of the form "graph-<hash>.graph" that do not match the old or new
+ * graph hashes and delete them.
+ */
+static void do_delete_expired(const char *obj_dir,
+			      const char *old_graph_name,
+			      const char *new_graph_name)
+{
+	DIR *dir;
+	struct dirent *de;
+	int dirnamelen;
+	struct strbuf path = STRBUF_INIT;
+
+	strbuf_addf(&path, "%s/info", obj_dir);
+	dir = opendir(path.buf);
+	if (!dir) {
+		if (errno != ENOENT)
+			error_errno("unable to open object pack directory: %s",
+				    obj_dir);
+		return;
+	}
+
+	strbuf_addch(&path, '/');
+	dirnamelen = path.len;
+	while ((de = readdir(dir)) != NULL) {
+		size_t base_len;
+
+		if (is_dot_or_dotdot(de->d_name))
+			continue;
+
+		strbuf_setlen(&path, dirnamelen);
+		strbuf_addstr(&path, de->d_name);
+
+		base_len = path.len;
+		if (strip_suffix_mem(path.buf, &base_len, ".graph") &&
+		    strcmp(new_graph_name, de->d_name) &&
+		    (!old_graph_name || strcmp(old_graph_name, de->d_name)) &&
+		    remove_path(path.buf))
+			die("failed to remove path %s", path.buf);
+	}
+
+	strbuf_release(&path);
+}
+
 static int graph_write(int argc, const char **argv)
 {
 	char *graph_name;
+	char *old_graph_name;
 
 	static struct option builtin_commit_graph_write_options[] = {
 		{ OPTION_STRING, 'o', "object-dir", &opts.obj_dir,
@@ -108,6 +156,8 @@ static int graph_write(int argc, const char **argv)
 			N_("The object directory to store the graph") },
 		OPT_BOOL('u', "set-latest", &opts.set_latest,
 			N_("update graph-head to written graph file")),
+		OPT_BOOL('d', "delete-expired", &opts.delete_expired,
+			N_("delete expired head graph file")),
 		OPT_END(),
 	};
 
@@ -118,11 +168,18 @@ static int graph_write(int argc, const char **argv)
 	if (!opts.obj_dir)
 		opts.obj_dir = get_object_directory();
 
+	old_graph_name = get_graph_latest_contents(opts.obj_dir);
+
 	graph_name = write_commit_graph(opts.obj_dir);
 
 	if (graph_name) {
 		if (opts.set_latest)
 			set_latest_file(opts.obj_dir, graph_name);
+
+		if (opts.delete_expired)
+			do_delete_expired(opts.obj_dir,
+					  old_graph_name,
+					  graph_name);
 
 		printf("%s\n", graph_name);
 		FREE_AND_NULL(graph_name);

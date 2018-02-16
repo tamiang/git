@@ -37,6 +37,11 @@ resulting filename.
 +
 With `--set-latest` option, update the graph-latest file to point
 to the written graph file.
++
+With the `--delete-expired` option, delete the graph files in the pack
+directory that are not referred to by the graph-latest file. To avoid race
+conditions, do not delete the file previously referred to by the
+graph-latest file if it is updated by the `--set-latest` option.
 
 'read'::
 
@@ -56,11 +61,11 @@ EXAMPLES
 $ git commit-graph write
 ------------------------------------------------
 
-* Write a graph file for the packed commits in your local .git folder
-* and update graph-latest.
+* Write a graph file for the packed commits in your local .git folder,
+* update graph-latest, and delete stale graph files.
 +
 ------------------------------------------------
-$ git commit-graph write --set-latest
+$ git commit-graph write --set-latest --delete-expired
 ------------------------------------------------
 
 * Read basic information from a graph file.

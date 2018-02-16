@@ -117,8 +117,10 @@ test_expect_success 'Add one more commit' '
 # 1
 
 test_expect_success 'write graph with new commit' '
-	graph3=$(git commit-graph write --set-latest) &&
+	graph3=$(git commit-graph write --set-latest --delete-expired) &&
 	test_path_is_file $objdir/info/$graph3 &&
+	test_path_is_file $objdir/info/$graph2 &&
+	test_path_is_missing $objdir/info/$graph1 &&
 	test_path_is_file $objdir/info/graph-latest &&
 	printf $graph3 >expect &&
 	test_cmp expect $objdir/info/graph-latest &&
@@ -128,8 +130,9 @@ test_expect_success 'write graph with new commit' '
 '
 
 test_expect_success 'write graph with nothing new' '
-	graph4=$(git commit-graph write --set-latest) &&
+	graph4=$(git commit-graph write --set-latest --delete-expired) &&
 	test_path_is_file $objdir/info/$graph4 &&
+	test_path_is_missing $objdir/info/$graph2 &&
 	printf $graph3 >expect &&
 	printf $graph4 >output &&
 	test_cmp expect output &&
