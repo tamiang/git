@@ -24,9 +24,27 @@ test_expect_success 'create commits and repack' '
 	git repack
 '
 
+graph_read_expect() {
+	OPTIONAL=""
+	NUM_CHUNKS=3
+	if [ ! -z $2 ]
+	then
+		OPTIONAL=" $2"
+		NUM_CHUNKS=$((3 + $(echo "$2" | wc -w)))
+	fi
+	cat >expect <<- EOF
+	header: 43475048 1 1 $NUM_CHUNKS 0
+	num_commits: $1
+	chunks: oid_fanout oid_lookup commit_metadata$OPTIONAL
+	EOF
+}
+
 test_expect_success 'write graph' '
 	graph1=$(git commit-graph write) &&
-	test_path_is_file $objdir/info/$graph1
+	test_path_is_file $objdir/info/$graph1 &&
+	git commit-graph read --file=$graph1 >output &&
+	graph_read_expect "3" &&
+	test_cmp expect output
 '
 
 test_expect_success 'Add more commits' '
@@ -67,7 +85,10 @@ test_expect_success 'Add more commits' '
 
 test_expect_success 'write graph with merges' '
 	graph2=$(git commit-graph write)&&
-	test_path_is_file $objdir/info/$graph2
+	test_path_is_file $objdir/info/$graph2 &&
+	git commit-graph read --file=$graph2 >output &&
+	graph_read_expect "10" "large_edges" &&
+	test_cmp expect output
 '
 
 test_expect_success 'Add one more commit' '
@@ -92,7 +113,10 @@ test_expect_success 'Add one more commit' '
 
 test_expect_success 'write graph with new commit' '
 	graph3=$(git commit-graph write) &&
-	test_path_is_file $objdir/info/$graph3
+	test_path_is_file $objdir/info/$graph3 &&
+	git commit-graph read --file=$graph3 >output &&
+	graph_read_expect "11" "large_edges" &&
+	test_cmp expect output
 '
 
 test_expect_success 'write graph with nothing new' '
@@ -100,6 +124,9 @@ test_expect_success 'write graph with nothing new' '
 	test_path_is_file $objdir/info/$graph4 &&
 	printf $graph3 >expect &&
 	printf $graph4 >output &&
+	test_cmp expect output &&
+	git commit-graph read --file=$graph4 >output &&
+	graph_read_expect "11" "large_edges" &&
 	test_cmp expect output
 '
 
@@ -112,7 +139,10 @@ test_expect_success 'setup bare repo' '
 
 test_expect_success 'write graph in bare repo' '
 	graphbare=$(git commit-graph write) &&
-	test_path_is_file $baredir/info/$graphbare
+	test_path_is_file $baredir/info/$graphbare &&
+	git commit-graph read --file=$graphbare >output &&
+	graph_read_expect "11" "large_edges" &&
+	test_cmp expect output
 '
 
 test_done

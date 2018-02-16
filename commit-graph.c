@@ -38,6 +38,122 @@
 #define GRAPH_MIN_SIZE (GRAPH_CHUNKLOOKUP_SIZE + GRAPH_FANOUT_SIZE + \
 			GRAPH_OID_LEN + 8)
 
+static struct commit_graph *alloc_commit_graph(void)
+{
+	struct commit_graph *g = xmalloc(sizeof(*g));
+	memset(g, 0, sizeof(*g));
+	g->graph_fd = -1;
+
+	return g;
+}
+
+struct commit_graph *load_commit_graph_one(const char *graph_file)
+{
+	void *graph_map;
+	const unsigned char *data, *chunk_lookup;
+	size_t graph_size;
+	struct stat st;
+	uint32_t i;
+	struct commit_graph *graph;
+	int fd = git_open(graph_file);
+	uint64_t last_chunk_offset;
+	uint32_t last_chunk_id;
+	uint32_t graph_signature;
+	unsigned char graph_version, hash_version;
+
+	if (fd < 0)
+		return 0;
+	if (fstat(fd, &st)) {
+		close(fd);
+		return 0;
+	}
+	graph_size = xsize_t(st.st_size);
+
+	if (graph_size < GRAPH_MIN_SIZE) {
+		close(fd);
+		die("graph file %s is too small", graph_file);
+	}
+	graph_map = xmmap(NULL, graph_size, PROT_READ, MAP_PRIVATE, fd, 0);
+	data = (const unsigned char *)graph_map;
+
+	graph_signature = ntohl(*(uint32_t*)data);
+	if (graph_signature != GRAPH_SIGNATURE) {
+		munmap(graph_map, graph_size);
+		close(fd);
+		die("graph signature %X does not match signature %X",
+			graph_signature, GRAPH_SIGNATURE);
+	}
+
+	graph_version = *(unsigned char*)(data + 4);
+	if (graph_version != GRAPH_VERSION) {
+		munmap(graph_map, graph_size);
+		close(fd);
+		die("graph version %X does not match version %X",
+			graph_version, GRAPH_VERSION);
+	}
+
+	hash_version = *(unsigned char*)(data + 5);
+	if (hash_version != GRAPH_OID_VERSION) {
+		munmap(graph_map, graph_size);
+		close(fd);
+		die("hash version %X does not match version %X",
+			hash_version, GRAPH_OID_VERSION);
+	}
+
+	graph = alloc_commit_graph();
+
+	graph->hash_len = GRAPH_OID_LEN;
+	graph->num_chunks = *(unsigned char*)(data + 6);
+	graph->graph_fd = fd;
+	graph->data = graph_map;
+	graph->data_len = graph_size;
+
+	last_chunk_id = 0;
+	last_chunk_offset = 8;
+	chunk_lookup = data + 8;
+	for (i = 0; i < graph->num_chunks; i++) {
+		uint32_t chunk_id = get_be32(chunk_lookup + 0);
+		uint64_t chunk_offset1 = get_be32(chunk_lookup + 4);
+		uint32_t chunk_offset2 = get_be32(chunk_lookup + 8);
+		uint64_t chunk_offset = (chunk_offset1 << 32) | chunk_offset2;
+
+		chunk_lookup += GRAPH_CHUNKLOOKUP_WIDTH;
+
+		if (chunk_offset > graph_size - GIT_MAX_RAWSZ)
+			die("improper chunk offset %08x%08x", (uint32_t)(chunk_offset >> 32),
+			    (uint32_t)chunk_offset);
+
+		switch (chunk_id) {
+			case GRAPH_CHUNKID_OIDFANOUT:
+				graph->chunk_oid_fanout = (uint32_t*)(data + chunk_offset);
+				break;
+
+			case GRAPH_CHUNKID_OIDLOOKUP:
+				graph->chunk_oid_lookup = data + chunk_offset;
+				break;
+
+			case GRAPH_CHUNKID_DATA:
+				graph->chunk_commit_data = data + chunk_offset;
+				break;
+
+			case GRAPH_CHUNKID_LARGEEDGES:
+				graph->chunk_large_edges = data + chunk_offset;
+				break;
+		}
+
+		if (last_chunk_id == GRAPH_CHUNKID_OIDLOOKUP)
+		{
+			graph->num_commits = (chunk_offset - last_chunk_offset)
+					     / graph->hash_len;
+		}
+
+		last_chunk_id = chunk_id;
+		last_chunk_offset = chunk_offset;
+	}
+
+	return graph;
+}
+
 static void write_graph_chunk_fanout(struct sha1file *f,
 				     struct commit **commits,
 				     int nr_commits)
