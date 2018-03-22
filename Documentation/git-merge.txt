@@ -135,7 +135,7 @@ narrow exceptions to this rule may exist depending on which merge
 strategy is in use, but generally, the index must match HEAD.)
 
 If all named commits are already ancestors of `HEAD`, 'git merge'
-will exit early with the message "Already up to date."
+will exit early with the message "Already up-to-date."
 
 FAST-FORWARD MERGE
 ------------------
