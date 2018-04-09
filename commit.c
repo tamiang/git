@@ -796,7 +796,9 @@ static int queue_has_nonstale(struct prio_queue *queue, uint32_t min_gen)
 }
 
 /* all input commits in one and twos[] must have been parsed! */
-static struct commit_list *paint_down_to_common(struct commit *one, int n, struct commit **twos)
+static struct commit_list *paint_down_to_common(struct commit *one, int n,
+						struct commit **twos,
+						int min_generation)
 {
 	struct prio_queue queue = { compare_commits_by_gen_then_commit_date };
 	struct commit_list *result = NULL;
@@ -829,6 +831,9 @@ static struct commit_list *paint_down_to_common(struct commit *one, int n, struc
 			BUG("bad generation skip");
 
 		last_gen = commit->generation;
+
+		if (commit->generation < min_generation)
+			break;
 
 		flags = commit->object.flags & (PARENT1 | PARENT2 | STALE);
 		if (flags == (PARENT1 | PARENT2)) {
@@ -882,7 +887,7 @@ static struct commit_list *merge_bases_many(struct commit *one, int n, struct co
 			return NULL;
 	}
 
-	list = paint_down_to_common(one, n, twos);
+	list = paint_down_to_common(one, n, twos, 0);
 
 	while (list) {
 		struct commit *commit = pop_commit(&list);
@@ -949,7 +954,7 @@ static int remove_redundant(struct commit **array, int cnt)
 			filled_index[filled] = j;
 			work[filled++] = array[j];
 		}
-		common = paint_down_to_common(array[i], filled, work);
+		common = paint_down_to_common(array[i], filled, work, 0);
 		if (array[i]->object.flags & PARENT2)
 			redundant[i] = 1;
 		for (j = 0; j < filled; j++)
@@ -1073,7 +1078,7 @@ int in_merge_bases_many(struct commit *commit, int nr_reference, struct commit *
 	if (commit->generation > min_generation)
 		return 0;
 
-	bases = paint_down_to_common(commit, nr_reference, reference);
+	bases = paint_down_to_common(commit, nr_reference, reference, commit->generation);
 	if (commit->object.flags & PARENT2)
 		ret = 1;
 	clear_commit_marks(commit, all_flags);
