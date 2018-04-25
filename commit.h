@@ -38,6 +38,7 @@ struct commit {
 	uint32_t graph_pos;
 	uint32_t generation;
 	unsigned int index;
+	uint32_t generation;
 };
 
 extern int save_commit_buffer;
