@@ -475,23 +475,6 @@ int contains_pack(struct midxed_git *m, const char *pack_name)
 	return 0;
 }
 
-static int midx_oid_compare(const void *_a, const void *_b)
-{
-	struct pack_midx_entry *a = *(struct pack_midx_entry **)_a;
-	struct pack_midx_entry *b = *(struct pack_midx_entry **)_b;
-	int cmp = oidcmp(&a->oid, &b->oid);
-
-	if (cmp)
-		return cmp;
-
-	if (a->pack_mtime > b->pack_mtime)
-		return -1;
-	else if (a->pack_mtime < b->pack_mtime)
-		return 1;
-
-	return a->pack_int_id - b->pack_int_id;
-}
-
 static size_t write_midx_chunk_packlookup(
 	struct hashfile *f,
 	const char **pack_names, uint32_t nr_packs)
@@ -528,10 +511,10 @@ static size_t write_midx_chunk_packnames(
 
 static size_t write_midx_chunk_oidfanout(
 	struct hashfile *f,
-	struct pack_midx_entry **objects, uint32_t nr_objects)
+	struct pack_midx_entry *objects, uint32_t nr_objects)
 {
-	struct pack_midx_entry **list = objects;
-	struct pack_midx_entry **last = objects + nr_objects;
+	struct pack_midx_entry *list = objects;
+	struct pack_midx_entry *last = objects + nr_objects;
 	uint32_t count_distinct = 0;
 	uint32_t i;
 
@@ -541,19 +524,17 @@ static size_t write_midx_chunk_oidfanout(
 	* having to do eight extra binary search iterations).
 	*/
 	for (i = 0; i < 256; i++) {
-		struct pack_midx_entry **next = list;
-		struct pack_midx_entry *prev = 0;
+		struct pack_midx_entry *next = list;
+		struct pack_midx_entry *prev = NULL;
 
 		while (next < last) {
-			struct pack_midx_entry *obj = *next;
-			if (obj->oid.hash[0] != i)
+			if (next->oid.hash[0] != i)
 				break;
 
-			if (!prev || oidcmp(&(prev->oid), &(obj->oid)))
+			if (!prev || oidcmp(&(prev->oid), &(next->oid)))
 				count_distinct++;
 
-			prev = obj;
-			next++;
+			prev = next++;
 		}
 
 		hashwrite_be32(f, count_distinct);
@@ -565,20 +546,20 @@ static size_t write_midx_chunk_oidfanout(
 
 static size_t write_midx_chunk_oidlookup(
 	struct hashfile *f, unsigned char hash_len,
-	struct pack_midx_entry **objects, uint32_t nr_objects)
+	struct pack_midx_entry *objects, uint32_t nr_objects)
 {
-	struct pack_midx_entry **list = objects;
+	struct pack_midx_entry *list = objects;
 	struct object_id *last_oid = NULL;
 	uint32_t i;
 	size_t written = 0;
 
 	for (i = 0; i < nr_objects; i++) {
-		struct pack_midx_entry *obj = *list++;
+		struct pack_midx_entry *obj = list++;
 
 		if (i < nr_objects - 1) {
 			/* Check out-of-order */
-			struct pack_midx_entry *next = *list;
-			if (oidcmp(&obj->oid, &next->oid) > 0)
+			struct pack_midx_entry *next = list;
+			if (oidcmp(&obj->oid, &next->oid) >= 0)
 				BUG("OIDs not in order: %s >= %s",
 				oid_to_hex(&obj->oid),
 				oid_to_hex(&next->oid));
@@ -598,15 +579,15 @@ static size_t write_midx_chunk_oidlookup(
 
 static size_t write_midx_chunk_objectoffsets(
 	struct hashfile *f, int large_offset_needed,
-	struct pack_midx_entry **objects, uint32_t nr_objects, uint32_t *pack_perm)
+	struct pack_midx_entry *objects, uint32_t nr_objects, uint32_t *pack_perm)
 {
-	struct pack_midx_entry **list = objects;
+	struct pack_midx_entry *list = objects;
 	struct object_id *last_oid = 0;
 	uint32_t i, nr_large_offset = 0;
 	size_t written = 0;
 
 	for (i = 0; i < nr_objects; i++) {
-		struct pack_midx_entry *obj = *list++;
+		struct pack_midx_entry *obj = list++;
 
 		if (last_oid && !oidcmp(last_oid, &obj->oid))
 			continue;
@@ -632,14 +613,14 @@ static size_t write_midx_chunk_objectoffsets(
 
 static size_t write_midx_chunk_largeoffsets(
 	struct hashfile *f, uint32_t nr_large_offset,
-	struct pack_midx_entry **objects, uint32_t nr_objects)
+	struct pack_midx_entry *objects, uint32_t nr_objects)
 {
-	struct pack_midx_entry **list = objects;
+	struct pack_midx_entry *list = objects;
 	struct object_id *last_oid = 0;
 	size_t written = 0;
 
 	while (nr_large_offset) {
-		struct pack_midx_entry *obj = *list++;
+		struct pack_midx_entry *obj = list++;
 		uint64_t offset = obj->offset;
 
 		if (last_oid && !oidcmp(last_oid, &obj->oid))
@@ -696,11 +677,10 @@ const char *write_midx_file(const char *pack_dir,
 			    const char *midx_name,
 			    const char **pack_names,
 			    uint32_t nr_packs,
-			    struct pack_midx_entry **objects,
+			    struct pack_midx_entry *objects,
 			    uint32_t nr_objects)
 {
 	struct hashfile *f;
-	struct pack_midx_entry **sorted_by_sha;
 	int i, chunk, fd;
 	struct pack_midx_header hdr;
 	uint32_t chunk_ids[7];
@@ -710,7 +690,6 @@ const char *write_midx_file(const char *pack_dir,
 	unsigned char final_hash[GIT_MAX_RAWSZ];
 	const char *final_hex;
 	int rename_needed = 0;
-	uint32_t count_distinct = 0;
 	int total_name_len = 0;
 	uint32_t *pack_perm;
 	size_t written = 0;
@@ -718,34 +697,20 @@ const char *write_midx_file(const char *pack_dir,
 	if (!core_midx)
 		return 0;
 
+	/* determine if large offsets are required */
+	for (i = 0; i < nr_objects; i++) {
+		if (objects[i].offset > 0x7fffffff)
+			nr_large_offset++;
+		if (objects[i].offset > 0xffffffff)
+			large_offset_needed = 1;
+	}
+
 	/* Sort packs */
 	if (nr_packs) {
 		ALLOC_ARRAY(pack_perm, nr_packs);
 		sort_packs_by_name(pack_names, nr_packs, pack_perm);
 	} else {
 		pack_perm = 0;
-	}
-
-	/* Sort objects */
-	if (nr_objects) {
-		sorted_by_sha = objects;
-
-		QSORT(sorted_by_sha, nr_objects, midx_oid_compare);
-
-		for (i = 0; i < nr_objects; i++) {
-			if (i &&
-			    !oidcmp(&sorted_by_sha[i-1]->oid, &sorted_by_sha[i]->oid))
-				continue;
-
-			count_distinct++;
-
-			if (sorted_by_sha[i]->offset > 0x7fffffff)
-				nr_large_offset++;
-			if (sorted_by_sha[i]->offset > 0xffffffff)
-				large_offset_needed = 1;
-		}
-	} else {
-		sorted_by_sha = NULL;
 	}
 
 	if (nr_packs) {
@@ -769,6 +734,7 @@ const char *write_midx_file(const char *pack_dir,
 	} else {
 		unlink(midx_name);
 		fd = open(midx_name, O_CREAT|O_EXCL|O_WRONLY, 0600);
+
 		if (fd < 0)
 			die_errno("unable to create '%s'", midx_name);
 	}
@@ -809,10 +775,10 @@ const char *write_midx_file(const char *pack_dir,
 	chunk_ids[1] = MIDX_CHUNKID_OIDFANOUT;
 	chunk_offsets[2] = chunk_offsets[1] + MIDX_CHUNK_FANOUT_SIZE;
 	chunk_ids[2] = MIDX_CHUNKID_OIDLOOKUP;
-	chunk_offsets[3] = chunk_offsets[2] + (uint64_t)count_distinct
+	chunk_offsets[3] = chunk_offsets[2] + (uint64_t)nr_objects
 					    * (uint64_t)hdr.hash_len;
 	chunk_ids[3] = MIDX_CHUNKID_OBJECTOFFSETS;
-	chunk_offsets[4] = chunk_offsets[3] + MIDX_CHUNK_OFFSET_WIDTH * (uint64_t)count_distinct;
+	chunk_offsets[4] = chunk_offsets[3] + MIDX_CHUNK_OFFSET_WIDTH * (uint64_t)nr_objects;
 
 	if (large_offset_needed) {
 		chunk_ids[4] = MIDX_CHUNKID_LARGEOFFSETS;
@@ -850,23 +816,23 @@ const char *write_midx_file(const char *pack_dir,
 			break;
 
 		case MIDX_CHUNKID_OIDFANOUT:
-			written += write_midx_chunk_oidfanout(f, sorted_by_sha, nr_objects);
+			written += write_midx_chunk_oidfanout(f, objects, nr_objects);
 			break;
 
 		case MIDX_CHUNKID_OIDLOOKUP:
-			written += write_midx_chunk_oidlookup(f, hdr.hash_len, sorted_by_sha,
+			written += write_midx_chunk_oidlookup(f, hdr.hash_len, objects,
 							      nr_objects);
 			break;
 
 		case MIDX_CHUNKID_OBJECTOFFSETS:
 			written += write_midx_chunk_objectoffsets(f, large_offset_needed,
-								  sorted_by_sha, nr_objects,
+								  objects, nr_objects,
 								  pack_perm);
 			break;
 
 		case MIDX_CHUNKID_LARGEOFFSETS:
 			written += write_midx_chunk_largeoffsets(f, nr_large_offset,
-								 sorted_by_sha, nr_objects);
+								 objects, nr_objects);
 			break;
 
 		case 0:
