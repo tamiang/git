@@ -254,13 +254,19 @@ static void get_correspondences(struct string_list *a, struct string_list *b,
 	free(b2a);
 }
 
-static void output_pair_header(struct strbuf *buf,
+static void output_pair_header(struct diff_options *diffopt, struct strbuf *buf,
 			       struct patch_util *a_util,
 			       struct patch_util *b_util)
 {
 	static char *dashes;
 	struct object_id *oid = a_util ? &a_util->oid : &b_util->oid;
 	struct commit *commit;
+	char status;
+	const char *color_reset = diff_get_color_opt(diffopt, DIFF_RESET);
+	const char *color_old = diff_get_color_opt(diffopt, DIFF_FILE_OLD);
+	const char *color_new = diff_get_color_opt(diffopt, DIFF_FILE_NEW);
+	const char *color_commit = diff_get_color_opt(diffopt, DIFF_COMMIT);
+	const char *color;
 
 	if (!dashes) {
 		char *p;
@@ -270,21 +276,33 @@ static void output_pair_header(struct strbuf *buf,
 			*p = '-';
 	}
 
+	if (!b_util) {
+		color = color_old;
+		status = '<';
+	} else if (!a_util) {
+		color = color_new;
+		status = '>';
+	} else if (strcmp(a_util->patch, b_util->patch)) {
+		color = color_commit;
+		status = '!';
+	} else {
+		color = color_commit;
+		status = '=';
+	}
+
 	strbuf_reset(buf);
+	strbuf_addstr(buf, status == '!' ? color_old : color);
 	if (!a_util)
 		strbuf_addf(buf, "-:  %s ", dashes);
 	else
 		strbuf_addf(buf, "%d:  %s ", a_util->i + 1,
 			    find_unique_abbrev(&a_util->oid, DEFAULT_ABBREV));
 
-	if (!a_util)
-		strbuf_addch(buf, '>');
-	else if (!b_util)
-		strbuf_addch(buf, '<');
-	else if (strcmp(a_util->patch, b_util->patch))
-		strbuf_addch(buf, '!');
-	else
-		strbuf_addch(buf, '=');
+	if (status == '!')
+		strbuf_addf(buf, "%s%s", color_reset, color);
+	strbuf_addch(buf, status);
+	if (status == '!')
+		strbuf_addf(buf, "%s%s", color_reset, color_new);
 
 	if (!b_util)
 		strbuf_addf(buf, " -:  %s", dashes);
@@ -297,12 +315,15 @@ static void output_pair_header(struct strbuf *buf,
 		const char *commit_buffer = get_commit_buffer(commit, NULL);
 		const char *subject;
 
+		if (status == '!')
+			strbuf_addf(buf, "%s%s", color_reset, color);
+
 		find_commit_subject(commit_buffer, &subject);
 		strbuf_addch(buf, ' ');
 		format_subject(buf, subject, " ");
 		unuse_commit_buffer(commit, commit_buffer);
 	}
-	strbuf_addch(buf, '\n');
+	strbuf_addf(buf, "%s\n", color_reset);
 
 	fwrite(buf->buf, buf->len, 1, stdout);
 }
@@ -360,21 +381,21 @@ static void output(struct string_list *a, struct string_list *b,
 
 		/* Show unmatched LHS commit whose predecessors were shown. */
 		if (i < a->nr && a_util->matching < 0) {
-			output_pair_header(&buf, a_util, NULL);
+			output_pair_header(diffopt, &buf, a_util, NULL);
 			i++;
 			continue;
 		}
 
 		/* Show unmatched RHS commits. */
 		while (j < b->nr && b_util->matching < 0) {
-			output_pair_header(&buf, NULL, b_util);
+			output_pair_header(diffopt, &buf, NULL, b_util);
 			b_util = ++j < b->nr ? b->items[j].util : NULL;
 		}
 
 		/* Show matching LHS/RHS pair. */
 		if (j < b->nr) {
 			a_util = a->items[b_util->matching].util;
-			output_pair_header(&buf, a_util, b_util);
+			output_pair_header(diffopt, &buf, a_util, b_util);
 			if (!(diffopt->output_format & DIFF_FORMAT_NO_OUTPUT))
 				patch_diff(a->items[b_util->matching].string,
 					   b->items[j].string, diffopt);
