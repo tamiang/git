@@ -20,9 +20,12 @@ int cmd_range_diff(int argc, const char **argv, const char *prefix)
 {
 	int creation_factor = 60;
 	struct diff_options diffopt = { NULL };
+	int dual_color = 0;
 	struct option options[] = {
 		OPT_INTEGER(0, "creation-factor", &creation_factor,
 			    N_("Percentage by which creation is weighted")),
+		OPT_BOOL(0, "dual-color", &dual_color,
+			    N_("color both diff and diff-between-diffs")),
 		OPT_END()
 	};
 	int i, j, res = 0;
@@ -49,6 +52,11 @@ int cmd_range_diff(int argc, const char **argv, const char *prefix)
 	}
 	argc = j;
 	diff_setup_done(&diffopt);
+
+	if (dual_color) {
+		diffopt.use_color = 1;
+		diffopt.flags.dual_color_diffed_diffs = 1;
+	}
 
 	if (argc == 2) {
 		if (!strstr(argv[0], ".."))
