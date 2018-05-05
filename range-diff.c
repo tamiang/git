@@ -254,7 +254,8 @@ static void get_correspondences(struct string_list *a, struct string_list *b,
 	free(b2a);
 }
 
-static void output_pair_header(struct diff_options *diffopt, struct strbuf *buf,
+static void output_pair_header(struct diff_options *diffopt, int patch_no_width,
+			       struct strbuf *buf,
 			       struct patch_util *a_util,
 			       struct patch_util *b_util)
 {
@@ -293,9 +294,9 @@ static void output_pair_header(struct diff_options *diffopt, struct strbuf *buf,
 	strbuf_reset(buf);
 	strbuf_addstr(buf, status == '!' ? color_old : color);
 	if (!a_util)
-		strbuf_addf(buf, "-:  %s ", dashes);
+		strbuf_addf(buf, "%*s:  %s ", patch_no_width, "-", dashes);
 	else
-		strbuf_addf(buf, "%d:  %s ", a_util->i + 1,
+		strbuf_addf(buf, "%*d:  %s ", patch_no_width, a_util->i + 1,
 			    find_unique_abbrev(&a_util->oid, DEFAULT_ABBREV));
 
 	if (status == '!')
@@ -305,9 +306,9 @@ static void output_pair_header(struct diff_options *diffopt, struct strbuf *buf,
 		strbuf_addf(buf, "%s%s", color_reset, color_new);
 
 	if (!b_util)
-		strbuf_addf(buf, " -:  %s", dashes);
+		strbuf_addf(buf, " %*s:  %s", patch_no_width, "-", dashes);
 	else
-		strbuf_addf(buf, " %d:  %s", b_util->i + 1,
+		strbuf_addf(buf, " %*d:  %s", patch_no_width, b_util->i + 1,
 			    find_unique_abbrev(&b_util->oid, DEFAULT_ABBREV));
 
 	commit = lookup_commit_reference(oid);
@@ -360,6 +361,7 @@ static void output(struct string_list *a, struct string_list *b,
 		   struct diff_options *diffopt)
 {
 	struct strbuf buf = STRBUF_INIT;
+	int patch_no_width = decimal_width(1 + (a->nr > b->nr ? a->nr : b->nr));
 	int i = 0, j = 0;
 
 	/*
@@ -381,21 +383,24 @@ static void output(struct string_list *a, struct string_list *b,
 
 		/* Show unmatched LHS commit whose predecessors were shown. */
 		if (i < a->nr && a_util->matching < 0) {
-			output_pair_header(diffopt, &buf, a_util, NULL);
+			output_pair_header(diffopt, patch_no_width, &buf,
+					   a_util, NULL);
 			i++;
 			continue;
 		}
 
 		/* Show unmatched RHS commits. */
 		while (j < b->nr && b_util->matching < 0) {
-			output_pair_header(diffopt, &buf, NULL, b_util);
+			output_pair_header(diffopt, patch_no_width, &buf,
+					   NULL, b_util);
 			b_util = ++j < b->nr ? b->items[j].util : NULL;
 		}
 
 		/* Show matching LHS/RHS pair. */
 		if (j < b->nr) {
 			a_util = a->items[b_util->matching].util;
-			output_pair_header(diffopt, &buf, a_util, b_util);
+			output_pair_header(diffopt, patch_no_width, &buf,
+					   a_util, b_util);
 			if (!(diffopt->output_format & DIFF_FORMAT_NO_OUTPUT))
 				patch_diff(a->items[b_util->matching].string,
 					   b->items[j].string, diffopt);
