@@ -843,6 +843,9 @@ extern FILE *fopen_or_warn(const char *path, const char *mode);
  */
 #define FREE_AND_NULL(p) do { free(p); (p) = NULL; } while (0)
 
+#define ALLOCATE(ptr) (ptr) = xmalloc(sizeof(*(ptr)))
+#define CALLOCATE(ptr,cnt) (ptr) = xcalloc((cnt), sizeof(*(ptr)))
+
 #define ALLOC_ARRAY(x, alloc) (x) = xmalloc(st_mult(sizeof(*(x)), (alloc)))
 #define REALLOC_ARRAY(x, alloc) (x) = xrealloc((x), st_mult(sizeof(*(x)), (alloc)))
 
