@@ -545,12 +545,22 @@ static void write_midx_chunk_oidlookup(
 	struct pack_midx_entry **objects, uint32_t nr_objects)
 {
 	struct pack_midx_entry **list = objects;
-	struct object_id *last_oid = 0;
+	struct object_id *last_oid = NULL;
 	uint32_t i;
 
 	for (i = 0; i < nr_objects; i++) {
 		struct pack_midx_entry *obj = *list++;
 
+		if (i < nr_objects - 1) {
+			/* Check out-of-order */
+			struct pack_midx_entry *next = *list;
+			if (oidcmp(&obj->oid, &next->oid) > 0)
+				BUG("OIDs not in order: %s >= %s",
+				oid_to_hex(&obj->oid),
+				oid_to_hex(&next->oid));
+		}
+
+		/* Skip duplicate objects */
 		if (last_oid && !oidcmp(last_oid, &obj->oid))
 			continue;
 
