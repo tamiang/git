@@ -151,7 +151,7 @@ static void init_thread(void)
 	if (show_stat)
 		pthread_mutex_init(&deepest_delta_mutex, NULL);
 	pthread_key_create(&key, NULL);
-	thread_data = xcalloc(nr_threads, sizeof(*thread_data));
+	CALLOCATE(thread_data, nr_threads);
 	for (i = 0; i < nr_threads; i++) {
 		thread_data[i].pack_fd = open(curr_pack, O_RDONLY);
 		if (thread_data[i].pack_fd == -1)

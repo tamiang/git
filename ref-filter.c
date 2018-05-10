@@ -2321,7 +2321,7 @@ void parse_ref_sorting(struct ref_sorting **sorting_tail, const char *arg)
 {
 	struct ref_sorting *s;
 
-	s = xcalloc(1, sizeof(*s));
+	CALLOCATE(s, 1);
 	s->next = *sorting_tail;
 	*sorting_tail = s;
 

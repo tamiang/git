@@ -146,7 +146,7 @@ struct git_istream *open_istream(const struct object_id *oid,
 	if (src < 0)
 		return NULL;
 
-	st = xmalloc(sizeof(*st));
+	ALLOCATE(st);
 	if (open_istream_tbl[src](st, &oi, real, type)) {
 		if (open_istream_incore(st, &oi, real, type)) {
 			free(st);

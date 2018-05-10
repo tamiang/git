@@ -918,7 +918,7 @@ static int remove_redundant(struct commit **array, int cnt)
 	int *filled_index;
 	int i, j, filled;
 
-	work = xcalloc(cnt, sizeof(*work));
+	CALLOCATE(work, cnt);
 	redundant = xcalloc(cnt, 1);
 	ALLOC_ARRAY(filled_index, cnt - 1);
 
@@ -985,7 +985,7 @@ static struct commit_list *get_merge_bases_many_0(struct commit *one,
 
 	/* There are more than one */
 	cnt = commit_list_count(result);
-	rslt = xcalloc(cnt, sizeof(*rslt));
+	CALLOCATE(rslt, cnt);
 	for (list = result, i = 0; list; list = list->next)
 		rslt[i++] = list->item;
 	free_commit_list(result);
@@ -1088,7 +1088,7 @@ struct commit_list *reduce_heads(struct commit_list *heads)
 		p->item->object.flags |= STALE;
 		num_head++;
 	}
-	array = xcalloc(num_head, sizeof(*array));
+	CALLOCATE(array, num_head);
 	for (p = heads, i = 0; p; p = p->next) {
 		if (p->item->object.flags & STALE) {
 			array[i++] = p->item;
@@ -1251,7 +1251,7 @@ static void handle_signed_tag(struct commit *parent, struct commit_extra_header 
 	 * if (verify_signed_buffer(buf, len, buf + len, size - len, ...))
 	 *	warn("warning: signed tag unverified.");
 	 */
-	mergetag = xcalloc(1, sizeof(*mergetag));
+	CALLOCATE(mergetag, 1);
 	mergetag->key = xstrdup("mergetag");
 	mergetag->value = buf;
 	mergetag->len = size;
@@ -1386,7 +1386,7 @@ static struct commit_extra_header *read_commit_extra_header_lines(
 			 excluded_header_field(line, eof - line, exclude))
 			continue;
 
-		it = xcalloc(1, sizeof(*it));
+		CALLOCATE(it, 1);
 		it->key = xmemdupz(line, eof-line);
 		*tail = it;
 		tail = &it->next;

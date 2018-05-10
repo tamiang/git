@@ -1213,7 +1213,7 @@ static struct pbase_tree_cache *pbase_tree_get(const struct object_id *oid)
 	}
 
 	if (!ent) {
-		nent = xmalloc(sizeof(*nent));
+		ALLOCATE(nent);
 		nent->temporary = (available_ix < 0);
 	}
 	else {
@@ -1367,7 +1367,7 @@ static void add_preferred_base(struct object_id *oid)
 		}
 	}
 
-	it = xcalloc(1, sizeof(*it));
+	CALLOCATE(it, 1);
 	it->next = pbase_tree;
 	pbase_tree = it;
 
@@ -2245,7 +2245,7 @@ static void ll_find_deltas(struct object_entry **list, unsigned list_size,
 	if (progress > pack_to_stdout)
 		fprintf(stderr, "Delta compression using up to %d threads.\n",
 				delta_search_threads);
-	p = xcalloc(delta_search_threads, sizeof(*p));
+	CALLOCATE(p, delta_search_threads);
 
 	/* Partition the work amongst work threads. */
 	for (i = 0; i < delta_search_threads; i++) {

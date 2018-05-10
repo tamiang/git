@@ -1111,7 +1111,7 @@ static void show_patch_diff(struct combine_diff_path *elem, int num_parent,
 	if (result_size && result[result_size-1] != '\n')
 		cnt++; /* incomplete line */
 
-	sline = xcalloc(st_add(cnt, 2), sizeof(*sline));
+	CALLOCATE(sline, st_add(cnt, 2));
 	sline[0].bol = result;
 	for (lno = 0, cp = result; cp < result + result_size; cp++) {
 		if (*cp == '\n') {
@@ -1261,7 +1261,7 @@ static struct diff_filepair *combined_pair(struct combine_diff_path *p,
 	struct diff_filepair *pair;
 	struct diff_filespec *pool;
 
-	pair = xmalloc(sizeof(*pair));
+	ALLOCATE(pair);
 	pool = xcalloc(st_add(num_parent, 1), sizeof(struct diff_filespec));
 	pair->one = pool + 1;
 	pair->two = pool;

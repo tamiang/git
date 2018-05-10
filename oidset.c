@@ -17,7 +17,7 @@ int oidset_insert(struct oidset *set, const struct object_id *oid)
 	else if (oidset_contains(set, oid))
 		return 1;
 
-	entry = xmalloc(sizeof(*entry));
+	ALLOCATE(entry);
 	oidcpy(&entry->oid, oid);
 
 	oidmap_put(&set->map, entry);

@@ -47,7 +47,7 @@ static void rehash_objects(struct packing_data *pdata)
 		pdata->index_size = 1024;
 
 	free(pdata->index);
-	pdata->index = xcalloc(pdata->index_size, sizeof(*pdata->index));
+	CALLOCATE(pdata->index, pdata->index_size);
 
 	entry = pdata->objects;
 

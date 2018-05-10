@@ -1666,7 +1666,7 @@ static void set_merge(struct branch *ret)
 
 	remote = remote_get(ret->remote_name);
 
-	ret->merge = xcalloc(ret->merge_nr, sizeof(*ret->merge));
+	CALLOCATE(ret->merge, ret->merge_nr);
 	for (i = 0; i < ret->merge_nr; i++) {
 		ret->merge[i] = xcalloc(1, sizeof(**ret->merge));
 		ret->merge[i]->src = xstrdup(ret->merge_name[i]);

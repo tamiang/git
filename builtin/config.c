@@ -502,7 +502,7 @@ static int urlmatch_collect_fn(const char *var, const char *value, void *cb)
 	struct urlmatch_current_candidate_value *matched = item->util;
 
 	if (!matched) {
-		matched = xmalloc(sizeof(*matched));
+		ALLOCATE(matched);
 		strbuf_init(&matched->value, 0);
 		item->util = matched;
 	} else {

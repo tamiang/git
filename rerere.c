@@ -148,7 +148,7 @@ static struct rerere_dir *find_rerere_dir(const char *hex)
 		return NULL; /* BUG */
 	pos = sha1_pos(sha1, rerere_dir, rerere_dir_nr, rerere_dir_sha1);
 	if (pos < 0) {
-		rr_dir = xmalloc(sizeof(*rr_dir));
+		ALLOCATE(rr_dir);
 		hashcpy(rr_dir->sha1, sha1);
 		rr_dir->status = NULL;
 		rr_dir->status_nr = 0;

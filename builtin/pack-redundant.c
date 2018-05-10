@@ -311,7 +311,7 @@ static struct pll * get_permutations(struct pack_list *list, int n)
 
 	if (n == 1) {
 		while (list) {
-			new_pll = xmalloc(sizeof(*new_pll));
+			ALLOCATE(new_pll);
 			new_pll->pl = NULL;
 			pack_list_insert(&new_pll->pl, list);
 			new_pll->next = ret;
@@ -324,7 +324,7 @@ static struct pll * get_permutations(struct pack_list *list, int n)
 	while (list->next) {
 		subset = get_permutations(list->next, n - 1);
 		while (subset) {
-			new_pll = xmalloc(sizeof(*new_pll));
+			ALLOCATE(new_pll);
 			new_pll->pl = subset->pl;
 			pack_list_insert(&new_pll->pl, list);
 			new_pll->next = ret;

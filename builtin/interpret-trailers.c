@@ -64,7 +64,7 @@ static int option_parse_trailer(const struct option *opt,
 	if (!arg)
 		return -1;
 
-	item = xmalloc(sizeof(*item));
+	ALLOCATE(item);
 	item->text = arg;
 	item->where = where;
 	item->if_exists = if_exists;

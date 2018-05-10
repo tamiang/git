@@ -515,7 +515,7 @@ static int merge_working_tree(const struct checkout_opts *opts,
 		topts.verbose_update = opts->show_progress;
 		topts.fn = twoway_merge;
 		if (opts->overwrite_ignore) {
-			topts.dir = xcalloc(1, sizeof(*topts.dir));
+			CALLOCATE(topts.dir, 1);
 			topts.dir->flags |= DIR_SHOW_IGNORED;
 			setup_standard_excludes(topts.dir);
 		}

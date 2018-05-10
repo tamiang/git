@@ -1800,7 +1800,7 @@ static int configset_add_value(struct config_set *cs, const char *key, const cha
 	 * are already normalized. So simply add them without any further munging.
 	 */
 	if (!e) {
-		e = xmalloc(sizeof(*e));
+		ALLOCATE(e);
 		hashmap_entry_init(e, strhash(key));
 		e->key = xstrdup(key);
 		string_list_init(&e->value_list, 1);

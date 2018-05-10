@@ -122,7 +122,7 @@ static const void *anonymize_mem(struct hashmap *map,
 	ret = hashmap_get(map, &key, NULL);
 
 	if (!ret) {
-		ret = xmalloc(sizeof(*ret));
+		ALLOCATE(ret);
 		hashmap_entry_init(&ret->hash, key.hash.hash);
 		ret->orig = xstrdup(orig);
 		ret->orig_len = *len;

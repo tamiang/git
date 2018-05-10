@@ -1810,7 +1810,7 @@ int do_read_index(struct index_state *istate, const char *path, int must_exist)
 	istate->version = ntohl(hdr->hdr_version);
 	istate->cache_nr = ntohl(hdr->hdr_entries);
 	istate->cache_alloc = alloc_nr(istate->cache_nr);
-	istate->cache = xcalloc(istate->cache_alloc, sizeof(*istate->cache));
+	CALLOCATE(istate->cache, istate->cache_alloc);
 	istate->initialized = 1;
 
 	if (istate->version == 4)
@@ -1897,7 +1897,7 @@ int read_index_from(struct index_state *istate, const char *path,
 	if (split_index->base)
 		discard_index(split_index->base);
 	else
-		split_index->base = xcalloc(1, sizeof(*split_index->base));
+		CALLOCATE(split_index->base, 1);
 
 	base_sha1_hex = sha1_to_hex(split_index->base_sha1);
 	base_path = xstrfmt("%s/sharedindex.%s", gitdir, base_sha1_hex);

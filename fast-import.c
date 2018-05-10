@@ -2682,7 +2682,7 @@ static struct hash_list *parse_merge(unsigned int *count)
 
 	*count = 0;
 	while (skip_prefix(command_buf.buf, "merge ", &from)) {
-		n = xmalloc(sizeof(*n));
+		ALLOCATE(n);
 		s = lookup_branch(from);
 		if (s)
 			oidcpy(&n->oid, &s->oid);

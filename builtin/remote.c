@@ -497,7 +497,7 @@ static int add_known_remote(struct remote *remote, void *cb_data)
 	if (!strcmp(all->to_delete->name, remote->name))
 		return 0;
 
-	r = xmalloc(sizeof(*r));
+	ALLOCATE(r);
 	r->remote = remote;
 	r->next = all->list;
 	all->list = r;

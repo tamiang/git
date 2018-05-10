@@ -148,7 +148,7 @@ static void prefetch(struct walker *walker, unsigned char *sha1)
 	struct object_request *newreq;
 	struct walker_data *data = walker->data;
 
-	newreq = xmalloc(sizeof(*newreq));
+	ALLOCATE(newreq);
 	newreq->walker = walker;
 	hashcpy(newreq->oid.hash, sha1);
 	newreq->repo = data->alt;
@@ -316,7 +316,7 @@ static void process_alternates_response(void *callback_data)
 				} else if (is_alternate_allowed(target.buf)) {
 					warning("adding alternate object store: %s",
 						target.buf);
-					newalt = xmalloc(sizeof(*newalt));
+					ALLOCATE(newalt);
 					newalt->next = NULL;
 					newalt->base = strbuf_detach(&target, NULL);
 					newalt->got_indices = 0;
@@ -606,7 +606,7 @@ struct walker *get_http_walker(const char *url)
 	struct walker_data *data = xmalloc(sizeof(struct walker_data));
 	struct walker *walker = xmalloc(sizeof(struct walker));
 
-	data->alt = xmalloc(sizeof(*data->alt));
+	ALLOCATE(data->alt);
 	data->alt->base = xstrdup(url);
 	for (s = data->alt->base + strlen(data->alt->base) - 1; *s == '/'; --s)
 		*s = 0;

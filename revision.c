@@ -1202,7 +1202,7 @@ void clear_ref_exclusion(struct string_list **ref_excludes_p)
 void add_ref_exclusion(struct string_list **ref_excludes_p, const char *exclude)
 {
 	if (!*ref_excludes_p) {
-		*ref_excludes_p = xcalloc(1, sizeof(**ref_excludes_p));
+		CALLOCATE(*ref_excludes_p, 1);
 		(*ref_excludes_p)->strdup_strings = 1;
 	}
 	string_list_append(*ref_excludes_p, exclude);
@@ -2530,7 +2530,7 @@ static struct merge_simplify_state *locate_simplify_state(struct rev_info *revs,
 
 	st = lookup_decoration(&revs->merge_simplification, &commit->object);
 	if (!st) {
-		st = xcalloc(1, sizeof(*st));
+		CALLOCATE(st, 1);
 		add_decoration(&revs->merge_simplification, &commit->object, st);
 	}
 	return st;

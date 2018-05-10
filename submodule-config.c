@@ -216,7 +216,7 @@ static struct submodule *lookup_or_create_by_name(struct submodule_cache *cache,
 	if (submodule)
 		return submodule;
 
-	submodule = xmalloc(sizeof(*submodule));
+	ALLOCATE(submodule);
 
 	strbuf_addstr(&name_buf, name);
 	submodule->name = strbuf_detach(&name_buf, NULL);

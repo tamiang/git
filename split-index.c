@@ -5,7 +5,7 @@
 struct split_index *init_split_index(struct index_state *istate)
 {
 	if (!istate->split_index) {
-		istate->split_index = xcalloc(1, sizeof(*istate->split_index));
+		CALLOCATE(istate->split_index, 1);
 		istate->split_index->refcount = 1;
 	}
 	return istate->split_index;
@@ -77,7 +77,7 @@ void move_cache_to_base_index(struct index_state *istate)
 	 * with istate->cache[]. Accept a bit of leaking here because
 	 * this code is only used by short-lived update-index.
 	 */
-	si->base = xcalloc(1, sizeof(*si->base));
+	CALLOCATE(si->base, 1);
 	si->base->version = istate->version;
 	/* zero timestamp disables racy test in ce_write_index() */
 	si->base->timestamp = istate->timestamp;

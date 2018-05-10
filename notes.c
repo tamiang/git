@@ -447,7 +447,7 @@ static void load_subtree(struct notes_tree *t, struct leaf_node *subtree,
 			goto handle_non_note;
 		}
 
-		l = xcalloc(1, sizeof(*l));
+		CALLOCATE(l, 1);
 		oidcpy(&l->key_oid, &object_oid);
 		oidcpy(&l->val_oid, entry.oid);
 		if (note_tree_insert(t, node, n, l, type,

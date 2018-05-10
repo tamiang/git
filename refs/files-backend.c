@@ -806,7 +806,7 @@ static struct ref_iterator *files_ref_iterator_begin(
 
 	overlay_iter = overlay_ref_iterator_begin(loose_iter, packed_iter);
 
-	iter = xcalloc(1, sizeof(*iter));
+	CALLOCATE(iter, 1);
 	ref_iterator = &iter->base;
 	base_ref_iterator_init(ref_iterator, &files_ref_iterator_vtable,
 			       overlay_iter->ordered);
@@ -2556,7 +2556,7 @@ static int files_transaction_prepare(struct ref_store *ref_store,
 	if (!transaction->nr)
 		goto cleanup;
 
-	backend_data = xcalloc(1, sizeof(*backend_data));
+	CALLOCATE(backend_data, 1);
 	transaction->backend_data = backend_data;
 
 	/*

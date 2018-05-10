@@ -642,7 +642,7 @@ static void add_fetch_request(struct object *obj)
 		return;
 
 	obj->flags |= FETCHING;
-	request = xmalloc(sizeof(*request));
+	ALLOCATE(request);
 	request->obj = obj;
 	request->url = NULL;
 	request->lock = NULL;
@@ -680,7 +680,7 @@ static int add_send_request(struct object *obj, struct remote_lock *lock)
 	}
 
 	obj->flags |= PUSHING;
-	request = xmalloc(sizeof(*request));
+	ALLOCATE(request);
 	request->obj = obj;
 	request->url = NULL;
 	request->lock = lock;
@@ -889,7 +889,7 @@ static struct remote_lock *lock_remote(const char *path, long timeout)
 	curl_easy_setopt(slot->curl, CURLOPT_HTTPHEADER, dav_headers);
 	curl_easy_setopt(slot->curl, CURLOPT_FILE, &in_buffer);
 
-	lock = xcalloc(1, sizeof(*lock));
+	CALLOCATE(lock, 1);
 	lock->timeout = -1;
 
 	if (start_active_slot(slot)) {
@@ -1705,7 +1705,7 @@ int cmd_main(int argc, const char **argv)
 	int new_refs;
 	struct ref *ref, *local_refs;
 
-	repo = xcalloc(1, sizeof(*repo));
+	CALLOCATE(repo, 1);
 
 	argv++;
 	for (i = 1; i < argc; i++, argv++) {

@@ -115,7 +115,7 @@ static struct child_process *get_helper(struct transport *transport)
 	if (data->helper)
 		return data->helper;
 
-	helper = xmalloc(sizeof(*helper));
+	ALLOCATE(helper);
 	child_process_init(helper);
 	helper->in = -1;
 	helper->out = -1;

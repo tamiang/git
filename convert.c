@@ -820,7 +820,7 @@ static int apply_multi_file_filter(const char *path, const char *src, size_t len
 	fflush(NULL);
 
 	if (!entry) {
-		entry = xmalloc(sizeof(*entry));
+		ALLOCATE(entry);
 		entry->supported_capabilities = 0;
 
 		if (subprocess_start(&subprocess_map, &entry->subprocess, cmd, start_multi_file_filter_fn)) {
@@ -1764,7 +1764,7 @@ static struct stream_filter *cascade_filter(struct stream_filter *one,
 	if (!two || is_null_stream_filter(two))
 		return one;
 
-	cascade = xmalloc(sizeof(*cascade));
+	ALLOCATE(cascade);
 	cascade->one = one;
 	cascade->two = two;
 	cascade->end = cascade->ptr = 0;

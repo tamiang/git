@@ -245,7 +245,7 @@ void repo_clear(struct repository *repo)
 int repo_read_index(struct repository *repo)
 {
 	if (!repo->index)
-		repo->index = xcalloc(1, sizeof(*repo->index));
+		CALLOCATE(repo->index, 1);
 
 	return read_index_from(repo->index, repo->index_file, repo->gitdir);
 }

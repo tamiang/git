@@ -816,7 +816,7 @@ static int has_epoch_timestamp(const char *nameline)
 		return 0;
 
 	if (!stamp) {
-		stamp = xmalloc(sizeof(*stamp));
+		ALLOCATE(stamp);
 		if (regcomp(stamp, stamp_regexp, REG_EXTENDED)) {
 			warning(_("Cannot prepare timestamp regexp %s"),
 				stamp_regexp);
@@ -1791,7 +1791,7 @@ static int parse_single_patch(struct apply_state *state,
 		struct fragment *fragment;
 		int len;
 
-		fragment = xcalloc(1, sizeof(*fragment));
+		CALLOCATE(fragment, 1);
 		fragment->linenr = state->linenr;
 		len = parse_fragment(state, line, size, patch, fragment);
 		if (len <= 0) {
@@ -1969,7 +1969,7 @@ static struct fragment *parse_binary_hunk(struct apply_state *state,
 		size -= llen;
 	}
 
-	frag = xcalloc(1, sizeof(*frag));
+	CALLOCATE(frag, 1);
 	frag->patch = inflate_it(data, hunk_size, origlen);
 	frag->free_patch = 1;
 	if (!frag->patch)
@@ -4649,7 +4649,7 @@ static int apply_patch(struct apply_state *state,
 		struct patch *patch;
 		int nr;
 
-		patch = xcalloc(1, sizeof(*patch));
+		CALLOCATE(patch, 1);
 		patch->inaccurate_eof = !!(options & APPLY_OPT_INACCURATE_EOF);
 		patch->recount =  !!(options & APPLY_OPT_RECOUNT);
 		nr = parse_chunk(state, buf.buf + offset, buf.len - offset, patch);

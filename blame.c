@@ -1411,7 +1411,7 @@ static void pass_blame(struct blame_scoreboard *sb, struct blame_origin *origin,
 	else if (num_sg < ARRAY_SIZE(sg_buf))
 		memset(sg_buf, 0, sizeof(sg_buf));
 	else
-		sg_origin = xcalloc(num_sg, sizeof(*sg_origin));
+		CALLOCATE(sg_origin, num_sg);
 
 	/*
 	 * The first pass looks for unrenamed path to optimize for

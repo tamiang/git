@@ -1147,7 +1147,7 @@ struct active_request_slot *get_active_slot(void)
 		slot = slot->next;
 
 	if (slot == NULL) {
-		newslot = xmalloc(sizeof(*newslot));
+		ALLOCATE(newslot);
 		newslot->curl = NULL;
 		newslot->in_use = 0;
 		newslot->next = NULL;
@@ -2142,7 +2142,7 @@ struct http_pack_request *new_http_pack_request(
 	struct strbuf buf = STRBUF_INIT;
 	struct http_pack_request *preq;
 
-	preq = xcalloc(1, sizeof(*preq));
+	CALLOCATE(preq, 1);
 	preq->target = target;
 
 	end_url_with_slash(&buf, base_url);
@@ -2239,7 +2239,7 @@ struct http_object_request *new_http_object_request(const char *base_url,
 	off_t prev_posn = 0;
 	struct http_object_request *freq;
 
-	freq = xcalloc(1, sizeof(*freq));
+	CALLOCATE(freq, 1);
 	hashcpy(freq->sha1, sha1);
 	freq->localfile = -1;
 

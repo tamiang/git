@@ -1496,7 +1496,7 @@ static int update_clone_get_next_task(struct child_process *child,
 					   "any more?\n");
 			return 0;
 		}
-		p = xmalloc(sizeof(*p));
+		ALLOCATE(p);
 		*p = suc->current;
 		*idx_task_cb = p;
 		suc->current ++;

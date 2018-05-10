@@ -397,7 +397,7 @@ void find_bisection(struct commit_list **commit_list, int *reaches,
 	show_list("bisection 2 sorted", 0, nr, list);
 
 	*all = nr;
-	weights = xcalloc(on_list, sizeof(*weights));
+	CALLOCATE(weights, on_list);
 
 	/* Do the real work of finding bisection commit. */
 	best = do_find_bisection(list, nr, weights, find_all);
@@ -422,7 +422,7 @@ static int register_ref(const char *refname, const struct object_id *oid,
 	strbuf_addstr(&good_prefix, "-");
 
 	if (!strcmp(refname, term_bad)) {
-		current_bad_oid = xmalloc(sizeof(*current_bad_oid));
+		ALLOCATE(current_bad_oid);
 		oidcpy(current_bad_oid, oid);
 	} else if (starts_with(refname, good_prefix.buf)) {
 		oid_array_append(&good_revs, oid);

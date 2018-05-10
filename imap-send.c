@@ -963,7 +963,7 @@ static struct imap_store *imap_open_store(struct imap_server_conf *srvc, char *f
 	char *arg, *rsp;
 	int s = -1, preauth;
 
-	ctx = xcalloc(1, sizeof(*ctx));
+	CALLOCATE(ctx, 1);
 
 	ctx->imap = imap = xcalloc(1, sizeof(*imap));
 	imap->buf.sock.fd[0] = imap->buf.sock.fd[1] = -1;

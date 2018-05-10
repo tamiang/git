@@ -1616,7 +1616,7 @@ static struct diff_queue_struct *get_diffpairs(struct merge_options *o,
 	if (opts.needed_rename_limit > o->needed_rename_limit)
 		o->needed_rename_limit = opts.needed_rename_limit;
 
-	ret = xmalloc(sizeof(*ret));
+	ALLOCATE(ret);
 	*ret = diff_queued_diff;
 
 	opts.output_format = DIFF_FORMAT_NO_OUTPUT;
@@ -1930,7 +1930,7 @@ static struct hashmap *get_directory_renames(struct diff_queue_struct *pairs,
 	 * renames, finding out how often each directory rename pair
 	 * possibility occurs.
 	 */
-	dir_renames = xmalloc(sizeof(*dir_renames));
+	ALLOCATE(dir_renames);
 	dir_rename_init(dir_renames);
 	for (i = 0; i < pairs->nr; ++i) {
 		struct string_list_item *item;
@@ -1950,7 +1950,7 @@ static struct hashmap *get_directory_renames(struct diff_queue_struct *pairs,
 
 		entry = dir_rename_find_entry(dir_renames, old_dir);
 		if (!entry) {
-			entry = xmalloc(sizeof(*entry));
+			ALLOCATE(entry);
 			dir_rename_entry_init(entry, old_dir);
 			hashmap_put(dir_renames, entry);
 		} else {
@@ -2302,7 +2302,7 @@ static struct string_list *get_renames(struct merge_options *o,
 			continue;
 		}
 
-		re = xmalloc(sizeof(*re));
+		ALLOCATE(re);
 		re->processed = 0;
 		re->add_turned_into_rename = 0;
 		re->pair = pair;

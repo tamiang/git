@@ -637,7 +637,7 @@ void add_exclude(const char *string, const char *base,
 	if (flags & EXC_FLAG_MUSTBEDIR) {
 		FLEXPTR_ALLOC_MEM(x, pattern, string, patternlen);
 	} else {
-		x = xmalloc(sizeof(*x));
+		ALLOCATE(x);
 		x->pattern = string;
 	}
 	x->patternlen = patternlen;
@@ -1189,7 +1189,7 @@ static void prep_exclude(struct dir_struct *dir,
 		const char *cp;
 		struct oid_stat oid_stat;
 
-		stk = xcalloc(1, sizeof(*stk));
+		CALLOCATE(stk, 1);
 		if (current < 0) {
 			cp = base;
 			current = 0;
@@ -2868,7 +2868,7 @@ struct untracked_cache *read_untracked_extension(const void *data, unsigned long
 	if (next + ouc_size(0) > end)
 		return NULL;
 
-	uc = xcalloc(1, sizeof(*uc));
+	CALLOCATE(uc, 1);
 	strbuf_init(&uc->ident, ident_len);
 	strbuf_add(&uc->ident, ident, ident_len);
 	load_oid_stat(&uc->ss_info_exclude,

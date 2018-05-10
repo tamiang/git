@@ -692,7 +692,7 @@ static struct attr_stack *read_attr_from_array(const char **list)
 	const char *line;
 	int lineno = 0;
 
-	res = xcalloc(1, sizeof(*res));
+	CALLOCATE(res, 1);
 	while ((line = *(list++)) != NULL)
 		handle_attr_line(res, line, "[builtin]", ++lineno, 1);
 	return res;
@@ -732,7 +732,7 @@ static struct attr_stack *read_attr_from_file(const char *path, int macro_ok)
 
 	if (!fp)
 		return NULL;
-	res = xcalloc(1, sizeof(*res));
+	CALLOCATE(res, 1);
 	while (fgets(buf, sizeof(buf), fp)) {
 		char *bufp = buf;
 		if (!lineno)
@@ -753,7 +753,7 @@ static struct attr_stack *read_attr_from_index(const char *path, int macro_ok)
 	if (!buf)
 		return NULL;
 
-	res = xcalloc(1, sizeof(*res));
+	CALLOCATE(res, 1);
 	for (sp = buf; *sp; ) {
 		char *ep;
 		int more;
@@ -793,7 +793,7 @@ static struct attr_stack *read_attr(const char *path, int macro_ok)
 	}
 
 	if (!res)
-		res = xcalloc(1, sizeof(*res));
+		CALLOCATE(res, 1);
 	return res;
 }
 

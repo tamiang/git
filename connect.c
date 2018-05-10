@@ -845,7 +845,7 @@ static struct child_process *git_proxy_connect(int fd[2], char *host)
 	if (looks_like_command_line_option(port))
 		die("strange port '%s' blocked", port);
 
-	proxy = xmalloc(sizeof(*proxy));
+	ALLOCATE(proxy);
 	child_process_init(proxy);
 	argv_array_push(&proxy->args, git_proxy_command);
 	argv_array_push(&proxy->args, host);
@@ -1251,7 +1251,7 @@ struct child_process *git_connect(int fd[2], const char *url,
 		struct strbuf cmd = STRBUF_INIT;
 		const char *const *var;
 
-		conn = xmalloc(sizeof(*conn));
+		ALLOCATE(conn);
 		child_process_init(conn);
 
 		if (looks_like_command_line_option(path))
