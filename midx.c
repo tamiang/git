@@ -590,6 +590,10 @@ static void write_midx_chunk_objectoffsets(
 
 		if (large_offset_needed && obj->offset >> 31)
 			details.internal_offset = (MIDX_LARGE_OFFSET_NEEDED | nr_large_offset++);
+		else if (!large_offset_needed && obj->offset >> 32)
+			BUG("object %s requires a large offset (%"PRIx64") but the MIDX is not writing large offsets!",
+			    oid_to_hex(&obj->oid),
+			    obj->offset);
 		else
 			details.internal_offset = (uint32_t)obj->offset;
 
