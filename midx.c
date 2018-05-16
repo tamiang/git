@@ -496,6 +496,11 @@ static void write_midx_chunk_packnames(
 {
 	uint32_t i;
 	for (i = 0; i < nr_packs; i++) {
+		if (i > 0 && strcmp(pack_names[i], pack_names[i-1]) <= 0)
+			BUG("incorrect pack order: %s before %s",
+			    pack_names[i-1],
+			    pack_names[i]);
+
 		hashwrite(f, pack_names[i], strlen(pack_names[i]) + 1);
 	}
 }
