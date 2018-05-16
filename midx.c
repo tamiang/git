@@ -478,7 +478,7 @@ static int midx_oid_compare(const void *_a, const void *_b)
 	return a->pack_int_id - b->pack_int_id;
 }
 
-static void write_midx_chunk_packlookup(
+static size_t write_midx_chunk_packlookup(
 	struct hashfile *f,
 	const char **pack_names, uint32_t nr_packs)
 {
@@ -488,24 +488,31 @@ static void write_midx_chunk_packlookup(
 		hashwrite_be32(f, cur_len);
 		cur_len += strlen(pack_names[i]) + 1;
 	}
+
+	return 4 * (size_t)nr_packs;
 }
 
-static void write_midx_chunk_packnames(
+static size_t write_midx_chunk_packnames(
 	struct hashfile *f,
 	const char **pack_names, uint32_t nr_packs)
 {
 	uint32_t i;
+	size_t written = 0;
 	for (i = 0; i < nr_packs; i++) {
+		size_t writelen = strlen(pack_names[i]) + 1;
 		if (i > 0 && strcmp(pack_names[i], pack_names[i-1]) <= 0)
 			BUG("incorrect pack order: %s before %s",
 			    pack_names[i-1],
 			    pack_names[i]);
 
-		hashwrite(f, pack_names[i], strlen(pack_names[i]) + 1);
+		hashwrite(f, pack_names[i], writelen);
+		written += writelen;
 	}
+
+	return written;
 }
 
-static void write_midx_chunk_oidfanout(
+static size_t write_midx_chunk_oidfanout(
 	struct hashfile *f,
 	struct pack_midx_entry **objects, uint32_t nr_objects)
 {
@@ -538,15 +545,18 @@ static void write_midx_chunk_oidfanout(
 		hashwrite_be32(f, count_distinct);
 		list = next;
 	}
+
+	return 4 * 256;
 }
 
-static void write_midx_chunk_oidlookup(
+static size_t write_midx_chunk_oidlookup(
 	struct hashfile *f, unsigned char hash_len,
 	struct pack_midx_entry **objects, uint32_t nr_objects)
 {
 	struct pack_midx_entry **list = objects;
 	struct object_id *last_oid = NULL;
 	uint32_t i;
+	size_t written = 0;
 
 	for (i = 0; i < nr_objects; i++) {
 		struct pack_midx_entry *obj = *list++;
@@ -566,16 +576,20 @@ static void write_midx_chunk_oidlookup(
 
 		last_oid = &obj->oid;
 		hashwrite(f, obj->oid.hash, (int)hash_len);
+		written += hash_len;
 	}
+
+	return written;
 }
 
-static void write_midx_chunk_objectoffsets(
+static size_t write_midx_chunk_objectoffsets(
 	struct hashfile *f, int large_offset_needed,
 	struct pack_midx_entry **objects, uint32_t nr_objects, uint32_t *pack_perm)
 {
 	struct pack_midx_entry **list = objects;
 	struct object_id *last_oid = 0;
 	uint32_t i, nr_large_offset = 0;
+	size_t written = 0;
 
 	for (i = 0; i < nr_objects; i++) {
 		struct pack_midx_details_internal details;
@@ -599,15 +613,19 @@ static void write_midx_chunk_objectoffsets(
 
 		details.internal_offset = htonl(details.internal_offset);
 		hashwrite(f, &details, 8);
+		written += 8;
 	}
+
+	return written;
 }
 
-static void write_midx_chunk_largeoffsets(
+static size_t write_midx_chunk_largeoffsets(
 	struct hashfile *f, uint32_t nr_large_offset,
 	struct pack_midx_entry **objects, uint32_t nr_objects)
 {
 	struct pack_midx_entry **list = objects;
 	struct object_id *last_oid = 0;
+	size_t written = 0;
 
 	while (nr_large_offset) {
 		struct pack_midx_entry *obj = *list++;
@@ -626,8 +644,12 @@ static void write_midx_chunk_largeoffsets(
 		split[1] = htonl(offset & 0xffffffff);
 
 		hashwrite(f, split, 8);
+		written += 8;
+
 		nr_large_offset--;
 	}
+
+	return written;
 }
 
 struct pack_pair {
@@ -683,6 +705,7 @@ const char *write_midx_file(const char *pack_dir,
 	uint32_t count_distinct = 0;
 	int total_name_len = 0;
 	uint32_t *pack_perm;
+	size_t written = 0;
 
 	if (!core_midx)
 		return 0;
@@ -766,6 +789,7 @@ const char *write_midx_file(const char *pack_dir,
 	/* write header to file */
 	assert(sizeof(hdr) == 16);
 	hashwrite(f, &hdr, sizeof(hdr));
+	written += sizeof(hdr);
 
 	/*
 	 * Fill initial chunk values using offsets
@@ -800,37 +824,45 @@ const char *write_midx_file(const char *pack_dir,
 		chunk_write[0] = htonl(chunk_ids[i]);
 		chunk_write[1] = htonl(chunk_offsets[i] >> 32);
 		chunk_write[2] = htonl(chunk_offsets[i] & 0xffffffff);
+
 		hashwrite(f, chunk_write, 12);
+		written += 12;
 	}
 
-	for (chunk = 0; chunk < hdr.num_chunks; chunk++) {
+	for (chunk = 0; chunk <= hdr.num_chunks; chunk++) {
+		if (chunk_offsets[chunk] != written)
+			BUG("chunk %d has intended chunk offset %"PRIx64" does not match expected %"PRIx64"",
+			    chunk,
+			    (uint64_t)chunk_offsets[chunk],
+			    (uint64_t)written);
+
 		switch (chunk_ids[chunk]) {
 		case MIDX_CHUNKID_PACKLOOKUP:
-			write_midx_chunk_packlookup(f, pack_names, nr_packs);
+			written += write_midx_chunk_packlookup(f, pack_names, nr_packs);
 			break;
 
 		case MIDX_CHUNKID_PACKNAMES:
-			write_midx_chunk_packnames(f, pack_names, nr_packs);
+			written += write_midx_chunk_packnames(f, pack_names, nr_packs);
 			break;
 
 		case MIDX_CHUNKID_OIDFANOUT:
-			write_midx_chunk_oidfanout(f, sorted_by_sha, nr_objects);
+			written += write_midx_chunk_oidfanout(f, sorted_by_sha, nr_objects);
 			break;
 
 		case MIDX_CHUNKID_OIDLOOKUP:
-			write_midx_chunk_oidlookup(f, hdr.hash_len, sorted_by_sha,
-						   nr_objects);
+			written += write_midx_chunk_oidlookup(f, hdr.hash_len, sorted_by_sha,
+							      nr_objects);
 			break;
 
 		case MIDX_CHUNKID_OBJECTOFFSETS:
-			write_midx_chunk_objectoffsets(f, large_offset_needed,
-						       sorted_by_sha, nr_objects,
-						       pack_perm);
+			written += write_midx_chunk_objectoffsets(f, large_offset_needed,
+								  sorted_by_sha, nr_objects,
+								  pack_perm);
 			break;
 
 		case MIDX_CHUNKID_LARGEOFFSETS:
-			write_midx_chunk_largeoffsets(f, nr_large_offset,
-						      sorted_by_sha, nr_objects);
+			written += write_midx_chunk_largeoffsets(f, nr_large_offset,
+								 sorted_by_sha, nr_objects);
 			break;
 
 		case 0:
