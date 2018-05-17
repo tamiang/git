@@ -10,4 +10,5 @@ it has [support for C/C++ via an extension](https://github.com/Microsoft/vscode-
 
 To start developing Git with VS Code, simply run the Unix shell script called
 `init.sh` in this directory, which creates the configuration files in
-`.vscode/` that VS Code consumes.
+`.vscode/` that VS Code consumes. `init.sh` needs access to `make` and `gcc`,
+so run the script in a Git SDK shell if you are using Windows.
