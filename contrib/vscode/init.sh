@@ -144,6 +144,9 @@ vscode-init:
 	echo "$$incs" | sort | sed '$$s/,$$//' && \
 	echo '            ],' && \
 	echo '            "defines": [' && \
+	echo '                "GIT_HTML_PATH=\"share/doc/git-doc\"",' && \
+	echo '                "GIT_MAN_PATH=\"share/man\"",' && \
+	echo '                "GIT_INFO_PATH=\"share/info\"",' && \
 	echo "$$defs" | sort | sed '$$s/,$$//' && \
 	echo '            ],' && \
 	echo '            "browse": {' && \
