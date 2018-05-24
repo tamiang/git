@@ -217,6 +217,10 @@ static struct midxed_git *load_midxed_git_one(const char *midx_file, const char 
 
 		for (i = 0; i < midx->num_packs; i++) {
 			uint32_t name_offset = ntohl(*(uint32_t*)(midx->chunk_pack_lookup + 4 * i));
+
+			if (midx->chunk_pack_names + name_offset >= midx->data + midx->data_len)
+				die("invalid packfile name lookup");
+
 			midx->pack_names[i] = (const char*)(midx->chunk_pack_names + name_offset);
 		}
 	}
