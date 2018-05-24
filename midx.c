@@ -953,7 +953,9 @@ int midx_verify(const char *pack_dir, const char *midx_id)
 	uint32_t i, cur_fanout_pos = 0;
 	struct midxed_git *m;
 	const char *midx_head_path;
-	struct object_id cur_oid, prev_oid;
+	struct object_id cur_oid, prev_oid, checksum;
+	struct hashfile *f;
+	int devnull, checksum_fail = 0;
 
 	if (midx_id) {
 		size_t sz;
@@ -969,6 +971,17 @@ int midx_verify(const char *pack_dir, const char *midx_id)
 	if (!m) {
 		midx_report("failed to find specified midx file");
 		goto cleanup;
+	}
+
+
+	devnull = open("/dev/null", O_WRONLY);
+	f = hashfd(devnull, NULL);
+	hashwrite(f, m->data, m->data_len - m->hdr->hash_len);
+	finalize_hashfile(f, checksum.hash, CSUM_CLOSE);
+	if (hashcmp(checksum.hash, m->data + m->data_len - m->hdr->hash_len)) {
+		midx_report(_("the midx file has incorrect checksum and is likely corrupt"));
+		verify_midx_error = 0;
+		checksum_fail = 1;
 	}
 
 	if (m->hdr->hash_version != MIDX_OID_VERSION)
@@ -988,8 +1001,6 @@ int midx_verify(const char *pack_dir, const char *midx_id)
 		goto cleanup;
 
 	for (i = 0; i < m->num_packs; i++) {
-		fprintf(stderr, "preparing %s\n", m->pack_names[i]);
-		fflush(stderr);
 		if (prepare_midx_pack(m, i)) {
 			midx_report("failed to prepare pack %s",
 				    m->pack_names[i]);
@@ -1061,5 +1072,5 @@ cleanup:
 	if (m)
 		close_midx(m);
 	free(m);
-	return verify_midx_error;
+	return verify_midx_error | checksum_fail;
 }

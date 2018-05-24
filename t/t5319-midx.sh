@@ -262,6 +262,8 @@ MIDX_BYTE_OBJECT_OFFSET=`expr $MIDX_OFFSET_OBJECT_OFFSETS + \
 MIDX_OFFSET_PACKFILE_NAMES=`expr $MIDX_OFFSET_OBJECT_OFFSETS + \
 				$MIDX_WIDTH_OBJECT_OFFSETS \* $MIDX_NUM_OBJECTS`
 MIDX_BYTE_PACKFILE_NAMES=`expr $MIDX_OFFSET_PACKFILE_NAMES + 10`
+MIDX_LEN=$(stat --printf="%s" midx-*.midx)
+MIDX_BYTE_CHECKSUM=`expr $MIDX_LEN - $HASH_LEN`
 
 test_expect_success 'midx --verify succeeds' '
 	git midx --verify --pack-dir .
@@ -367,6 +369,11 @@ test_expect_success 'verify packfile name' '
 test_expect_success 'verify packfile lookup' '
 	corrupt_midx_and_verify $MIDX_BYTE_PACKFILE_LOOKUP "\01" \
 		"invalid packfile name lookup"
+'
+
+test_expect_success 'verify checksum hash' '
+	corrupt_midx_and_verify $MIDX_BYTE_CHECKSUM "\00" \
+		"incorrect checksum"
 '
 
 # usage: corrupt_data <file> <pos> [<data>]
