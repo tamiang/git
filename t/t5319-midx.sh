@@ -254,6 +254,8 @@ test_expect_success 'recompute valid midx' '
 '
 
 MIDX_BYTE_VERSION=4
+MIDX_BYTE_OID_VERSION=8
+MIDX_BYTE_OID_LEN=9
 
 test_expect_success 'midx --verify succeeds' '
 	git midx --verify --pack-dir .
@@ -282,6 +284,16 @@ test_expect_success 'verify bad signature' '
 test_expect_success 'verify bad version' '
 	corrupt_midx_and_verify $MIDX_BYTE_VERSION "\02" \
 		"midx version"
+'
+
+test_expect_success 'verify bad object id version' '
+	corrupt_midx_and_verify $MIDX_BYTE_OID_VERSION "\02" \
+		"hash version"
+'
+
+test_expect_success 'verify bad object id length' '
+	corrupt_midx_and_verify $MIDX_BYTE_OID_LEN "\010" \
+		"hash length"
 '
 
 test_done

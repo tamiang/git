@@ -964,8 +964,22 @@ int midx_verify(const char *pack_dir, const char *midx_id)
 
 	m = load_midxed_git_one(midx_head_path, pack_dir);
 
-	if (!m)
+	if (!m) {
 		midx_report("failed to find specified midx file");
+		goto cleanup;
+	}
 
+	if (m->hdr->hash_version != MIDX_OID_VERSION)
+		midx_report("invalid hash version");
+	if (m->hdr->hash_len != MIDX_OID_LEN)
+		midx_report("invalid hash length");
+
+	if (verify_midx_error)
+		goto cleanup;
+
+cleanup:
+	if (m)
+		close_midx(m);
+	free(m);
 	return verify_midx_error;
 }
