@@ -257,4 +257,24 @@ test_expect_success 'midx --verify succeeds' '
 	git midx --verify --pack-dir .
 '
 
+# usage: corrupt_midx_and_verify <pos> <data> <string>
+corrupt_midx_and_verify() {
+	pos=$1
+	data="${2:-\0}"
+	midxid=$(cat midx-head) &&
+	file=midx-$midxid.midx &&
+	chmod a+w $file &&
+	test_when_finished mv midx-backup $file &&
+	cp $file midx-backup &&
+	printf "$data" | dd of="$file" bs=1 seek="$pos" conv=notrunc &&
+	test_must_fail git midx --verify --pack-dir . 2>test_err &&
+	grep -v "^+" test_err >err &&
+	grep "$grepstr" err
+}
+
+test_expect_success 'verify bad signature' '
+	corrupt_midx_and_verify 0 "\00" \
+		"midx signature"
+'
+
 test_done
