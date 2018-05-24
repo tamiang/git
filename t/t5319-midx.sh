@@ -287,6 +287,9 @@ MIDX_BYTE_OBJECT_PACKID=`expr $MIDX_OFFSET_OBJECT_OFFSETS + \
 				$MIDX_WIDTH_OBJECT_OFFSETS \* 50 + 1`
 MIDX_BYTE_OBJECT_OFFSET=`expr $MIDX_OFFSET_OBJECT_OFFSETS + \
 				$MIDX_WIDTH_OBJECT_OFFSETS \* 50 + 4`
+MIDX_OFFSET_PACKFILE_NAMES=`expr $MIDX_OFFSET_OBJECT_OFFSETS + \
+				$MIDX_WIDTH_OBJECT_OFFSETS \* $MIDX_NUM_OBJECTS`
+MIDX_BYTE_PACKFILE_NAMES=`expr $MIDX_OFFSET_PACKFILE_NAMES + 10`
 
 test_expect_success 'midx --verify succeeds' '
 	git midx --verify --pack-dir .
@@ -378,7 +381,18 @@ test_expect_success 'verify bad pack-int-id' '
 		"pack-int-id for object"
 '
 
-test_expect_success 'verify bad offset' '
+test_expect_success 'verify bad 32-bit offset' '
+	corrupt_midx_and_verify $MIDX_BYTE_OBJECT_OFFSET "\01" \
+		"incorrect offset"
+'
+
+test_expect_success 'verify packfile name' '
+	echo $MIDX_BYTE_PACKFILE_NAMES &&
+	corrupt_midx_and_verify $MIDX_BYTE_PACKFILE_NAMES "\00" \
+		"failed to prepare pack"
+'
+
+test_expect_success 'verify bad 64-bit offset' '
 	corrupt_midx_and_verify $MIDX_BYTE_OBJECT_OFFSET "\01" \
 		"incorrect offset"
 '

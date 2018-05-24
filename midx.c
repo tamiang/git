@@ -3,6 +3,7 @@
 #include "pack.h"
 #include "packfile.h"
 #include "midx.h"
+#include "object-store.h"
 
 #define MIDX_SIGNATURE 0x4d494458 /* "MIDX" */
 #define MIDX_CHUNKID_PACKLOOKUP 0x504c4f4f /* "PLOO" */
@@ -982,6 +983,24 @@ int midx_verify(const char *pack_dir, const char *midx_id)
 	if (verify_midx_error)
 		goto cleanup;
 
+	for (i = 0; i < m->num_packs; i++) {
+		fprintf(stderr, "preparing %s\n", m->pack_names[i]);
+		fflush(stderr);
+		if (prepare_midx_pack(m, i)) {
+			midx_report("failed to prepare pack %s",
+				    m->pack_names[i]);
+			continue;
+		}
+
+		if (!m->packs[i]->index_data &&
+		    open_pack_index(m->packs[i]))
+			midx_report("failed to open index for pack %s",
+				    m->pack_names[i]);
+	}
+
+	if (verify_midx_error)
+		goto cleanup;
+
 	for (i = 0; i < m->num_objects; i++) {
 		struct pack_midx_details details;
 		uint32_t index_pos, pack_id;
@@ -1018,16 +1037,7 @@ int midx_verify(const char *pack_dir, const char *midx_id)
 			continue;
 		}
 
-		if (prepare_midx_pack(m, pack_id)) {
-			midx_report("failed to prepare pack %s",
-				    m->pack_names[pack_id]);
-			continue;
-		}
-
 		p = m->packs[pack_id];
-		if (!p->index_data && open_pack_index(p))
-			midx_report("failed to open index for pack %s",
-				    m->pack_names[pack_id]);
 
 		if (!find_pack_entry_pos(cur_oid.hash, p, &index_pos)) {
 			midx_report("midx contains object not present in packfile: %s",
