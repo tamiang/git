@@ -209,6 +209,10 @@ test_expect_success 'midx --clear' '
 	! test -f "midx-head"
 '
 
+test_expect_success 'midx --verify fails on missing midx' '
+	test_must_fail git midx --verify --pack-dir .
+'
+
 test_expect_success 'Verify normal git operations succeed' '
 	git rev-list --all --objects >rev-list-out-8 &&
 	test_line_count = 90 rev-list-out-8
@@ -241,6 +245,16 @@ test_expect_success 'force some 64-bit offsets with pack-objects' '
 	echo "pack_dir: packs-64" >>midx-read-expect-64 &&
 	test_cmp midx-read-out-64 midx-read-expect-64 &&
 	rm -rf packs-64
+'
+
+# The 'verify' commands below expect a midx-head file pointint
+# to an existing MIDX file.
+test_expect_success 'recomput valid midx' '
+	git midx --write --update-head --pack-dir .
+'
+
+test_expect_success 'midx --verify succeeds' '
+	git midx --verify --pack-dir .
 '
 
 test_done

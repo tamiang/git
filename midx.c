@@ -929,3 +929,41 @@ void close_all_midx(void)
 
 	midxed_git = 0;
 }
+
+static int verify_midx_error = 0;
+
+static void midx_report(const char *fmt, ...)
+{
+	va_list ap;
+	struct strbuf sb = STRBUF_INIT;
+	verify_midx_error = 1;
+
+	va_start(ap, fmt);
+	strbuf_vaddf(&sb, fmt, ap);
+
+	fprintf(stderr, "%s\n", sb.buf);
+	strbuf_release(&sb);
+	va_end(ap);
+}
+
+int midx_verify(const char *pack_dir, const char *midx_id)
+{
+	struct midxed_git *m;
+	const char *midx_head_path;
+
+	if (midx_id) {
+		size_t sz;
+		struct strbuf sb = STRBUF_INIT;
+		strbuf_addf(&sb, "%s/midx-%s.midx", pack_dir, midx_id);
+		midx_head_path = strbuf_detach(&sb, &sz);
+	} else {
+		midx_head_path = get_midx_head_filename_dir(pack_dir);
+	}
+
+	m = load_midxed_git_one(midx_head_path, pack_dir);
+
+	if (!m)
+		midx_report("failed to find specified midx file");
+
+	return verify_midx_error;
+}
