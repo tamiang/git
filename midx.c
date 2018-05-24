@@ -983,6 +983,11 @@ int midx_verify(const char *pack_dir, const char *midx_id)
 		goto cleanup;
 
 	for (i = 0; i < m->num_objects; i++) {
+		struct pack_midx_details details;
+		uint32_t index_pos, pack_id;
+		struct packed_git *p;
+		off_t pack_offset;
+
 		hashcpy(cur_oid.hash, m->chunk_oid_lookup + m->hdr->hash_len * i);
 
 		while (cur_oid.hash[0] > cur_fanout_pos) {
@@ -1000,6 +1005,42 @@ int midx_verify(const char *pack_dir, const char *midx_id)
 				    oid_to_hex(&cur_oid));
 
 		oidcpy(&prev_oid, &cur_oid);
+
+		if (!nth_midxed_object_details(m, i, &details)) {
+			midx_report("nth_midxed_object_details failed with n=%d", i);
+			continue;
+		}
+
+		pack_id = details.pack_int_id;
+		if (pack_id >= m->num_packs) {
+			midx_report("pack-int-id for object n=%d is invalid: %u",
+				    pack_id);
+			continue;
+		}
+
+		if (prepare_midx_pack(m, pack_id)) {
+			midx_report("failed to prepare pack %s",
+				    m->pack_names[pack_id]);
+			continue;
+		}
+
+		p = m->packs[pack_id];
+		if (!p->index_data && open_pack_index(p))
+			midx_report("failed to open index for pack %s",
+				    m->pack_names[pack_id]);
+
+		if (!find_pack_entry_pos(cur_oid.hash, p, &index_pos)) {
+			midx_report("midx contains object not present in packfile: %s",
+				    oid_to_hex(&cur_oid));
+			continue;
+		}
+
+		pack_offset = nth_packed_object_offset(p, index_pos);
+		if (details.offset != pack_offset)
+			midx_report("midx has incorrect offset for %s : %"PRIx64" != %"PRIx64,
+				    oid_to_hex(&cur_oid),
+				    details.offset,
+				    pack_offset);
 	}
 
 cleanup:
