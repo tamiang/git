@@ -228,17 +228,19 @@ test_expect_success 'force some 64-bit offsets with pack-objects' '
 	pack64=$(git pack-objects --index-version=2,0x40 test-64 <obj-list) &&
 	idx64=$(ls test-64-*idx) &&
 	chmod u+w $idx64 &&
-	corrupt_data $idx64 2863 "\02" &&
-	midx64=$(git midx --write --pack-dir .) &&
-	git midx --read --pack-dir . --midx-id=$midx64 >midx-read-out-64 &&
-	echo "header: 4d494458 80000001 01 14 00 06 0000000e" >midx-read-expect-64 &&
-	echo "num_objects: 77" >>midx-read-expect-64 &&
+	mkdir packs-64 &&
+	mv test-64* packs-64/ &&
+	corrupt_data packs-64/$idx64 2863 "\02" &&
+	midx64=$(git midx --write --pack-dir packs-64) &&
+	git midx --read --pack-dir packs-64 --midx-id=$midx64 >midx-read-out-64 &&
+	echo "header: 4d494458 80000001 01 14 00 06 00000001" >midx-read-expect-64 &&
+	echo "num_objects: 65" >>midx-read-expect-64 &&
 	echo "chunks: pack_lookup pack_names oid_fanout oid_lookup object_offsets large_offsets" >>midx-read-expect-64 &&
 	echo "pack_names:" >>midx-read-expect-64 &&
-	ls test-*.pack | sort >>midx-read-expect-64 &&
-	echo "pack_dir: ." >>midx-read-expect-64 &&
+	echo test-64-$pack64.pack >>midx-read-expect-64 &&
+	echo "pack_dir: packs-64" >>midx-read-expect-64 &&
 	test_cmp midx-read-out-64 midx-read-expect-64 &&
-	rm midx-$midx64.midx test-64*
+	rm -rf packs-64
 '
 
 test_done
