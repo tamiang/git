@@ -256,6 +256,18 @@ test_expect_success 'recompute valid midx' '
 MIDX_BYTE_VERSION=4
 MIDX_BYTE_OID_VERSION=8
 MIDX_BYTE_OID_LEN=9
+MIDX_BYTE_CHUNK_COUNT=11
+MIDX_OFFSET_CHUNK_LOOKUP=16
+MIDX_WIDTH_CHUNK_LOOKUP=12
+MIDX_BYTE_CHUNK_FANOUT_ID=$MIDX_OFFSET_CHUNK_LOOKUP
+MIDX_BYTE_CHUNK_LOOKUP_ID=`expr $MIDX_OFFSET_CHUNK_LOOKUP + \
+				1 \* $MIDX_WIDTH_CHUNK_LOOKUP`
+MIDX_BYTE_CHUNK_OFFSET_ID=`expr $MIDX_OFFSET_CHUNK_LOOKUP + \
+				2 \* $MIDX_WIDTH_CHUNK_LOOKUP`
+MIDX_BYTE_CHUNK_PACKLOOKUP_ID=`expr $MIDX_OFFSET_CHUNK_LOOKUP + \
+				3 \* $MIDX_WIDTH_CHUNK_LOOKUP`
+MIDX_BYTE_CHUNK_PACKNAME_ID=`expr $MIDX_OFFSET_CHUNK_LOOKUP + \
+				4 \* $MIDX_WIDTH_CHUNK_LOOKUP`
 
 test_expect_success 'midx --verify succeeds' '
 	git midx --verify --pack-dir .
@@ -294,6 +306,36 @@ test_expect_success 'verify bad object id version' '
 test_expect_success 'verify bad object id length' '
 	corrupt_midx_and_verify $MIDX_BYTE_OID_LEN "\010" \
 		"hash length"
+'
+
+test_expect_success 'verify bad chunk count' '
+	corrupt_midx_and_verify $MIDX_BYTE_CHUNK_COUNT "\01" \
+		"missing Packfile Name chunk"
+'
+
+test_expect_success 'verify bad OID fanout chunk id' '
+	corrupt_midx_and_verify $MIDX_BYTE_CHUNK_FANOUT_ID "\00" \
+		"missing OID Fanout chunk"
+'
+
+test_expect_success 'verify bad OID lookup chunk id' '
+	corrupt_midx_and_verify $MIDX_BYTE_CHUNK_LOOKUP_ID "\00" \
+		"missing OID Lookup chunk"
+'
+
+test_expect_success 'verify bad offset chunk id' '
+	corrupt_midx_and_verify $MIDX_BYTE_CHUNK_OFFSET_ID "\00" \
+		"missing Object Offset chunk"
+'
+
+test_expect_success 'verify bad packfile lookup chunk id' '
+	corrupt_midx_and_verify $MIDX_BYTE_CHUNK_PACKLOOKUP_ID "\00" \
+		"missing Packfile Name Lookup chunk"
+'
+
+test_expect_success 'verify bad packfile name chunk id' '
+	corrupt_midx_and_verify $MIDX_BYTE_CHUNK_PACKNAME_ID "\00" \
+		"missing Packfile Name chunk"
 '
 
 test_done

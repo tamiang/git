@@ -861,11 +861,7 @@ const char *write_midx_file(const char *pack_dir,
 								 sorted_by_sha, nr_objects);
 			break;
 
-		case 0:
-			break;
-
-		default:
-			die("unrecognized MIDX chunk id: %08x", chunk_ids[chunk]);
+		/* We allow optional MIDX chunks, so ignore unrecognized chunk ids */
 		}
 	}
 
@@ -973,6 +969,20 @@ int midx_verify(const char *pack_dir, const char *midx_id)
 		midx_report("invalid hash version");
 	if (m->hdr->hash_len != MIDX_OID_LEN)
 		midx_report("invalid hash length");
+
+	if (verify_midx_error)
+		goto cleanup;
+
+	if (!m->chunk_oid_fanout)
+		midx_report("missing OID Fanout chunk");
+	if (!m->chunk_oid_lookup)
+		midx_report("missing OID Lookup chunk");
+	if (!m->chunk_object_offsets)
+		midx_report("missing Object Offset chunk");
+	if (!m->chunk_pack_lookup)
+		midx_report("missing Packfile Name Lookup chunk");
+	if (!m->chunk_pack_names)
+		midx_report("missing Packfile Name chunk");
 
 	if (verify_midx_error)
 		goto cleanup;
