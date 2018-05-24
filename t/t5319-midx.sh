@@ -249,9 +249,11 @@ test_expect_success 'force some 64-bit offsets with pack-objects' '
 
 # The 'verify' commands below expect a midx-head file pointint
 # to an existing MIDX file.
-test_expect_success 'recomput valid midx' '
+test_expect_success 'recompute valid midx' '
 	git midx --write --update-head --pack-dir .
 '
+
+MIDX_BYTE_VERSION=4
 
 test_expect_success 'midx --verify succeeds' '
 	git midx --verify --pack-dir .
@@ -275,6 +277,11 @@ corrupt_midx_and_verify() {
 test_expect_success 'verify bad signature' '
 	corrupt_midx_and_verify 0 "\00" \
 		"midx signature"
+'
+
+test_expect_success 'verify bad version' '
+	corrupt_midx_and_verify $MIDX_BYTE_VERSION "\02" \
+		"midx version"
 '
 
 test_done

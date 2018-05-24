@@ -142,10 +142,11 @@ static struct midxed_git *load_midxed_git_one(const char *midx_file, const char 
 	}
 
 	if (ntohl(hdr->midx_version) != MIDX_VERSION) {
+		uint32_t version = ntohl(hdr->midx_version);
 		munmap(midx_map, midx_size);
 		close(fd);
 		die("midx version %X does not match version %X",
-		    ntohl(hdr->midx_version), MIDX_VERSION);
+		    version, MIDX_VERSION);
 	}
 
 	/* Time to fill a midx struct */
