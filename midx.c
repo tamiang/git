@@ -194,16 +194,15 @@ static struct midxed_git *load_midxed_git_one(const char *midx_file, const char 
 			case MIDX_CHUNKID_LARGEOFFSETS:
 				midx->chunk_large_offsets = data + chunk_offset;
 				break;
-
-			case 0:
-				break;
-
-			default:
-				munmap(midx_map, midx_size);
-				close(fd);
-				die("Unrecognized MIDX chunk id: %08x", chunk_id);
 		}
 	}
+
+	if (!midx->chunk_oid_fanout)
+		die("midx missing OID Fanout chunk");
+	if (!midx->chunk_pack_lookup)
+		die("midx missing Packfile Name Lookup chunk");
+	if (!midx->chunk_pack_names)
+		die("midx missing Packfile Name chunk");
 
 	midx->num_objects = ntohl(*((uint32_t*)(midx->chunk_oid_fanout + 255 * 4)));
 	midx->num_packs = ntohl(midx->hdr->num_packs);
@@ -946,8 +945,10 @@ static void midx_report(const char *fmt, ...)
 
 int midx_verify(const char *pack_dir, const char *midx_id)
 {
+	uint32_t i, cur_fanout_pos = 0;
 	struct midxed_git *m;
 	const char *midx_head_path;
+	struct object_id cur_oid;
 
 	if (midx_id) {
 		size_t sz;
@@ -973,19 +974,26 @@ int midx_verify(const char *pack_dir, const char *midx_id)
 	if (verify_midx_error)
 		goto cleanup;
 
-	if (!m->chunk_oid_fanout)
-		midx_report("missing OID Fanout chunk");
 	if (!m->chunk_oid_lookup)
 		midx_report("missing OID Lookup chunk");
 	if (!m->chunk_object_offsets)
 		midx_report("missing Object Offset chunk");
-	if (!m->chunk_pack_lookup)
-		midx_report("missing Packfile Name Lookup chunk");
-	if (!m->chunk_pack_names)
-		midx_report("missing Packfile Name chunk");
 
 	if (verify_midx_error)
 		goto cleanup;
+
+	for (i = 0; i < m->num_objects; i++) {
+		hashcpy(cur_oid.hash, m->chunk_oid_lookup + m->hdr->hash_len * i);
+
+		while (cur_oid.hash[0] > cur_fanout_pos) {
+			uint32_t fanout_value = get_be32(m->chunk_oid_fanout + cur_fanout_pos * sizeof(uint32_t));
+			if (i != fanout_value)
+				midx_report("midx has incorrect fanout value: fanout[%d] = %u != %u",
+					    cur_fanout_pos, fanout_value, i);
+
+			cur_fanout_pos++;
+		}
+	}
 
 cleanup:
 	if (m)
