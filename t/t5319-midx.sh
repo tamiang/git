@@ -253,6 +253,7 @@ test_expect_success 'recompute valid midx' '
 	git midx --write --update-head --pack-dir .
 '
 
+HASH_LEN=20
 MIDX_BYTE_VERSION=4
 MIDX_BYTE_OID_VERSION=8
 MIDX_BYTE_OID_LEN=9
@@ -260,6 +261,7 @@ MIDX_BYTE_CHUNK_COUNT=11
 MIDX_OFFSET_CHUNK_LOOKUP=16
 MIDX_WIDTH_CHUNK_LOOKUP=12
 MIDX_NUM_CHUNKS=6
+MIDX_NUM_PACKS=13
 MIDX_BYTE_CHUNK_PACKLOOKUP_ID=$MIDX_OFFSET_CHUNK_LOOKUP
 MIDX_BYTE_CHUNK_FANOUT_ID=`expr $MIDX_OFFSET_CHUNK_LOOKUP + \
 				1 \* $MIDX_WIDTH_CHUNK_LOOKUP`
@@ -269,9 +271,13 @@ MIDX_BYTE_CHUNK_OFFSET_ID=`expr $MIDX_OFFSET_CHUNK_LOOKUP + \
 				3 \* $MIDX_WIDTH_CHUNK_LOOKUP`
 MIDX_BYTE_CHUNK_PACKNAME_ID=`expr $MIDX_OFFSET_CHUNK_LOOKUP + \
 				4 \* $MIDX_WIDTH_CHUNK_LOOKUP`
-MIDX_OFFSET_OID_FANOUT=`expr $MIDX_OFFSET_CHUNK_LOOKUP + \
+MIDX_OFFSET_PACKLOOKUP=`expr $MIDX_OFFSET_CHUNK_LOOKUP + \
 				$MIDX_NUM_CHUNKS \* $MIDX_WIDTH_CHUNK_LOOKUP`
+MIDX_OFFSET_OID_FANOUT=`expr $MIDX_OFFSET_PACKLOOKUP + \
+				4 \* $MIDX_NUM_PACKS`
 MIDX_BYTE_OID_FANOUT=`expr $MIDX_OFFSET_OID_FANOUT + 4 \* 129`
+MIDX_OFFSET_OID_LOOKUP=`expr $MIDX_OFFSET_OID_FANOUT + 4 \* 256`
+MIDX_BYTE_OID_ORDER=`expr $MIDX_OFFSET_OID_LOOKUP + $HASH_LEN \* 50`
 
 test_expect_success 'midx --verify succeeds' '
 	git midx --verify --pack-dir .
@@ -346,6 +352,11 @@ test_expect_success 'verify bad packfile name chunk id' '
 test_expect_success 'verify bad OID fanout value' '
 	corrupt_midx_and_verify $MIDX_BYTE_OID_FANOUT "\01" \
 		"incorrect fanout value"
+'
+
+test_expect_success 'verify bad OID lookup order' '
+	corrupt_midx_and_verify $MIDX_BYTE_OID_ORDER "\00" \
+		"incorrect OID order"
 '
 
 test_done

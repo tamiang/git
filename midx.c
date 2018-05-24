@@ -948,7 +948,7 @@ int midx_verify(const char *pack_dir, const char *midx_id)
 	uint32_t i, cur_fanout_pos = 0;
 	struct midxed_git *m;
 	const char *midx_head_path;
-	struct object_id cur_oid;
+	struct object_id cur_oid, prev_oid;
 
 	if (midx_id) {
 		size_t sz;
@@ -993,6 +993,13 @@ int midx_verify(const char *pack_dir, const char *midx_id)
 
 			cur_fanout_pos++;
 		}
+
+		if (i && oidcmp(&prev_oid, &cur_oid) >= 0)
+			midx_report("midx has incorrect OID order: %s then %s",
+				    oid_to_hex(&prev_oid),
+				    oid_to_hex(&cur_oid));
+
+		oidcpy(&prev_oid, &cur_oid);
 	}
 
 cleanup:
