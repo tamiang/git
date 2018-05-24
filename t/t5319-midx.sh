@@ -262,6 +262,7 @@ MIDX_OFFSET_CHUNK_LOOKUP=16
 MIDX_WIDTH_CHUNK_LOOKUP=12
 MIDX_NUM_CHUNKS=6
 MIDX_NUM_PACKS=13
+MIDX_NUM_OBJECTS=77
 MIDX_BYTE_CHUNK_PACKLOOKUP_ID=$MIDX_OFFSET_CHUNK_LOOKUP
 MIDX_BYTE_CHUNK_FANOUT_ID=`expr $MIDX_OFFSET_CHUNK_LOOKUP + \
 				1 \* $MIDX_WIDTH_CHUNK_LOOKUP`
@@ -279,6 +280,13 @@ MIDX_BYTE_OID_FANOUT=`expr $MIDX_OFFSET_OID_FANOUT + 4 \* 129`
 MIDX_OFFSET_OID_LOOKUP=`expr $MIDX_OFFSET_OID_FANOUT + 4 \* 256`
 MIDX_BYTE_OID_ORDER=`expr $MIDX_OFFSET_OID_LOOKUP + $HASH_LEN \* 50`
 MIDX_BYTE_OID_MISSING=`expr $MIDX_OFFSET_OID_LOOKUP + $HASH_LEN \* 50 + 5`
+MIDX_OFFSET_OBJECT_OFFSETS=`expr $MIDX_OFFSET_OID_LOOKUP + \
+			    $HASH_LEN \* $MIDX_NUM_OBJECTS`
+MIDX_WIDTH_OBJECT_OFFSETS=8
+MIDX_BYTE_OBJECT_PACKID=`expr $MIDX_OFFSET_OBJECT_OFFSETS + \
+				$MIDX_WIDTH_OBJECT_OFFSETS \* 50 + 1`
+MIDX_BYTE_OBJECT_OFFSET=`expr $MIDX_OFFSET_OBJECT_OFFSETS + \
+				$MIDX_WIDTH_OBJECT_OFFSETS \* 50 + 4`
 
 test_expect_success 'midx --verify succeeds' '
 	git midx --verify --pack-dir .
@@ -363,6 +371,16 @@ test_expect_success 'verify bad OID lookup order' '
 test_expect_success 'verify bad OID lookup (object missing)' '
 	corrupt_midx_and_verify $MIDX_BYTE_OID_MISSING "\00" \
 		"object not present in pack"
+'
+
+test_expect_success 'verify bad pack-int-id' '
+	corrupt_midx_and_verify $MIDX_BYTE_OBJECT_PACKID "\01" \
+		"pack-int-id for object"
+'
+
+test_expect_success 'verify bad offset' '
+	corrupt_midx_and_verify $MIDX_BYTE_OBJECT_OFFSET "\01" \
+		"incorrect offset"
 '
 
 test_done
