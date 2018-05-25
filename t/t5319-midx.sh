@@ -218,7 +218,7 @@ test_expect_success 'Verify normal git operations succeed' '
 	test_line_count = 90 rev-list-out-8
 '
 
-# The 'verify' commands below expect a midx-head file pointint
+# The 'verify' commands below expect a midx-head file pointing
 # to an existing MIDX file.
 test_expect_success 'recompute valid midx' '
 	git midx --write --update-head --pack-dir .
@@ -269,19 +269,19 @@ test_expect_success 'midx --verify succeeds' '
 	git midx --verify --pack-dir .
 '
 
-# usage: corrupt_midx_and_verify <pos> <data> <string>
+# usage: corrupt_midx_and_verify <pos> <data> <string> [<packdir>]
 corrupt_midx_and_verify() {
 	pos=$1
 	data="${2:-\0}"
 	grepstr=$3
-	packdir=$5
-	midxid=$(cat midx-head) &&
-	file=midx-$midxid.midx &&
-	chmod a+w $file &&
-	test_when_finished mv midx-backup $file &&
-	cp $file midx-backup &&
+	packdir=$4
+	midxid=$(cat ./$packdir/midx-head) &&
+	file=./$packdir/midx-$midxid.midx &&
+	chmod a+w "$file" &&
+	test_when_finished mv midx-backup "$file" &&
+	cp "$file" midx-backup &&
 	printf "$data" | dd of="$file" bs=1 seek="$pos" conv=notrunc &&
-	test_must_fail git midx --verify --pack-dir ./$packdir 2>test_err &&
+	test_must_fail git midx --verify --pack-dir "./$packdir" 2>test_err &&
 	grep -v "^+" test_err >err &&
 	grep "$grepstr" err
 }
@@ -401,8 +401,7 @@ test_expect_success 'force some 64-bit offsets with pack-objects' '
 	echo "pack_names:" >>midx-read-expect-64 &&
 	echo test-64-$pack64.pack >>midx-read-expect-64 &&
 	echo "pack_dir: packs-64" >>midx-read-expect-64 &&
-	test_cmp midx-read-out-64 midx-read-expect-64 &&
-	rm -rf packs-64
+	test_cmp midx-read-out-64 midx-read-expect-64
 '
 
 HASH_LEN=20
@@ -410,7 +409,7 @@ MIDX_OFFSET_CHUNK_LOOKUP=16
 MIDX_WIDTH_CHUNK_LOOKUP=12
 MIDX_NUM_CHUNKS=7
 MIDX_NUM_PACKS=1
-MIDX_NUM_OBJECTS=55
+MIDX_NUM_OBJECTS=65
 MIDX_OFFSET_PACKLOOKUP=`expr $MIDX_OFFSET_CHUNK_LOOKUP + \
 				$MIDX_NUM_CHUNKS \* $MIDX_WIDTH_CHUNK_LOOKUP`
 MIDX_OFFSET_OID_FANOUT=`expr $MIDX_OFFSET_PACKLOOKUP + \
@@ -421,9 +420,7 @@ MIDX_OFFSET_OBJECT_OFFSETS=`expr $MIDX_OFFSET_OID_LOOKUP + \
 MIDX_WIDTH_OBJECT_OFFSETS=8
 MIDX_OFFSET_LARGE_OFFSETS=`expr $MIDX_OFFSET_OBJECT_OFFSETS + \
 				$MIDX_WIDTH_OBJECT_OFFSETS \* $MIDX_NUM_OBJECTS`
-MIDX_WIDTH_LARGE_OFFSETS=8
-MIDX_BYTE_LARGE_OFFSETS=`expr $MIDX_OFFSET_LARGE_OFFSETS + \
-				$MIDX_WIDTH_LARGE_OFFSETS \* 5 + 3`
+MIDX_BYTE_LARGE_OFFSETS=`expr $MIDX_OFFSET_LARGE_OFFSETS + 3`
 
 test_expect_success 'verify bad 64-bit offset' '
 	corrupt_midx_and_verify $MIDX_BYTE_LARGE_OFFSETS "\01" \
