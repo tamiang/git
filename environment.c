@@ -15,6 +15,7 @@
 #include "commit.h"
 #include "argv-array.h"
 #include "object-store.h"
+#include "chdir-notify.h"
 
 int trust_executable_bit = 1;
 int trust_ctime = 1;
@@ -54,6 +55,7 @@ int check_replace_refs = 1; /* NEEDSWORK: rename to read_replace_refs */
 char *git_replace_ref_base;
 enum eol core_eol = EOL_UNSET;
 int global_conv_flags_eol = CONV_EOL_RNDTRP_WARN;
+char *check_roundtrip_encoding = "SHIFT-JIS";
 unsigned whitespace_rule_cfg = WS_DEFAULT_RULE;
 enum branch_track git_branch_track = BRANCH_TRACK_REMOTE;
 enum rebase_setup_type autorebase = AUTOREBASE_NEVER;
@@ -64,6 +66,7 @@ enum push_default_type push_default = PUSH_DEFAULT_UNSPECIFIED;
 enum object_creation_mode object_creation_mode = OBJECT_CREATION_MODE;
 char *notes_ref_name;
 int grafts_replace_parents = 1;
+int core_commit_graph;
 int core_apply_sparse_checkout;
 int merge_log_config = -1;
 int precomposed_unicode = -1; /* see probe_utf8_pathname_composition() */
@@ -323,12 +326,31 @@ char *get_graft_file(struct repository *r)
 	return r->graft_file;
 }
 
-int set_git_dir(const char *path)
+static void set_git_dir_1(const char *path)
 {
 	if (setenv(GIT_DIR_ENVIRONMENT, path, 1))
-		return error("Could not set GIT_DIR to '%s'", path);
+		die("could not set GIT_DIR to '%s'", path);
 	setup_git_env(path);
-	return 0;
+}
+
+static void update_relative_gitdir(const char *name,
+				   const char *old_cwd,
+				   const char *new_cwd,
+				   void *data)
+{
+	char *path = reparent_relative_path(old_cwd, new_cwd, get_git_dir());
+	trace_printf_key(&trace_setup_key,
+			 "setup: move $GIT_DIR to '%s'",
+			 path);
+	set_git_dir_1(path);
+	free(path);
+}
+
+void set_git_dir(const char *path)
+{
+	set_git_dir_1(path);
+	if (!is_absolute_path(path))
+		chdir_notify_register(NULL, update_relative_gitdir, NULL);
 }
 
 const char *get_log_output_encoding(void)

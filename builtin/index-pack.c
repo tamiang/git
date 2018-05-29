@@ -9,7 +9,7 @@
 #include "tree.h"
 #include "progress.h"
 #include "fsck.h"
-#include "exec_cmd.h"
+#include "exec-cmd.h"
 #include "streaming.h"
 #include "thread-utils.h"
 #include "packfile.h"
@@ -1271,7 +1271,7 @@ static void conclude_pack(int fix_thin_pack, const char *curr_pack, unsigned cha
 			    nr_objects - nr_objects_initial);
 		stop_progress_msg(&progress, msg.buf);
 		strbuf_release(&msg);
-		hashclose(f, tail_hash, 0);
+		finalize_hashfile(f, tail_hash, 0);
 		hashcpy(read_hash, pack_hash);
 		fixup_pack_header_footer(output_fd, pack_hash,
 					 curr_pack, nr_objects,
@@ -1593,7 +1593,7 @@ static void read_idx_option(struct pack_idx_option *opts, const char *pack_name)
 	/*
 	 * Get rid of the idx file as we do not need it anymore.
 	 * NEEDSWORK: extract this bit from free_pack_by_name() in
-	 * sha1_file.c, perhaps?  It shouldn't matter very much as we
+	 * sha1-file.c, perhaps?  It shouldn't matter very much as we
 	 * know we haven't installed this pack (hence we never have
 	 * read anything from it).
 	 */

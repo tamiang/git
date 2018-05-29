@@ -8,6 +8,24 @@
 #include "tag.h"
 #include "blame.h"
 #include "alloc.h"
+#include "commit-slab.h"
+
+define_commit_slab(blame_suspects, struct blame_origin *);
+static struct blame_suspects blame_suspects;
+
+struct blame_origin *get_blame_suspects(struct commit *commit)
+{
+	struct blame_origin **result;
+
+	result = blame_suspects_peek(&blame_suspects, commit);
+
+	return result ? *result : NULL;
+}
+
+static void set_blame_suspects(struct commit *commit, struct blame_origin *origin)
+{
+	*blame_suspects_at(&blame_suspects, commit) = origin;
+}
 
 void blame_origin_decref(struct blame_origin *o)
 {
@@ -17,12 +35,12 @@ void blame_origin_decref(struct blame_origin *o)
 			blame_origin_decref(o->previous);
 		free(o->file.ptr);
 		/* Should be present exactly once in commit chain */
-		for (p = o->commit->util; p; l = p, p = p->next) {
+		for (p = get_blame_suspects(o->commit); p; l = p, p = p->next) {
 			if (p == o) {
 				if (l)
 					l->next = p->next;
 				else
-					o->commit->util = p->next;
+					set_blame_suspects(o->commit, p->next);
 				free(o);
 				return;
 			}
@@ -43,8 +61,8 @@ static struct blame_origin *make_origin(struct commit *commit, const char *path)
 	FLEX_ALLOC_STR(o, path, path);
 	o->commit = commit;
 	o->refcnt = 1;
-	o->next = commit->util;
-	commit->util = o;
+	o->next = get_blame_suspects(commit);
+	set_blame_suspects(commit, o);
 	return o;
 }
 
@@ -56,13 +74,13 @@ static struct blame_origin *get_origin(struct commit *commit, const char *path)
 {
 	struct blame_origin *o, *l;
 
-	for (o = commit->util, l = NULL; o; l = o, o = o->next) {
+	for (o = get_blame_suspects(commit), l = NULL; o; l = o, o = o->next) {
 		if (!strcmp(o->path, path)) {
 			/* bump to front */
 			if (l) {
 				l->next = o->next;
-				o->next = commit->util;
-				commit->util = o;
+				o->next = get_blame_suspects(commit);
+				set_blame_suspects(commit, o);
 			}
 			return blame_origin_incref(o);
 		}
@@ -482,7 +500,7 @@ static void queue_blames(struct blame_scoreboard *sb, struct blame_origin *porig
 		porigin->suspects = blame_merge(porigin->suspects, sorted);
 	else {
 		struct blame_origin *o;
-		for (o = porigin->commit->util; o; o = o->next) {
+		for (o = get_blame_suspects(porigin->commit); o; o = o->next) {
 			if (o->suspects) {
 				porigin->suspects = sorted;
 				return;
@@ -529,7 +547,7 @@ static struct blame_origin *find_origin(struct commit *parent,
 	const char *paths[2];
 
 	/* First check any existing origins */
-	for (porigin = parent->util; porigin; porigin = porigin->next)
+	for (porigin = get_blame_suspects(parent); porigin; porigin = porigin->next)
 		if (!strcmp(porigin->path, origin->path)) {
 			/*
 			 * The same path between origin and its parent
@@ -1554,7 +1572,7 @@ void assign_blame(struct blame_scoreboard *sb, int opt)
 
 	while (commit) {
 		struct blame_entry *ent;
-		struct blame_origin *suspect = commit->util;
+		struct blame_origin *suspect = get_blame_suspects(commit);
 
 		/* find one suspect to break down */
 		while (suspect && !suspect->suspects)
@@ -1756,6 +1774,8 @@ void setup_scoreboard(struct blame_scoreboard *sb, const char *path, struct blam
 	struct commit *final_commit = NULL;
 	enum object_type type;
 
+	init_blame_suspects(&blame_suspects);
+
 	if (sb->reverse && sb->contents_from)
 		die(_("--contents and --reverse do not blend well."));
 
@@ -1819,7 +1839,7 @@ void setup_scoreboard(struct blame_scoreboard *sb, const char *path, struct blam
 	}
 
 	if (is_null_oid(&sb->final->object.oid)) {
-		o = sb->final->util;
+		o = get_blame_suspects(sb->final);
 		sb->final_buf = xmemdupz(o->file.ptr, o->file.size);
 		sb->final_buf_size = o->file.size;
 	}

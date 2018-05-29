@@ -4,7 +4,7 @@
 #include "object-store.h"
 #include "strbuf.h"
 #include "url.h"
-#include "exec_cmd.h"
+#include "exec-cmd.h"
 #include "run-command.h"
 #include "vcs-svn/svndump.h"
 #include "notes.h"

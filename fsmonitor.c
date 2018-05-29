@@ -104,7 +104,7 @@ static int query_fsmonitor(int version, uint64_t last_update, struct strbuf *que
 	if (!(argv[0] = core_fsmonitor))
 		return -1;
 
-	snprintf(ver, sizeof(version), "%d", version);
+	snprintf(ver, sizeof(ver), "%d", version);
 	snprintf(date, sizeof(date), "%" PRIuMAX, (uintmax_t)last_update);
 	argv[1] = ver;
 	argv[2] = date;
@@ -184,6 +184,9 @@ void refresh_fsmonitor(struct index_state *istate)
 		/* Mark all entries invalid */
 		for (i = 0; i < istate->cache_nr; i++)
 			istate->cache[i]->ce_flags &= ~CE_FSMONITOR_VALID;
+
+		/* If we're going to check every file, ensure we save the results */
+		istate->cache_changed |= FSMONITOR_CHANGED;
 
 		if (istate->untracked)
 			istate->untracked->use_fsmonitor = 0;

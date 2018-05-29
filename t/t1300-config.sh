@@ -108,6 +108,7 @@ bar = foo
 [beta]
 baz = multiple \
 lines
+foo = bar
 EOF
 
 test_expect_success 'unset with cont. lines' '
@@ -118,6 +119,7 @@ cat > expect <<\EOF
 [alpha]
 bar = foo
 [beta]
+foo = bar
 EOF
 
 test_expect_success 'unset with cont. lines is correct' 'test_cmp expect .git/config'
@@ -740,7 +742,7 @@ test_expect_success bool '
 	do
 	    git config --bool --get bool.true$i >>result
 	    git config --bool --get bool.false$i >>result
-        done &&
+	done &&
 	test_cmp expect result'
 
 test_expect_success 'invalid bool (--get)' '
@@ -929,6 +931,36 @@ test_expect_success 'get --expiry-date' '
 	} >actual &&
 	test_cmp expect actual &&
 	test_must_fail git config --expiry-date date.invalid1
+'
+
+test_expect_success 'get --type=color' '
+	rm .git/config &&
+	git config foo.color "red" &&
+	git config --get --type=color foo.color >actual.raw &&
+	test_decode_color <actual.raw >actual &&
+	echo "<RED>" >expect &&
+	test_cmp expect actual
+'
+
+cat >expect << EOF
+[foo]
+	color = red
+EOF
+
+test_expect_success 'set --type=color' '
+	rm .git/config &&
+	git config --type=color foo.color "red" &&
+	test_cmp expect .git/config
+'
+
+test_expect_success 'get --type=color barfs on non-color' '
+	echo "[foo]bar=not-a-color" >.git/config &&
+	test_must_fail git config --get --type=color foo.bar
+'
+
+test_expect_success 'set --type=color barfs on non-color' '
+	test_must_fail git config --type=color foo.color "not-a-color" 2>error &&
+	test_i18ngrep "cannot parse color" error
 '
 
 cat > expect << EOF
@@ -1411,7 +1443,7 @@ test_expect_success 'urlmatch with wildcard' '
 '
 
 # good section hygiene
-test_expect_failure 'unsetting the last key in a section removes header' '
+test_expect_success '--unset last key removes section (except if commented)' '
 	cat >.git/config <<-\EOF &&
 	# some generic comment on the configuration file itself
 	# a comment specific to this "section" section.
@@ -1425,13 +1457,86 @@ test_expect_failure 'unsetting the last key in a section removes header' '
 
 	cat >expect <<-\EOF &&
 	# some generic comment on the configuration file itself
+	# a comment specific to this "section" section.
+	[section]
+	# some intervening lines
+	# that should also be dropped
+
+	# please be careful when you update the above variable
 	EOF
 
 	git config --unset section.key &&
-	test_cmp expect .git/config
+	test_cmp expect .git/config &&
+
+	cat >.git/config <<-\EOF &&
+	[section]
+	key = value
+	[next-section]
+	EOF
+
+	cat >expect <<-\EOF &&
+	[next-section]
+	EOF
+
+	git config --unset section.key &&
+	test_cmp expect .git/config &&
+
+	q_to_tab >.git/config <<-\EOF &&
+	[one]
+	Qkey = "multiline \
+	QQ# with comment"
+	[two]
+	key = true
+	EOF
+	git config --unset two.key &&
+	! grep two .git/config &&
+
+	q_to_tab >.git/config <<-\EOF &&
+	[one]
+	Qkey = "multiline \
+	QQ# with comment"
+	[one]
+	key = true
+	EOF
+	git config --unset-all one.key &&
+	test_line_count = 0 .git/config &&
+
+	q_to_tab >.git/config <<-\EOF &&
+	[one]
+	Qkey = true
+	Q# a comment not at the start
+	[two]
+	Qkey = true
+	EOF
+	git config --unset two.key &&
+	grep two .git/config &&
+
+	q_to_tab >.git/config <<-\EOF &&
+	[one]
+	Qkey = not [two "subsection"]
+	[two "subsection"]
+	[two "subsection"]
+	Qkey = true
+	[TWO "subsection"]
+	[one]
+	EOF
+	git config --unset two.subsection.key &&
+	test "not [two subsection]" = "$(git config one.key)" &&
+	test_line_count = 3 .git/config
 '
 
-test_expect_failure 'adding a key into an empty section reuses header' '
+test_expect_success '--unset-all removes section if empty & uncommented' '
+	cat >.git/config <<-\EOF &&
+	[section]
+	key = value1
+	key = value2
+	EOF
+
+	git config --unset-all section.key &&
+	test_line_count = 0 .git/config
+'
+
+test_expect_success 'adding a key into an empty section reuses header' '
 	cat >.git/config <<-\EOF &&
 	[section]
 	EOF
@@ -1609,6 +1714,90 @@ test_expect_success '--local requires a repo' '
 	# we expect 128 to ensure that we do not simply
 	# fail to find anything and return code "1"
 	test_expect_code 128 nongit git config --local foo.bar
+'
+
+cat >.git/config <<-\EOF &&
+[core]
+foo = true
+number = 10
+big = 1M
+EOF
+
+test_expect_success 'identical modern --type specifiers are allowed' '
+	git config --type=int --type=int core.big >actual &&
+	echo 1048576 >expect &&
+	test_cmp expect actual
+'
+
+test_expect_success 'identical legacy --type specifiers are allowed' '
+	git config --int --int core.big >actual &&
+	echo 1048576 >expect &&
+	test_cmp expect actual
+'
+
+test_expect_success 'identical mixed --type specifiers are allowed' '
+	git config --int --type=int core.big >actual &&
+	echo 1048576 >expect &&
+	test_cmp expect actual
+'
+
+test_expect_success 'non-identical modern --type specifiers are not allowed' '
+	test_must_fail git config --type=int --type=bool core.big 2>error &&
+	test_i18ngrep "only one type at a time" error
+'
+
+test_expect_success 'non-identical legacy --type specifiers are not allowed' '
+	test_must_fail git config --int --bool core.big 2>error &&
+	test_i18ngrep "only one type at a time" error
+'
+
+test_expect_success 'non-identical mixed --type specifiers are not allowed' '
+	test_must_fail git config --type=int --bool core.big 2>error &&
+	test_i18ngrep "only one type at a time" error
+'
+
+test_expect_success '--type allows valid type specifiers' '
+	echo "true" >expect &&
+	git config --type=bool core.foo >actual &&
+	test_cmp expect actual
+'
+
+test_expect_success '--no-type unsets type specifiers' '
+	echo "10" >expect &&
+	git config --type=bool --no-type core.number >actual &&
+	test_cmp expect actual
+'
+
+test_expect_success 'unset type specifiers may be reset to conflicting ones' '
+	echo 1048576 >expect &&
+	git config --type=bool --no-type --type=int core.big >actual &&
+	test_cmp expect actual
+'
+
+test_expect_success '--type rejects unknown specifiers' '
+	test_must_fail git config --type=nonsense core.foo 2>error &&
+	test_i18ngrep "unrecognized --type argument" error
+'
+
+test_expect_success '--replace-all does not invent newlines' '
+	q_to_tab >.git/config <<-\EOF &&
+	[abc]key
+	QkeepSection
+	[xyz]
+	Qkey = 1
+	[abc]
+	Qkey = a
+	EOF
+	q_to_tab >expect <<-\EOF &&
+	[abc]
+	QkeepSection
+	[xyz]
+	Qkey = 1
+	[abc]
+	Qkey = b
+	EOF
+	git config --replace-all abc.key b &&
+	test_cmp .git/config expect
 '
 
 test_done

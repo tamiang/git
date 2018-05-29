@@ -109,6 +109,7 @@ void *alloc_commit_node(struct repository *r)
 	struct commit *c = alloc_node(r->parsed_objects->commit_state, sizeof(struct commit));
 	c->object.type = OBJ_COMMIT;
 	c->index = alloc_commit_index(r);
+	c->graph_pos = COMMIT_NOT_FROM_GRAPH;
 	return c;
 }
 
