@@ -1430,7 +1430,7 @@ retry:
 
 		/* Not a loose object; someone else may have just packed it. */
 		if (!(flags & OBJECT_INFO_QUICK)) {
-			reprepare_packed_git(r);
+			reprepare_packed_git_internal(r, core_midx ? USE_MIDX : 0);
 			if (find_pack_entry(r, real, &e))
 				break;
 			if (core_virtualize_objects && !tried_hook) {
