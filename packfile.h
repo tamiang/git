@@ -123,6 +123,10 @@ extern const struct object_id *nth_packed_object_oid(struct object_id *, struct 
  */
 extern off_t nth_packed_object_offset(const struct packed_git *, uint32_t n);
 
+int find_pack_entry_pos(const unsigned char *sha1,
+			struct packed_git *p,
+			uint32_t *result);
+
 /*
  * If the object named sha1 is present in the specified packfile,
  * return its offset within the packfile; otherwise, return 0.

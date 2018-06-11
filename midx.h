@@ -132,4 +132,6 @@ extern const char *write_midx_file(const char *pack_dir,
 extern int close_midx(struct midxed_git *m);
 extern void close_all_midx(void);
 
+int midx_verify(const char *pack_dir, const char *midx_id);
+
 #endif

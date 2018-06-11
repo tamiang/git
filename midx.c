@@ -3,6 +3,7 @@
 #include "pack.h"
 #include "packfile.h"
 #include "midx.h"
+#include "object-store.h"
 
 #define MIDX_SIGNATURE 0x4d494458 /* "MIDX" */
 #define MIDX_CHUNKID_PACKLOOKUP 0x504c4f4f /* "PLOO" */
@@ -134,17 +135,19 @@ static struct midxed_git *load_midxed_git_one(const char *midx_file, const char 
 
 	hdr = midx_map;
 	if (ntohl(hdr->midx_signature) != MIDX_SIGNATURE) {
+		uint32_t signature = ntohl(hdr->midx_signature);
 		munmap(midx_map, midx_size);
 		close(fd);
 		die("midx signature %X does not match signature %X",
-		    ntohl(hdr->midx_signature), MIDX_SIGNATURE);
+		    signature, MIDX_SIGNATURE);
 	}
 
 	if (ntohl(hdr->midx_version) != MIDX_VERSION) {
+		uint32_t version = ntohl(hdr->midx_version);
 		munmap(midx_map, midx_size);
 		close(fd);
 		die("midx version %X does not match version %X",
-		    ntohl(hdr->midx_version), MIDX_VERSION);
+		    version, MIDX_VERSION);
 	}
 
 	/* Time to fill a midx struct */
@@ -193,15 +196,18 @@ static struct midxed_git *load_midxed_git_one(const char *midx_file, const char 
 				midx->chunk_large_offsets = data + chunk_offset;
 				break;
 
-			case 0:
-				break;
-
 			default:
-				munmap(midx_map, midx_size);
-				close(fd);
-				die("Unrecognized MIDX chunk id: %08x", chunk_id);
+				/* We allow optional MIDX chunks, so ignore unrecognized chunk ids */
+				break;
 		}
 	}
+
+	if (!midx->chunk_oid_fanout)
+		die("midx missing OID Fanout chunk");
+	if (!midx->chunk_pack_lookup)
+		die("midx missing Packfile Name Lookup chunk");
+	if (!midx->chunk_pack_names)
+		die("midx missing Packfile Name chunk");
 
 	midx->num_objects = ntohl(*((uint32_t*)(midx->chunk_oid_fanout + 255 * 4)));
 	midx->num_packs = ntohl(midx->hdr->num_packs);
@@ -215,6 +221,10 @@ static struct midxed_git *load_midxed_git_one(const char *midx_file, const char 
 
 		for (i = 0; i < midx->num_packs; i++) {
 			uint32_t name_offset = ntohl(*(uint32_t*)(midx->chunk_pack_lookup + 4 * i));
+
+			if (midx->chunk_pack_names + name_offset >= midx->data + midx->data_len)
+				die("invalid packfile name lookup");
+
 			midx->pack_names[i] = (const char*)(midx->chunk_pack_names + name_offset);
 		}
 	}
@@ -863,7 +873,8 @@ const char *write_midx_file(const char *pack_dir,
 			break;
 
 		default:
-			die("unrecognized MIDX chunk id: %08x", chunk_ids[chunk]);
+			BUG("midx tried to write an invalid chunk ID %08X", chunk_ids[chunk]);
+			break;
 		}
 	}
 
@@ -928,4 +939,147 @@ void close_all_midx(void)
 	}
 
 	midxed_git = 0;
+}
+
+static int verify_midx_error = 0;
+
+static void midx_report(const char *fmt, ...)
+{
+	va_list ap;
+	struct strbuf sb = STRBUF_INIT;
+	verify_midx_error = 1;
+
+	va_start(ap, fmt);
+	strbuf_vaddf(&sb, fmt, ap);
+
+	fprintf(stderr, "%s\n", sb.buf);
+	strbuf_release(&sb);
+	va_end(ap);
+}
+
+int midx_verify(const char *pack_dir, const char *midx_id)
+{
+	uint32_t i, cur_fanout_pos = 0;
+	struct midxed_git *m;
+	const char *midx_head_path;
+	struct object_id cur_oid, prev_oid, checksum;
+	struct hashfile *f;
+	int devnull, checksum_fail = 0;
+
+	if (midx_id) {
+		size_t sz;
+		struct strbuf sb = STRBUF_INIT;
+		strbuf_addf(&sb, "%s/midx-%s.midx", pack_dir, midx_id);
+		midx_head_path = strbuf_detach(&sb, &sz);
+	} else {
+		midx_head_path = get_midx_head_filename_dir(pack_dir);
+	}
+
+	m = load_midxed_git_one(midx_head_path, pack_dir);
+
+	if (!m) {
+		midx_report("failed to find specified midx file");
+		goto cleanup;
+	}
+
+
+	devnull = open("/dev/null", O_WRONLY);
+	f = hashfd(devnull, NULL);
+	hashwrite(f, m->data, m->data_len - m->hdr->hash_len);
+	finalize_hashfile(f, checksum.hash, CSUM_CLOSE);
+	if (hashcmp(checksum.hash, m->data + m->data_len - m->hdr->hash_len)) {
+		midx_report(_("the midx file has incorrect checksum and is likely corrupt"));
+		verify_midx_error = 0;
+		checksum_fail = 1;
+	}
+
+	if (m->hdr->hash_version != MIDX_OID_VERSION)
+		midx_report("invalid hash version");
+	if (m->hdr->hash_len != MIDX_OID_LEN)
+		midx_report("invalid hash length");
+
+	if (verify_midx_error)
+		goto cleanup;
+
+	if (!m->chunk_oid_lookup)
+		midx_report("missing OID Lookup chunk");
+	if (!m->chunk_object_offsets)
+		midx_report("missing Object Offset chunk");
+
+	if (verify_midx_error)
+		goto cleanup;
+
+	for (i = 0; i < m->num_packs; i++) {
+		if (prepare_midx_pack(m, i)) {
+			midx_report("failed to prepare pack %s",
+				    m->pack_names[i]);
+			continue;
+		}
+
+		if (!m->packs[i]->index_data &&
+		    open_pack_index(m->packs[i]))
+			midx_report("failed to open index for pack %s",
+				    m->pack_names[i]);
+	}
+
+	if (verify_midx_error)
+		goto cleanup;
+
+	for (i = 0; i < m->num_objects; i++) {
+		struct pack_midx_details details;
+		uint32_t index_pos, pack_id;
+		struct packed_git *p;
+		off_t pack_offset;
+
+		hashcpy(cur_oid.hash, m->chunk_oid_lookup + m->hdr->hash_len * i);
+
+		while (cur_oid.hash[0] > cur_fanout_pos) {
+			uint32_t fanout_value = get_be32(m->chunk_oid_fanout + cur_fanout_pos * sizeof(uint32_t));
+			if (i != fanout_value)
+				midx_report("midx has incorrect fanout value: fanout[%d] = %u != %u",
+					    cur_fanout_pos, fanout_value, i);
+
+			cur_fanout_pos++;
+		}
+
+		if (i && oidcmp(&prev_oid, &cur_oid) >= 0)
+			midx_report("midx has incorrect OID order: %s then %s",
+				    oid_to_hex(&prev_oid),
+				    oid_to_hex(&cur_oid));
+
+		oidcpy(&prev_oid, &cur_oid);
+
+		if (!nth_midxed_object_details(m, i, &details)) {
+			midx_report("nth_midxed_object_details failed with n=%d", i);
+			continue;
+		}
+
+		pack_id = details.pack_int_id;
+		if (pack_id >= m->num_packs) {
+			midx_report("pack-int-id for object n=%d is invalid: %u",
+				    pack_id);
+			continue;
+		}
+
+		p = m->packs[pack_id];
+
+		if (!find_pack_entry_pos(cur_oid.hash, p, &index_pos)) {
+			midx_report("midx contains object not present in packfile: %s",
+				    oid_to_hex(&cur_oid));
+			continue;
+		}
+
+		pack_offset = nth_packed_object_offset(p, index_pos);
+		if (details.offset != pack_offset)
+			midx_report("midx has incorrect offset for %s : %"PRIx64" != %"PRIx64,
+				    oid_to_hex(&cur_oid),
+				    details.offset,
+				    pack_offset);
+	}
+
+cleanup:
+	if (m)
+		close_midx(m);
+	free(m);
+	return verify_midx_error | checksum_fail;
 }

@@ -209,9 +209,171 @@ test_expect_success 'midx --clear' '
 	! test -f "midx-head"
 '
 
+test_expect_success 'midx --verify fails on missing midx' '
+	test_must_fail git midx --verify --pack-dir .
+'
+
 test_expect_success 'Verify normal git operations succeed' '
 	git rev-list --all --objects >rev-list-out-8 &&
 	test_line_count = 90 rev-list-out-8
+'
+
+# The 'verify' commands below expect a midx-head file pointing
+# to an existing MIDX file.
+test_expect_success 'recompute valid midx' '
+	git midx --write --update-head --pack-dir .
+'
+
+HASH_LEN=20
+MIDX_BYTE_VERSION=4
+MIDX_BYTE_OID_VERSION=8
+MIDX_BYTE_OID_LEN=9
+MIDX_BYTE_CHUNK_COUNT=11
+MIDX_OFFSET_CHUNK_LOOKUP=16
+MIDX_WIDTH_CHUNK_LOOKUP=12
+MIDX_NUM_CHUNKS=6
+MIDX_NUM_PACKS=13
+MIDX_NUM_OBJECTS=77
+MIDX_BYTE_CHUNK_PACKLOOKUP_ID=$MIDX_OFFSET_CHUNK_LOOKUP
+MIDX_BYTE_CHUNK_FANOUT_ID=`expr $MIDX_OFFSET_CHUNK_LOOKUP + \
+				1 \* $MIDX_WIDTH_CHUNK_LOOKUP`
+MIDX_BYTE_CHUNK_LOOKUP_ID=`expr $MIDX_OFFSET_CHUNK_LOOKUP + \
+				2 \* $MIDX_WIDTH_CHUNK_LOOKUP`
+MIDX_BYTE_CHUNK_OFFSET_ID=`expr $MIDX_OFFSET_CHUNK_LOOKUP + \
+				3 \* $MIDX_WIDTH_CHUNK_LOOKUP`
+MIDX_BYTE_CHUNK_PACKNAME_ID=`expr $MIDX_OFFSET_CHUNK_LOOKUP + \
+				4 \* $MIDX_WIDTH_CHUNK_LOOKUP`
+MIDX_OFFSET_PACKLOOKUP=`expr $MIDX_OFFSET_CHUNK_LOOKUP + \
+				$MIDX_NUM_CHUNKS \* $MIDX_WIDTH_CHUNK_LOOKUP`
+MIDX_BYTE_PACKFILE_LOOKUP=`expr $MIDX_OFFSET_PACKLOOKUP + 4`
+MIDX_OFFSET_OID_FANOUT=`expr $MIDX_OFFSET_PACKLOOKUP + \
+				4 \* $MIDX_NUM_PACKS`
+MIDX_BYTE_OID_FANOUT=`expr $MIDX_OFFSET_OID_FANOUT + 4 \* 129`
+MIDX_OFFSET_OID_LOOKUP=`expr $MIDX_OFFSET_OID_FANOUT + 4 \* 256`
+MIDX_BYTE_OID_ORDER=`expr $MIDX_OFFSET_OID_LOOKUP + $HASH_LEN \* 50`
+MIDX_BYTE_OID_MISSING=`expr $MIDX_OFFSET_OID_LOOKUP + $HASH_LEN \* 50 + 5`
+MIDX_OFFSET_OBJECT_OFFSETS=`expr $MIDX_OFFSET_OID_LOOKUP + \
+			    $HASH_LEN \* $MIDX_NUM_OBJECTS`
+MIDX_WIDTH_OBJECT_OFFSETS=8
+MIDX_BYTE_OBJECT_PACKID=`expr $MIDX_OFFSET_OBJECT_OFFSETS + \
+				$MIDX_WIDTH_OBJECT_OFFSETS \* 50 + 1`
+MIDX_BYTE_OBJECT_OFFSET=`expr $MIDX_OFFSET_OBJECT_OFFSETS + \
+				$MIDX_WIDTH_OBJECT_OFFSETS \* 50 + 4`
+MIDX_OFFSET_PACKFILE_NAMES=`expr $MIDX_OFFSET_OBJECT_OFFSETS + \
+				$MIDX_WIDTH_OBJECT_OFFSETS \* $MIDX_NUM_OBJECTS`
+MIDX_BYTE_PACKFILE_NAMES=`expr $MIDX_OFFSET_PACKFILE_NAMES + 10`
+MIDX_PACKNAME_SIZE=`expr $(ls *.pack | wc -c) + $MIDX_NUM_PACKS`
+MIDX_BYTE_CHECKSUM=`expr $MIDX_OFFSET_PACKFILE_NAMES + $MIDX_PACKNAME_SIZE`
+
+test_expect_success 'midx --verify succeeds' '
+	git midx --verify --pack-dir .
+'
+
+# usage: corrupt_midx_and_verify <pos> <data> <string> [<packdir>]
+corrupt_midx_and_verify() {
+	pos=$1
+	data="${2:-\0}"
+	grepstr=$3
+	packdir=$4
+	midxid=$(cat ./$packdir/midx-head) &&
+	file=./$packdir/midx-$midxid.midx &&
+	chmod a+w "$file" &&
+	test_when_finished mv midx-backup "$file" &&
+	cp "$file" midx-backup &&
+	printf "$data" | dd of="$file" bs=1 seek="$pos" conv=notrunc &&
+	test_must_fail git midx --verify --pack-dir "./$packdir" 2>test_err &&
+	grep -v "^+" test_err >err &&
+	grep "$grepstr" err
+}
+
+test_expect_success 'verify bad signature' '
+	corrupt_midx_and_verify 0 "\00" \
+		"midx signature"
+'
+
+test_expect_success 'verify bad version' '
+	corrupt_midx_and_verify $MIDX_BYTE_VERSION "\02" \
+		"midx version"
+'
+
+test_expect_success 'verify bad object id version' '
+	corrupt_midx_and_verify $MIDX_BYTE_OID_VERSION "\02" \
+		"hash version"
+'
+
+test_expect_success 'verify bad object id length' '
+	corrupt_midx_and_verify $MIDX_BYTE_OID_LEN "\010" \
+		"hash length"
+'
+
+test_expect_success 'verify bad chunk count' '
+	corrupt_midx_and_verify $MIDX_BYTE_CHUNK_COUNT "\01" \
+		"missing Packfile Name chunk"
+'
+
+test_expect_success 'verify bad packfile lookup chunk id' '
+	corrupt_midx_and_verify $MIDX_BYTE_CHUNK_PACKLOOKUP_ID "\00" \
+		"missing Packfile Name Lookup chunk"
+'
+
+test_expect_success 'verify bad OID fanout chunk id' '
+	corrupt_midx_and_verify $MIDX_BYTE_CHUNK_FANOUT_ID "\00" \
+		"missing OID Fanout chunk"
+'
+
+test_expect_success 'verify bad OID lookup chunk id' '
+	corrupt_midx_and_verify $MIDX_BYTE_CHUNK_LOOKUP_ID "\00" \
+		"missing OID Lookup chunk"
+'
+
+test_expect_success 'verify bad offset chunk id' '
+	corrupt_midx_and_verify $MIDX_BYTE_CHUNK_OFFSET_ID "\00" \
+		"missing Object Offset chunk"
+'
+
+test_expect_success 'verify bad packfile name chunk id' '
+	corrupt_midx_and_verify $MIDX_BYTE_CHUNK_PACKNAME_ID "\00" \
+		"missing Packfile Name chunk"
+'
+
+test_expect_success 'verify bad OID fanout value' '
+	corrupt_midx_and_verify $MIDX_BYTE_OID_FANOUT "\01" \
+		"incorrect fanout value"
+'
+
+test_expect_success 'verify bad OID lookup order' '
+	corrupt_midx_and_verify $MIDX_BYTE_OID_ORDER "\00" \
+		"incorrect OID order"
+'
+
+test_expect_success 'verify bad OID lookup (object missing)' '
+	corrupt_midx_and_verify $MIDX_BYTE_OID_MISSING "\00" \
+		"object not present in pack"
+'
+
+test_expect_success 'verify bad pack-int-id' '
+	corrupt_midx_and_verify $MIDX_BYTE_OBJECT_PACKID "\01" \
+		"pack-int-id for object"
+'
+
+test_expect_success 'verify bad 32-bit offset' '
+	corrupt_midx_and_verify $MIDX_BYTE_OBJECT_OFFSET "\01" \
+		"incorrect offset"
+'
+
+test_expect_success 'verify packfile name' '
+	corrupt_midx_and_verify $MIDX_BYTE_PACKFILE_NAMES "\00" \
+		"failed to prepare pack"
+'
+
+test_expect_success 'verify packfile lookup' '
+	corrupt_midx_and_verify $MIDX_BYTE_PACKFILE_LOOKUP "\01" \
+		"invalid packfile name lookup"
+'
+
+test_expect_success 'verify checksum hash' '
+	corrupt_midx_and_verify $MIDX_BYTE_CHECKSUM "\00" \
+		"incorrect checksum"
 '
 
 # usage: corrupt_data <file> <pos> [<data>]
@@ -231,7 +393,7 @@ test_expect_success 'force some 64-bit offsets with pack-objects' '
 	mkdir packs-64 &&
 	mv test-64* packs-64/ &&
 	corrupt_data packs-64/$idx64 2863 "\02" &&
-	midx64=$(git midx --write --pack-dir packs-64) &&
+	midx64=$(git midx --write --update-head --pack-dir packs-64) &&
 	git midx --read --pack-dir packs-64 --midx-id=$midx64 >midx-read-out-64 &&
 	echo "header: 4d494458 80000001 01 14 00 06 00000001" >midx-read-expect-64 &&
 	echo "num_objects: 65" >>midx-read-expect-64 &&
@@ -239,8 +401,30 @@ test_expect_success 'force some 64-bit offsets with pack-objects' '
 	echo "pack_names:" >>midx-read-expect-64 &&
 	echo test-64-$pack64.pack >>midx-read-expect-64 &&
 	echo "pack_dir: packs-64" >>midx-read-expect-64 &&
-	test_cmp midx-read-out-64 midx-read-expect-64 &&
-	rm -rf packs-64
+	test_cmp midx-read-out-64 midx-read-expect-64
+'
+
+HASH_LEN=20
+MIDX_OFFSET_CHUNK_LOOKUP=16
+MIDX_WIDTH_CHUNK_LOOKUP=12
+MIDX_NUM_CHUNKS=7
+MIDX_NUM_PACKS=1
+MIDX_NUM_OBJECTS=65
+MIDX_OFFSET_PACKLOOKUP=`expr $MIDX_OFFSET_CHUNK_LOOKUP + \
+				$MIDX_NUM_CHUNKS \* $MIDX_WIDTH_CHUNK_LOOKUP`
+MIDX_OFFSET_OID_FANOUT=`expr $MIDX_OFFSET_PACKLOOKUP + \
+				4 \* $MIDX_NUM_PACKS`
+MIDX_OFFSET_OID_LOOKUP=`expr $MIDX_OFFSET_OID_FANOUT + 4 \* 256`
+MIDX_OFFSET_OBJECT_OFFSETS=`expr $MIDX_OFFSET_OID_LOOKUP + \
+			    $HASH_LEN \* $MIDX_NUM_OBJECTS`
+MIDX_WIDTH_OBJECT_OFFSETS=8
+MIDX_OFFSET_LARGE_OFFSETS=`expr $MIDX_OFFSET_OBJECT_OFFSETS + \
+				$MIDX_WIDTH_OBJECT_OFFSETS \* $MIDX_NUM_OBJECTS`
+MIDX_BYTE_LARGE_OFFSETS=`expr $MIDX_OFFSET_LARGE_OFFSETS + 3`
+
+test_expect_success 'verify bad 64-bit offset' '
+	corrupt_midx_and_verify $MIDX_BYTE_LARGE_OFFSETS "\01" \
+		"incorrect offset" packs-64
 '
 
 test_done
