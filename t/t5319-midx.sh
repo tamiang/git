@@ -194,7 +194,7 @@ test_expect_success 'write-midx with twelve packs' '
 
 test_expect_success 'Verify normal git operations succeed' '
 	git rev-list --all --objects >rev-list-out-7 &&
-	test_line_count = 90 rev-list-out-7 rev-list-expect-7
+	test_line_count = 90 rev-list-out-7
 '
 
 test_expect_success 'write-midx with nothing new' '
@@ -212,6 +212,33 @@ test_expect_success 'midx --clear' '
 test_expect_success 'Verify normal git operations succeed' '
 	git rev-list --all --objects >rev-list-out-8 &&
 	test_line_count = 90 rev-list-out-8
+'
+
+# usage: corrupt_data <file> <pos> [<data>]
+corrupt_data() {
+	file=$1
+	pos=$2
+	data="${3:-\0}"
+	printf "$data" | dd of="$file" bs=1 seek="$pos" conv=notrunc
+}
+
+# Force 64-bit offsets by manipulating the idx file.
+# This makes the IDX file _incorrect_ so be careful to clean up after!
+test_expect_success 'force some 64-bit offsets with pack-objects' '
+	pack64=$(git pack-objects --index-version=2,0x40 test-64 <obj-list) &&
+	idx64=$(ls test-64-*idx) &&
+	chmod u+w $idx64 &&
+	corrupt_data $idx64 2863 "\02" &&
+	midx64=$(git midx --write --pack-dir .) &&
+	git midx --read --pack-dir . --midx-id=$midx64 >midx-read-out-64 &&
+	echo "header: 4d494458 80000001 01 14 00 06 0000000e" >midx-read-expect-64 &&
+	echo "num_objects: 77" >>midx-read-expect-64 &&
+	echo "chunks: pack_lookup pack_names oid_fanout oid_lookup object_offsets large_offsets" >>midx-read-expect-64 &&
+	echo "pack_names:" >>midx-read-expect-64 &&
+	ls test-*.pack | sort >>midx-read-expect-64 &&
+	echo "pack_dir: ." >>midx-read-expect-64 &&
+	test_cmp midx-read-out-64 midx-read-expect-64 &&
+	rm midx-$midx64.midx test-64*
 '
 
 test_done
