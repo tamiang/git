@@ -877,6 +877,7 @@ extern char *git_replace_ref_base;
 extern int fsync_object_files;
 extern int core_preload_index;
 extern int core_apply_sparse_checkout;
+extern const char *core_virtualfilesystem;
 extern int core_gvfs;
 extern int core_midx;
 extern int precomposed_unicode;
