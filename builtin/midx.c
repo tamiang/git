@@ -31,6 +31,146 @@ static struct opts_midx {
 	struct object_id old_midx_oid;
 } opts;
 
+static int midx_oid_compare(const void *_a, const void *_b)
+{
+	struct pack_midx_entry *a = (struct pack_midx_entry *)_a;
+	struct pack_midx_entry *b = (struct pack_midx_entry *)_b;
+	int cmp = oidcmp(&a->oid, &b->oid);
+
+	if (cmp)
+		return cmp;
+
+	if (a->pack_mtime > b->pack_mtime)
+		return -1;
+	else if (a->pack_mtime < b->pack_mtime)
+		return 1;
+
+	return a->pack_int_id - b->pack_int_id;
+}
+
+static uint32_t get_pack_fanout(struct packed_git *p, uint32_t value)
+{
+	const uint32_t *level1_ofs = p->index_data;
+
+	if (!level1_ofs) {
+		if (open_pack_index(p))
+			return 0;
+		level1_ofs = p->index_data;
+	}
+
+	if (p->index_version > 1) {
+		level1_ofs += 2;
+	}
+
+	return ntohl(level1_ofs[value]);
+}
+
+/*
+ * It is possible to artificially get into a state where there are many
+ * duplicate copies of objects. That can create high memory pressure if
+ * we are to create a list of all objects before de-duplication. To reduce
+ * this memory pressure without a significant performance drop, automatically
+ * group objects by the first byte of their object id. Use the IDX fanout
+ * tables to group the data, copy to a local array, then sort.
+ *
+ * Copy only the de-duplicated entries (selected by most-recent modified time
+ * of a packfile containing the object).
+ */
+static void dedupe_and_sort_entries(
+	struct packed_git **packs, uint32_t nr_packs,
+	struct midxed_git *midx,
+	struct pack_midx_entry **objects, uint32_t *nr_objects)
+{
+	uint32_t first_byte, i;
+	struct pack_midx_entry *objects_batch = NULL;
+	uint32_t nr_objects_batch = 0;
+	uint32_t alloc_objects_batch = 0;
+	uint32_t alloc_objects;
+	uint32_t pack_offset = 0;
+	struct pack_midx_entry *local_objects = NULL;
+	int nr_local_objects = 0;
+
+	if (midx) {
+		nr_objects_batch = midx->num_objects;
+		pack_offset = midx->num_packs;
+	}
+
+	for (i = pack_offset; i < nr_packs; i++)
+		nr_objects_batch += packs[i]->num_objects;
+
+	/*
+	 * Predict the size of the batches to be roughly ~1/256 the total
+	 * count, but give some slack as they will not be equally sized.
+	 */
+	alloc_objects_batch = nr_objects_batch / 200;
+	ALLOC_ARRAY(objects_batch, alloc_objects_batch);
+
+	*nr_objects = 0;
+	alloc_objects = alloc_objects_batch;
+	ALLOC_ARRAY(local_objects, alloc_objects);
+
+	for (first_byte = 0; first_byte < 256; first_byte++) {
+		nr_objects_batch = 0;
+
+		if (midx) {
+			uint32_t start, end;
+			if (first_byte)
+				start = get_be32(midx->chunk_oid_fanout + 4 * (first_byte - 1));
+			else
+				start = 0;
+
+			end = get_be32(midx->chunk_oid_fanout + 4 * first_byte);
+
+			while (start < end) {
+				ALLOC_GROW(objects_batch, nr_objects_batch + 1, alloc_objects_batch);
+				nth_midxed_object_entry(midx, start, &objects_batch[nr_objects_batch]);
+				nr_objects_batch++;
+				start++;
+			}
+		}
+
+		for (i = pack_offset; i < nr_packs; i++) {
+			uint32_t start, end;
+
+			if (first_byte)
+				start = get_pack_fanout(packs[i], first_byte - 1);
+			else
+				start = 0;
+			end = get_pack_fanout(packs[i], first_byte);
+
+			while (start < end) {
+				struct pack_midx_entry *entry;
+				ALLOC_GROW(objects_batch, nr_objects_batch + 1, alloc_objects_batch);
+				entry = &objects_batch[nr_objects_batch++];
+
+				if (!nth_packed_object_oid(&entry->oid, packs[i], start))
+					die("unable to get sha1 of object %u in %s",
+					start, packs[i]->pack_name);
+
+				entry->pack_int_id = i;
+				entry->offset = nth_packed_object_offset(packs[i], start);
+				entry->pack_mtime = packs[i]->mtime;
+				start++;
+			}
+		}
+
+		QSORT(objects_batch, nr_objects_batch, midx_oid_compare);
+
+		/* de-dupe as we copy from the batch in-order */
+		for (i = 0; i < nr_objects_batch; i++) {
+			if (i > 0 && !oidcmp(&objects_batch[i - 1].oid, &objects_batch[i].oid))
+				continue;
+
+			ALLOC_GROW(local_objects, nr_local_objects + 1, alloc_objects);
+			memcpy(&local_objects[nr_local_objects], &objects_batch[i], sizeof(struct pack_midx_entry));
+			nr_local_objects++;
+		}
+	}
+
+	*nr_objects = nr_local_objects;
+	*objects = local_objects;
+}
+
 static int build_midx_from_packs(
 	const char *pack_dir,
 	const char **pack_names, uint32_t nr_packs,
@@ -38,12 +178,10 @@ static int build_midx_from_packs(
 {
 	struct packed_git **packs;
 	const char **installed_pack_names;
-	uint32_t i, j, nr_installed_packs = 0;
+	uint32_t i, nr_installed_packs = 0;
 	uint32_t nr_objects = 0;
-	struct pack_midx_entry *objects;
-	struct pack_midx_entry **obj_ptrs;
+	struct pack_midx_entry *objects = NULL;
 	uint32_t nr_total_packs = nr_packs;
-	uint32_t pack_offset = 0;
 	struct strbuf pack_path = STRBUF_INIT;
 	int baselen;
 
@@ -56,7 +194,6 @@ static int build_midx_from_packs(
 	if (midx) {
 		for (i = 0; i < midx->num_packs; i++)
 			installed_pack_names[nr_installed_packs++] = midx->pack_names[i];
-		pack_offset = midx->num_packs;
 	}
 
 	strbuf_addstr(&pack_path, pack_dir);
@@ -95,44 +232,14 @@ static int build_midx_from_packs(
 		return 0;
 	}
 
-	if (midx)
-		nr_objects += midx->num_objects;
-
-	ALLOC_ARRAY(objects, nr_objects);
-	nr_objects = 0;
-
-	for (i = 0; midx && i < midx->num_objects; i++)
-		nth_midxed_object_entry(midx, i, &objects[nr_objects++]);
-
-	for (i = pack_offset; i < nr_installed_packs; i++) {
-		struct packed_git *p = packs[i];
-
-		for (j = 0; j < p->num_objects; j++) {
-			struct pack_midx_entry entry;
-
-			if (!nth_packed_object_oid(&entry.oid, p, j))
-				die("unable to get sha1 of object %u in %s",
-				i, p->pack_name);
-
-			entry.pack_int_id = i;
-			entry.offset = nth_packed_object_offset(p, j);
-			entry.pack_mtime = p->mtime;
-
-			objects[nr_objects] = entry;
-			nr_objects++;
-		}
-	}
-
-	ALLOC_ARRAY(obj_ptrs, nr_objects);
-	for (i = 0; i < nr_objects; i++)
-		obj_ptrs[i] = &objects[i];
+	dedupe_and_sort_entries(packs, nr_installed_packs,
+				midx, &objects, &nr_objects);
 
 	*midx_id = write_midx_file(pack_dir, NULL,
 		installed_pack_names, nr_installed_packs,
-		obj_ptrs, nr_objects);
+		objects, nr_objects);
 
 	FREE_AND_NULL(installed_pack_names);
-	FREE_AND_NULL(obj_ptrs);
 	FREE_AND_NULL(objects);
 
 	return 0;
