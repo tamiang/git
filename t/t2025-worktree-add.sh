@@ -100,6 +100,28 @@ test_expect_success '"add" worktree creating new branch' '
 	)
 '
 
+if test_have_prereq CASE_INSENSITIVE_FS
+then
+test_expect_success '"HEAD" and "head" resolve to same ref' '
+	git worktree add -b newhead headtest master &&
+	(
+		cd headtest &&
+		test_commit advance &&
+		git rev-parse HEAD >expect &&
+		git rev-parse head >actual &&
+		test_cmp expect actual
+	)
+'
+else
+test_expect_success '"head" should not resolve in case-sensitive fs' '
+	git worktree add -b newhead headtest master &&
+	(
+		cd headtest &&
+		test_must_fail git rev-parse head
+	)
+'
+fi
+
 test_expect_success 'die the same branch is already checked out' '
 	(
 		cd here &&
