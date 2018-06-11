@@ -1805,6 +1805,7 @@ int ref_newer(const struct object_id *new_oid, const struct object_id *old_oid)
 	struct commit *old_commit, *new_commit;
 	struct commit_list *list, *used;
 	int found = 0;
+	uint32_t min_generation;
 
 	/*
 	 * Both new_commit and old_commit must be commit-ish and new_commit is descendant of
@@ -1822,13 +1823,18 @@ int ref_newer(const struct object_id *new_oid, const struct object_id *old_oid)
 		return 0;
 	new_commit = (struct commit *) o;
 
-	if (parse_commit(new_commit) < 0)
+	if (parse_commit(new_commit) < 0 ||
+	    parse_commit(old_commit) < 0)
 		return 0;
+
+	min_generation = old_commit->generation;
 
 	used = list = NULL;
 	commit_list_insert(new_commit, &list);
 	while (list) {
-		new_commit = pop_most_recent_commit(&list, TMP_MARK);
+		new_commit = pop_most_recent_commit(&list, TMP_MARK,
+						    min_generation);
+
 		commit_list_insert(new_commit, &used);
 		if (new_commit == old_commit) {
 			found = 1;
