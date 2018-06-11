@@ -4,6 +4,7 @@
  * Copyright (C) Linus Torvalds, 2005
  */
 #include "cache.h"
+#include "virtualfilesystem.h"
 #include "config.h"
 #include "diff.h"
 #include "diffcore.h"
@@ -2078,6 +2079,7 @@ static void post_read_index_from(struct index_state *istate)
 	tweak_untracked_cache(istate);
 	tweak_split_index(istate);
 	tweak_fsmonitor(istate);
+	apply_virtualfilesystem(istate);
 }
 
 static size_t estimate_cache_size_from_compressed(unsigned int entries)
