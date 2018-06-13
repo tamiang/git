@@ -335,7 +335,7 @@ const void *detach_commit_buffer(struct commit *commit, unsigned long *sizep)
 	return ret;
 }
 
-int parse_commit_buffer_the_repository(struct commit *item, const void *buffer, unsigned long size)
+int parse_commit_buffer(struct repository *r, struct commit *item, const void *buffer, unsigned long size)
 {
 	const char *tail = buffer;
 	const char *bufptr = buffer;
@@ -355,11 +355,11 @@ int parse_commit_buffer_the_repository(struct commit *item, const void *buffer, 
 	if (get_sha1_hex(bufptr + 5, parent.hash) < 0)
 		return error("bad tree pointer in commit %s",
 			     oid_to_hex(&item->object.oid));
-	item->tree = lookup_tree(the_repository, &parent);
+	item->tree = lookup_tree(r, &parent);
 	bufptr += tree_entry_len + 1; /* "tree " + "hex sha1" + "\n" */
 	pptr = &item->parents;
 
-	graft = lookup_commit_graft(the_repository, &item->object.oid);
+	graft = lookup_commit_graft(r, &item->object.oid);
 	while (bufptr + parent_entry_len < tail && !memcmp(bufptr, "parent ", 7)) {
 		struct commit *new_parent;
 
@@ -374,7 +374,7 @@ int parse_commit_buffer_the_repository(struct commit *item, const void *buffer, 
 		 */
 		if (graft && (graft->nr_parent < 0 || grafts_replace_parents))
 			continue;
-		new_parent = lookup_commit(the_repository, &parent);
+		new_parent = lookup_commit(r, &parent);
 		if (new_parent)
 			pptr = &commit_list_insert(new_parent, pptr)->next;
 	}
@@ -382,7 +382,7 @@ int parse_commit_buffer_the_repository(struct commit *item, const void *buffer, 
 		int i;
 		struct commit *new_parent;
 		for (i = 0; i < graft->nr_parent; i++) {
-			new_parent = lookup_commit(the_repository,
+			new_parent = lookup_commit(r,
 						   &graft->parent[i]);
 			if (!new_parent)
 				continue;
