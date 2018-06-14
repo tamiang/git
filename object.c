@@ -213,7 +213,7 @@ struct object *parse_object_buffer(struct repository *r, const struct object_id 
 	} else if (type == OBJ_COMMIT) {
 		struct commit *commit = lookup_commit(r, oid);
 		if (commit) {
-			if (parse_commit_buffer(r, commit, buffer, size))
+			if (parse_commit_buffer(r, commit, buffer, size, 1))
 				return NULL;
 			if (!get_cached_commit_buffer(r, commit, NULL)) {
 				set_commit_buffer(r, commit, buffer, size);

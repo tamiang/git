@@ -104,7 +104,7 @@ static struct commit *make_virtual_commit(struct tree *tree, const char *comment
 	struct commit *commit = alloc_commit_node(the_repository);
 
 	set_merge_remote_desc(commit, comment, (struct object *)commit);
-	commit->tree = tree;
+	commit->maybe_tree = tree;
 	commit->object.parsed = 1;
 	return commit;
 }
@@ -2159,7 +2159,8 @@ int merge_recursive(struct merge_options *o,
 		read_cache();
 
 	o->ancestor = "merged common ancestors";
-	clean = merge_trees(o, h1->tree, h2->tree, merged_common_ancestors->tree,
+	clean = merge_trees(o, get_commit_tree(h1), get_commit_tree(h2),
+			    get_commit_tree(merged_common_ancestors),
 			    &mrtree);
 	if (clean < 0) {
 		flush_output(o);

@@ -573,10 +573,10 @@ static struct blame_origin *find_origin(struct commit *parent,
 	diff_setup_done(&diff_opts);
 
 	if (is_null_oid(&origin->commit->object.oid))
-		do_diff_cache(&parent->tree->object.oid, &diff_opts);
+		do_diff_cache(get_commit_tree_oid(parent), &diff_opts);
 	else
-		diff_tree_oid(&parent->tree->object.oid,
-			      &origin->commit->tree->object.oid,
+		diff_tree_oid(get_commit_tree_oid(parent),
+			      get_commit_tree_oid(origin->commit),
 			      "", &diff_opts);
 	diffcore_std(&diff_opts);
 
@@ -642,10 +642,10 @@ static struct blame_origin *find_rename(struct commit *parent,
 	diff_setup_done(&diff_opts);
 
 	if (is_null_oid(&origin->commit->object.oid))
-		do_diff_cache(&parent->tree->object.oid, &diff_opts);
+		do_diff_cache(get_commit_tree_oid(parent), &diff_opts);
 	else
-		diff_tree_oid(&parent->tree->object.oid,
-			      &origin->commit->tree->object.oid,
+		diff_tree_oid(get_commit_tree_oid(parent),
+			      get_commit_tree_oid(origin->commit),
 			      "", &diff_opts);
 	diffcore_std(&diff_opts);
 
@@ -1277,10 +1277,10 @@ static void find_copy_in_parent(struct blame_scoreboard *sb,
 		diff_opts.flags.find_copies_harder = 1;
 
 	if (is_null_oid(&target->commit->object.oid))
-		do_diff_cache(&parent->tree->object.oid, &diff_opts);
+		do_diff_cache(get_commit_tree_oid(parent), &diff_opts);
 	else
-		diff_tree_oid(&parent->tree->object.oid,
-			      &target->commit->tree->object.oid,
+		diff_tree_oid(get_commit_tree_oid(parent),
+			      get_commit_tree_oid(target->commit),
 			      "", &diff_opts);
 
 	if (!diff_opts.flags.find_copies_harder)

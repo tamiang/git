@@ -10,6 +10,9 @@
 #include "pretty.h"
 
 #define COMMIT_NOT_FROM_GRAPH 0xFFFFFFFF
+#define GENERATION_NUMBER_INFINITY 0xFFFFFFFF
+#define GENERATION_NUMBER_MAX 0x3FFFFFFF
+#define GENERATION_NUMBER_ZERO 0
 
 struct commit_list {
 	struct commit *item;
@@ -26,8 +29,15 @@ struct commit {
 	unsigned int index;
 	timestamp_t date;
 	struct commit_list *parents;
-	struct tree *tree;
+
+	/*
+	 * If the commit is loaded from the commit-graph file, then this
+	 * member may be NULL. Only access it through get_commit_tree()
+	 * or get_commit_tree_oid().
+	 */
+	struct tree *maybe_tree;
 	uint32_t graph_pos;
+	uint32_t generation;
 };
 
 extern int save_commit_buffer;
@@ -68,7 +78,8 @@ struct commit *lookup_commit_reference_by_name(const char *name);
  */
 struct commit *lookup_commit_or_die(const struct object_id *oid, const char *ref_name);
 
-int parse_commit_buffer(struct repository *r, struct commit *item, const void *buffer, unsigned long size);
+int parse_commit_buffer(struct repository *r, struct commit *item, const void *buffer,
+			unsigned long size, int check_graph);
 int parse_commit_gently(struct commit *item, int quiet_on_missing);
 static inline int parse_commit(struct commit *item)
 {
@@ -111,6 +122,9 @@ void unuse_commit_buffer(const struct commit *, const void *buffer);
  * Free any cached object buffer associated with the commit.
  */
 void free_commit_buffer(struct commit *);
+
+struct tree *get_commit_tree(const struct commit *);
+struct object_id *get_commit_tree_oid(const struct commit *);
 
 /*
  * Release memory related to a commit, including the parent list and
@@ -344,6 +358,7 @@ extern int remove_signature(struct strbuf *buf);
 extern int check_commit_signature(const struct commit *commit, struct signature_check *sigc);
 
 int compare_commits_by_commit_date(const void *a_, const void *b_, void *unused);
+int compare_commits_by_gen_then_commit_date(const void *a_, const void *b_, void *unused);
 
 LAST_ARG_MUST_BE_NULL
 extern int run_commit_hook(int editor_is_used, const char *index_file, const char *name, ...);

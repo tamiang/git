@@ -18,6 +18,7 @@
 #include "trailer.h"
 #include "wt-status.h"
 #include "commit-slab.h"
+#include "commit-graph.h"
 
 static struct ref_msg {
 	const char *gone;
@@ -891,7 +892,7 @@ static void grab_commit_values(struct atom_value *val, int deref, struct object 
 		if (deref)
 			name++;
 		if (!strcmp(name, "tree")) {
-			v->s = xstrdup(oid_to_hex(&commit->tree->object.oid));
+			v->s = xstrdup(oid_to_hex(get_commit_tree_oid(commit)));
 		}
 		else if (!strcmp(name, "numparent")) {
 			v->value = commit_list_count(commit->parents);
@@ -1665,12 +1666,13 @@ static int in_commit_list(const struct commit_list *want, struct commit *c)
 }
 
 /*
- * Test whether the candidate or one of its parents is contained in the list.
+ * Test whether the candidate is contained in the list.
  * Do not recurse to find out, though, but return -1 if inconclusive.
  */
 static enum contains_result contains_test(struct commit *candidate,
 					  const struct commit_list *want,
-					  struct contains_cache *cache)
+					  struct contains_cache *cache,
+					  uint32_t cutoff)
 {
 	enum contains_result *cached = contains_cache_at(cache, candidate);
 
@@ -1686,6 +1688,10 @@ static enum contains_result contains_test(struct commit *candidate,
 
 	/* Otherwise, we don't know; prepare to recurse */
 	parse_commit_or_die(candidate);
+
+	if (candidate->generation < cutoff)
+		return CONTAINS_NO;
+
 	return CONTAINS_UNKNOWN;
 }
 
@@ -1701,8 +1707,18 @@ static enum contains_result contains_tag_algo(struct commit *candidate,
 					      struct contains_cache *cache)
 {
 	struct contains_stack contains_stack = { 0, 0, NULL };
-	enum contains_result result = contains_test(candidate, want, cache);
+	enum contains_result result;
+	uint32_t cutoff = GENERATION_NUMBER_INFINITY;
+	const struct commit_list *p;
 
+	for (p = want; p; p = p->next) {
+		struct commit *c = p->item;
+		load_commit_graph_info(c);
+		if (c->generation < cutoff)
+			cutoff = c->generation;
+	}
+
+	result = contains_test(candidate, want, cache, cutoff);
 	if (result != CONTAINS_UNKNOWN)
 		return result;
 
@@ -1720,7 +1736,7 @@ static enum contains_result contains_tag_algo(struct commit *candidate,
 		 * If we just popped the stack, parents->item has been marked,
 		 * therefore contains_test will return a meaningful yes/no.
 		 */
-		else switch (contains_test(parents->item, want, cache)) {
+		else switch (contains_test(parents->item, want, cache, cutoff)) {
 		case CONTAINS_YES:
 			*contains_cache_at(cache, commit) = CONTAINS_YES;
 			contains_stack.nr--;
@@ -1734,7 +1750,7 @@ static enum contains_result contains_tag_algo(struct commit *candidate,
 		}
 	}
 	free(contains_stack.contains_stack);
-	return contains_test(candidate, want, cache);
+	return contains_test(candidate, want, cache, cutoff);
 }
 
 static int commit_contains(struct ref_filter *filter, struct commit *commit,
