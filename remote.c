@@ -11,6 +11,7 @@
 #include "string-list.h"
 #include "mergesort.h"
 #include "argv-array.h"
+#include "commit-graph.h"
 
 enum map_direction { FROM_SRC, FROM_DST };
 
@@ -1795,6 +1796,7 @@ int ref_newer(const struct object_id *new_oid, const struct object_id *old_oid)
 	struct commit *old_commit, *new_commit;
 	struct commit_list *list, *used;
 	int found = 0;
+	uint32_t min_generation;
 
 	/*
 	 * Both new_commit and old_commit must be commit-ish and new_commit is descendant of
@@ -1804,6 +1806,8 @@ int ref_newer(const struct object_id *new_oid, const struct object_id *old_oid)
 	if (!o || o->type != OBJ_COMMIT)
 		return 0;
 	old_commit = (struct commit *) o;
+	load_commit_graph_info(old_commit);
+	min_generation = old_commit->generation;
 
 	o = deref_tag(parse_object(new_oid), NULL, 0);
 	if (!o || o->type != OBJ_COMMIT)
@@ -1817,6 +1821,10 @@ int ref_newer(const struct object_id *new_oid, const struct object_id *old_oid)
 	commit_list_insert(new_commit, &list);
 	while (list) {
 		new_commit = pop_most_recent_commit(&list, TMP_MARK);
+
+		if (new_commit->generation < min_generation)
+			continue;
+
 		commit_list_insert(new_commit, &used);
 		if (new_commit == old_commit) {
 			found = 1;
