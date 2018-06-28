@@ -1013,11 +1013,9 @@ static int fsck_blob(struct blob *blob, const char *buf,
 	data.options = options;
 	data.ret = 0;
 	config_opts.error_action = CONFIG_ERROR_SILENT;
-	if (git_config_from_mem(fsck_gitmodules_fn, CONFIG_ORIGIN_BLOB,
-				".gitmodules", buf, size, &data, &config_opts))
-		data.ret |= report(options, &blob->object,
-				   FSCK_MSG_GITMODULES_PARSE,
-				   "could not parse gitmodules blob");
+	/* ignore errors */
+	git_config_from_mem(fsck_gitmodules_fn, CONFIG_ORIGIN_BLOB,
+			    ".gitmodules", buf, size, &data, &config_opts);
 
 	return data.ret;
 }
