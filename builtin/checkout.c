@@ -4,6 +4,7 @@
 #include "lockfile.h"
 #include "parse-options.h"
 #include "refs.h"
+#include "object-store.h"
 #include "commit.h"
 #include "tree.h"
 #include "tree-walk.h"
@@ -378,7 +379,7 @@ static int checkout_paths(const struct checkout_opts *opts,
 		die(_("unable to write new index file"));
 
 	read_ref_full("HEAD", 0, &rev, NULL);
-	head = lookup_commit_reference_gently(&rev, 1);
+	head = lookup_commit_reference_gently(the_repository, &rev, 1);
 
 	errs |= post_checkout_hook(head, head, 0);
 	return errs;
@@ -829,7 +830,7 @@ static int switch_branches(const struct checkout_opts *opts,
 	memset(&old_branch_info, 0, sizeof(old_branch_info));
 	old_branch_info.path = path_to_free = resolve_refdup("HEAD", 0, &rev, &flag);
 	if (old_branch_info.path)
-		old_branch_info.commit = lookup_commit_reference_gently(&rev, 1);
+		old_branch_info.commit = lookup_commit_reference_gently(the_repository, &rev, 1);
 	if (!(flag & REF_ISSYMREF))
 		old_branch_info.path = NULL;
 
@@ -1003,7 +1004,7 @@ static int parse_branchname_arg(int argc, const char **argv,
 	else
 		new_branch_info->path = NULL; /* not an existing branch */
 
-	new_branch_info->commit = lookup_commit_reference_gently(rev, 1);
+	new_branch_info->commit = lookup_commit_reference_gently(the_repository, rev, 1);
 	if (!new_branch_info->commit) {
 		/* not a commit */
 		*source_tree = parse_tree_indirect(rev);
@@ -1120,10 +1121,12 @@ int cmd_checkout(int argc, const char **argv, const char *prefix)
 		OPT_SET_INT('t', "track",  &opts.track, N_("set upstream info for new branch"),
 			BRANCH_TRACK_EXPLICIT),
 		OPT_STRING(0, "orphan", &opts.new_orphan_branch, N_("new-branch"), N_("new unparented branch")),
-		OPT_SET_INT('2', "ours", &opts.writeout_stage, N_("checkout our version for unmerged files"),
-			    2),
-		OPT_SET_INT('3', "theirs", &opts.writeout_stage, N_("checkout their version for unmerged files"),
-			    3),
+		OPT_SET_INT_F('2', "ours", &opts.writeout_stage,
+			      N_("checkout our version for unmerged files"),
+			      2, PARSE_OPT_NONEG),
+		OPT_SET_INT_F('3', "theirs", &opts.writeout_stage,
+			      N_("checkout their version for unmerged files"),
+			      3, PARSE_OPT_NONEG),
 		OPT__FORCE(&opts.force, N_("force checkout (throw away local modifications)"),
 			   PARSE_OPT_NOCOMPLETE),
 		OPT_BOOL('m', "merge", &opts.merge, N_("perform a 3-way merge with the new branch")),

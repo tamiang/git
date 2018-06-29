@@ -1,6 +1,7 @@
 #include "cache.h"
 #include "config.h"
 #include "refs.h"
+#include "object-store.h"
 #include "commit.h"
 #include "tree-walk.h"
 #include "attr.h"
@@ -379,7 +380,7 @@ static void parse_treeish_arg(const char **argv,
 	if (get_oid(name, &oid))
 		die("Not a valid object name");
 
-	commit = lookup_commit_reference_gently(&oid, 1);
+	commit = lookup_commit_reference_gently(the_repository, &oid, 1);
 	if (commit) {
 		commit_sha1 = commit->object.oid.hash;
 		archive_time = commit->date;

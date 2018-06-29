@@ -19,6 +19,7 @@
 #include "sha1-array.h"
 #include "oidset.h"
 #include "packfile.h"
+#include "object-store.h"
 
 static int transfer_unpack_limit = -1;
 static int fetch_unpack_limit = -1;
@@ -83,7 +84,7 @@ static void cache_one_alternate(const char *refname,
 				void *vcache)
 {
 	struct alternate_object_cache *cache = vcache;
-	struct object *obj = parse_object(oid);
+	struct object *obj = parse_object(the_repository, oid);
 
 	if (!obj || (obj->flags & ALTERNATE))
 		return;
@@ -125,7 +126,9 @@ static void rev_list_push(struct commit *commit, int mark)
 
 static int rev_list_insert_ref(const char *refname, const struct object_id *oid)
 {
-	struct object *o = deref_tag(parse_object(oid), refname, 0);
+	struct object *o = deref_tag(the_repository,
+				     parse_object(the_repository, oid),
+				     refname, 0);
 
 	if (o && o->type == OBJ_COMMIT)
 		rev_list_push((struct commit *)o, SEEN);
@@ -142,7 +145,9 @@ static int rev_list_insert_ref_oid(const char *refname, const struct object_id *
 static int clear_marks(const char *refname, const struct object_id *oid,
 		       int flag, void *cb_data)
 {
-	struct object *o = deref_tag(parse_object(oid), refname, 0);
+	struct object *o = deref_tag(the_repository,
+				     parse_object(the_repository, oid),
+				     refname, 0);
 
 	if (o && o->type == OBJ_COMMIT)
 		clear_commit_marks((struct commit *)o,
@@ -359,7 +364,7 @@ static int find_common(struct fetch_pack_args *args,
 		 * interested in the case we *know* the object is
 		 * reachable and we have already scanned it.
 		 */
-		if (((o = lookup_object(remote->hash)) != NULL) &&
+		if (((o = lookup_object(the_repository, remote->hash)) != NULL) &&
 				(o->flags & COMPLETE)) {
 			continue;
 		}
@@ -396,7 +401,7 @@ static int find_common(struct fetch_pack_args *args,
 		return 1;
 	}
 
-	if (is_repository_shallow())
+	if (is_repository_shallow(the_repository))
 		write_shallow_commits(&req_buf, 1, NULL);
 	if (args->depth > 0)
 		packet_buf_write(&req_buf, "deepen %d", args->depth);
@@ -427,16 +432,16 @@ static int find_common(struct fetch_pack_args *args,
 			if (skip_prefix(line, "shallow ", &arg)) {
 				if (get_oid_hex(arg, &oid))
 					die(_("invalid shallow line: %s"), line);
-				register_shallow(&oid);
+				register_shallow(the_repository, &oid);
 				continue;
 			}
 			if (skip_prefix(line, "unshallow ", &arg)) {
 				if (get_oid_hex(arg, &oid))
 					die(_("invalid unshallow line: %s"), line);
-				if (!lookup_object(oid.hash))
+				if (!lookup_object(the_repository, oid.hash))
 					die(_("object not found: %s"), line);
 				/* make sure that it is parsed as shallow */
-				if (!parse_object(&oid))
+				if (!parse_object(the_repository, &oid))
 					die(_("error in object: %s"), line);
 				if (unregister_shallow(&oid))
 					die(_("no shallow found: %s"), line);
@@ -495,7 +500,8 @@ static int find_common(struct fetch_pack_args *args,
 				case ACK_ready:
 				case ACK_continue: {
 					struct commit *commit =
-						lookup_commit(result_oid);
+						lookup_commit(the_repository,
+							      result_oid);
 					if (!commit)
 						die(_("invalid commit %s"), oid_to_hex(result_oid));
 					if (args->stateless_rpc
@@ -569,14 +575,14 @@ static struct commit_list *complete;
 
 static int mark_complete(const struct object_id *oid)
 {
-	struct object *o = parse_object(oid);
+	struct object *o = parse_object(the_repository, oid);
 
 	while (o && o->type == OBJ_TAG) {
 		struct tag *t = (struct tag *) o;
 		if (!t->tagged)
 			break; /* broken repository */
 		o->flags |= COMPLETE;
-		o = parse_object(&t->tagged->oid);
+		o = parse_object(the_repository, &t->tagged->oid);
 	}
 	if (o && o->type == OBJ_COMMIT) {
 		struct commit *commit = (struct commit *)o;
@@ -657,11 +663,11 @@ static void filter_refs(struct fetch_pack_args *args,
 				}
 				i++;
 			}
-		}
 
-		if (!keep && args->fetch_all &&
-		    (!args->deepen || !starts_with(ref->name, "refs/tags/")))
-			keep = 1;
+			if (!keep && args->fetch_all &&
+			    (!args->deepen || !starts_with(ref->name, "refs/tags/")))
+				keep = 1;
+		}
 
 		if (keep) {
 			*newtail = ref;
@@ -767,7 +773,7 @@ static int everything_local(struct fetch_pack_args *args,
 
 		if (!has_object_file_with_flags(&ref->old_oid, flags))
 			continue;
-		o = parse_object(&ref->old_oid);
+		o = parse_object(the_repository, &ref->old_oid);
 		if (!o)
 			continue;
 
@@ -798,7 +804,9 @@ static int everything_local(struct fetch_pack_args *args,
 		 * Don't mark them common yet; the server has to be told so first.
 		 */
 		for (ref = *refs; ref; ref = ref->next) {
-			struct object *o = deref_tag(lookup_object(ref->old_oid.hash),
+			struct object *o = deref_tag(the_repository,
+						     lookup_object(the_repository,
+						     ref->old_oid.hash),
 						     NULL, 0);
 
 			if (!o || o->type != OBJ_COMMIT || !(o->flags & COMPLETE))
@@ -818,7 +826,7 @@ static int everything_local(struct fetch_pack_args *args,
 		const struct object_id *remote = &ref->old_oid;
 		struct object *o;
 
-		o = lookup_object(remote->hash);
+		o = lookup_object(the_repository, remote->hash);
 		if (!o || !(o->flags & COMPLETE)) {
 			retval = 0;
 			print_verbose(args, "want %s (%s)", oid_to_hex(remote),
@@ -985,7 +993,7 @@ static struct ref *do_fetch_pack(struct fetch_pack_args *args,
 	sort_ref_list(&ref, ref_compare_name);
 	QSORT(sought, nr_sought, cmp_ref_by_name);
 
-	if ((args->depth > 0 || is_repository_shallow()) && !server_supports("shallow"))
+	if ((args->depth > 0 || is_repository_shallow(the_repository)) && !server_supports("shallow"))
 		die(_("Server does not support shallow clients"));
 	if (args->depth > 0 || args->deepen_since || args->deepen_not)
 		args->deepen = 1;
@@ -1083,7 +1091,7 @@ static struct ref *do_fetch_pack(struct fetch_pack_args *args,
 static void add_shallow_requests(struct strbuf *req_buf,
 				 const struct fetch_pack_args *args)
 {
-	if (is_repository_shallow())
+	if (is_repository_shallow(the_repository))
 		write_shallow_commits(req_buf, 1, NULL);
 	if (args->depth > 0)
 		packet_buf_write(req_buf, "deepen %d", args->depth);
@@ -1117,7 +1125,7 @@ static void add_wants(const struct ref *wants, struct strbuf *req_buf)
 		 * interested in the case we *know* the object is
 		 * reachable and we have already scanned it.
 		 */
-		if (((o = lookup_object(remote->hash)) != NULL) &&
+		if (((o = lookup_object(the_repository, remote->hash)) != NULL) &&
 		    (o->flags & COMPLETE)) {
 			continue;
 		}
@@ -1195,7 +1203,7 @@ static int send_fetch_request(int fd_out, const struct fetch_pack_args *args,
 	/* Add shallow-info and deepen request */
 	if (server_supports_feature("fetch", "shallow", 0))
 		add_shallow_requests(&req_buf, args);
-	else if (is_repository_shallow() || args->deepen)
+	else if (is_repository_shallow(the_repository) || args->deepen)
 		die(_("Server does not support shallow requests"));
 
 	/* Add filter */
@@ -1274,7 +1282,7 @@ static int process_acks(struct packet_reader *reader, struct oidset *common)
 			if (!get_oid_hex(arg, &oid)) {
 				struct commit *commit;
 				oidset_insert(common, &oid);
-				commit = lookup_commit(&oid);
+				commit = lookup_commit(the_repository, &oid);
 				mark_common(commit, 0, 1);
 			}
 			continue;
@@ -1308,16 +1316,16 @@ static void receive_shallow_info(struct fetch_pack_args *args,
 		if (skip_prefix(reader->line, "shallow ", &arg)) {
 			if (get_oid_hex(arg, &oid))
 				die(_("invalid shallow line: %s"), reader->line);
-			register_shallow(&oid);
+			register_shallow(the_repository, &oid);
 			continue;
 		}
 		if (skip_prefix(reader->line, "unshallow ", &arg)) {
 			if (get_oid_hex(arg, &oid))
 				die(_("invalid unshallow line: %s"), reader->line);
-			if (!lookup_object(oid.hash))
+			if (!lookup_object(the_repository, oid.hash))
 				die(_("object not found: %s"), reader->line);
 			/* make sure that it is parsed as shallow */
-			if (!parse_object(&oid))
+			if (!parse_object(the_repository, &oid))
 				die(_("error in object: %s"), reader->line);
 			if (unregister_shallow(&oid))
 				die(_("no shallow found: %s"), reader->line);
@@ -1479,7 +1487,7 @@ static void update_shallow(struct fetch_pack_args *args,
 
 	if (args->deepen && alternate_shallow_file) {
 		if (*alternate_shallow_file == '\0') { /* --unshallow */
-			unlink_or_warn(git_path_shallow());
+			unlink_or_warn(git_path_shallow(the_repository));
 			rollback_lock_file(&shallow_lock);
 		} else
 			commit_lock_file(&shallow_lock);

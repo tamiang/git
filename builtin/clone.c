@@ -15,6 +15,7 @@
 #include "fetch-pack.h"
 #include "refs.h"
 #include "refspec.h"
+#include "object-store.h"
 #include "tree.h"
 #include "tree-walk.h"
 #include "unpack-trees.h"
@@ -695,7 +696,8 @@ static void update_head(const struct ref *our, const struct ref *remote,
 			install_branch_config(0, head, option_origin, our->name);
 		}
 	} else if (our) {
-		struct commit *c = lookup_commit_reference(&our->old_oid);
+		struct commit *c = lookup_commit_reference(the_repository,
+							   &our->old_oid);
 		/* --branch specifies a non-branch (i.e. tags), detach HEAD */
 		update_ref(msg, "HEAD", &c->object.oid, NULL, REF_NO_DEREF,
 			   UPDATE_REFS_DIE_ON_ERR);
@@ -1077,7 +1079,7 @@ int cmd_clone(int argc, const char **argv, const char *prefix)
 	if (option_required_reference.nr || option_optional_reference.nr)
 		setup_reference();
 
-	refspec_item_init(&refspec, value.buf, REFSPEC_FETCH);
+	refspec_item_init_or_die(&refspec, value.buf, REFSPEC_FETCH);
 
 	strbuf_reset(&value);
 

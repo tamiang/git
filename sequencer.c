@@ -2,6 +2,7 @@
 #include "config.h"
 #include "lockfile.h"
 #include "dir.h"
+#include "object-store.h"
 #include "object.h"
 #include "commit.h"
 #include "sequencer.h"
@@ -357,7 +358,7 @@ static void print_advice(int show_hint, struct replay_opts *opts)
 		 * (typically rebase --interactive) wants to take care
 		 * of the commit itself so remove CHERRY_PICK_HEAD
 		 */
-		unlink(git_path_cherry_pick_head());
+		unlink(git_path_cherry_pick_head(the_repository));
 		return;
 	}
 
@@ -432,7 +433,7 @@ static int read_oneliner(struct strbuf *buf,
 
 static struct tree *empty_tree(void)
 {
-	return lookup_tree(the_hash_algo->empty_tree);
+	return lookup_tree(the_repository, the_repository->hash_algo->empty_tree);
 }
 
 static int error_dirty_index(struct replay_opts *opts)
@@ -593,7 +594,7 @@ static int is_index_unchanged(void)
 	if (!resolve_ref_unsafe("HEAD", RESOLVE_REF_READING, &head_oid, NULL))
 		return error(_("could not resolve HEAD commit"));
 
-	head_commit = lookup_commit(&head_oid);
+	head_commit = lookup_commit(the_repository, &head_oid);
 
 	/*
 	 * If head_commit is NULL, check_commit, called from
@@ -1100,7 +1101,7 @@ void print_commit_summary(const char *prefix, const struct object_id *oid,
 	struct strbuf author_ident = STRBUF_INIT;
 	struct strbuf committer_ident = STRBUF_INIT;
 
-	commit = lookup_commit(oid);
+	commit = lookup_commit(the_repository, oid);
 	if (!commit)
 		die(_("couldn't look up newly created commit"));
 	if (parse_commit(commit))
@@ -1175,7 +1176,7 @@ static int parse_head(struct commit **head)
 	if (get_oid("HEAD", &oid)) {
 		current_head = NULL;
 	} else {
-		current_head = lookup_commit_reference(&oid);
+		current_head = lookup_commit_reference(the_repository, &oid);
 		if (!current_head)
 			return error(_("could not parse HEAD"));
 		if (oidcmp(&oid, &current_head->object.oid)) {
@@ -1324,8 +1325,8 @@ static int do_commit(const char *msg_file, const char *author,
 				    &oid);
 		strbuf_release(&sb);
 		if (!res) {
-			unlink(git_path_cherry_pick_head());
-			unlink(git_path_merge_msg());
+			unlink(git_path_cherry_pick_head(the_repository));
+			unlink(git_path_merge_msg(the_repository));
 			if (!is_rebase_i(opts))
 				print_commit_summary(NULL, &oid,
 						SUMMARY_SHOW_AUTHOR_DATE);
@@ -1510,7 +1511,7 @@ static int update_squash_messages(enum todo_command command,
 
 		if (get_oid("HEAD", &head))
 			return error(_("need a HEAD to fixup"));
-		if (!(head_commit = lookup_commit_reference(&head)))
+		if (!(head_commit = lookup_commit_reference(the_repository, &head)))
 			return error(_("could not read HEAD"));
 		if (!(head_message = get_commit_buffer(head_commit, NULL)))
 			return error(_("could not read HEAD's commit message"));
@@ -1613,7 +1614,7 @@ static int do_pick_commit(enum todo_command command, struct commit *commit,
 		struct replay_opts *opts, int final_fixup)
 {
 	unsigned int flags = opts->edit ? EDIT_MSG : 0;
-	const char *msg_file = opts->edit ? NULL : git_path_merge_msg();
+	const char *msg_file = opts->edit ? NULL : git_path_merge_msg(the_repository);
 	struct object_id head;
 	struct commit *base, *next, *parent;
 	const char *base_label, *next_label;
@@ -1755,12 +1756,12 @@ static int do_pick_commit(enum todo_command command, struct commit *commit,
 			flags |= CLEANUP_MSG;
 			msg_file = rebase_path_fixup_msg();
 		} else {
-			const char *dest = git_path_squash_msg();
+			const char *dest = git_path_squash_msg(the_repository);
 			unlink(dest);
 			if (copy_file(dest, rebase_path_squash_msg(), 0666))
 				return error(_("could not rename '%s' to '%s'"),
 					     rebase_path_squash_msg(), dest);
-			unlink(git_path_merge_msg());
+			unlink(git_path_merge_msg(the_repository));
 			msg_file = dest;
 			flags |= EDIT_MSG;
 		}
@@ -1778,13 +1779,13 @@ static int do_pick_commit(enum todo_command command, struct commit *commit,
 			goto leave;
 
 		res |= write_message(msgbuf.buf, msgbuf.len,
-				     git_path_merge_msg(), 0);
+				     git_path_merge_msg(the_repository), 0);
 	} else {
 		struct commit_list *common = NULL;
 		struct commit_list *remotes = NULL;
 
 		res = write_message(msgbuf.buf, msgbuf.len,
-				    git_path_merge_msg(), 0);
+				    git_path_merge_msg(the_repository), 0);
 
 		commit_list_insert(base, &common);
 		commit_list_insert(next, &remotes);
@@ -2008,7 +2009,7 @@ static int parse_insn_line(struct todo_item *item, const char *bol, char *eol)
 	if (status < 0)
 		return -1;
 
-	item->commit = lookup_commit_reference(&commit_oid);
+	item->commit = lookup_commit_reference(the_repository, &commit_oid);
 	return !item->commit;
 }
 
@@ -2394,8 +2395,8 @@ static int rollback_single_pick(void)
 {
 	struct object_id head_oid;
 
-	if (!file_exists(git_path_cherry_pick_head()) &&
-	    !file_exists(git_path_revert_head()))
+	if (!file_exists(git_path_cherry_pick_head(the_repository)) &&
+	    !file_exists(git_path_revert_head(the_repository)))
 		return error(_("no cherry-pick or revert in progress"));
 	if (read_ref_full("HEAD", 0, &head_oid, NULL))
 		return error(_("cannot resolve HEAD"));
@@ -2620,10 +2621,11 @@ static int error_failed_squash(struct commit *commit,
 	if (copy_file(rebase_path_message(), rebase_path_squash_msg(), 0666))
 		return error(_("could not copy '%s' to '%s'"),
 			rebase_path_squash_msg(), rebase_path_message());
-	unlink(git_path_merge_msg());
-	if (copy_file(git_path_merge_msg(), rebase_path_message(), 0666))
+	unlink(git_path_merge_msg(the_repository));
+	if (copy_file(git_path_merge_msg(the_repository), rebase_path_message(), 0666))
 		return error(_("could not copy '%s' to '%s'"),
-			     rebase_path_message(), git_path_merge_msg());
+			     rebase_path_message(),
+			     git_path_merge_msg(the_repository));
 	return error_with_patch(commit, subject, subject_len, opts, 1, 0);
 }
 
@@ -2913,11 +2915,11 @@ static int do_merge(struct commit *commit, const char *arg, int arg_len,
 		write_author_script(message);
 		find_commit_subject(message, &body);
 		len = strlen(body);
-		ret = write_message(body, len, git_path_merge_msg(), 0);
+		ret = write_message(body, len, git_path_merge_msg(the_repository), 0);
 		unuse_commit_buffer(commit, message);
 		if (ret) {
 			error_errno(_("could not write '%s'"),
-				    git_path_merge_msg());
+				    git_path_merge_msg(the_repository));
 			goto leave_merge;
 		}
 	} else {
@@ -2938,11 +2940,11 @@ static int do_merge(struct commit *commit, const char *arg, int arg_len,
 			len = buf.len;
 		}
 
-		ret = write_message(p, len, git_path_merge_msg(), 0);
+		ret = write_message(p, len, git_path_merge_msg(the_repository), 0);
 		strbuf_release(&buf);
 		if (ret) {
 			error_errno(_("could not write '%s'"),
-				    git_path_merge_msg());
+				    git_path_merge_msg(the_repository));
 			goto leave_merge;
 		}
 	}
@@ -2979,8 +2981,8 @@ static int do_merge(struct commit *commit, const char *arg, int arg_len,
 	}
 
 	write_message(oid_to_hex(&merge_commit->object.oid), GIT_SHA1_HEXSZ,
-		      git_path_merge_head(), 0);
-	write_message("no-ff", 5, git_path_merge_mode(), 0);
+		      git_path_merge_head(the_repository), 0);
+	write_message("no-ff", 5, git_path_merge_mode(the_repository), 0);
 
 	bases = get_merge_bases(head_commit, merge_commit);
 	if (bases && !oidcmp(&merge_commit->object.oid,
@@ -3034,7 +3036,7 @@ static int do_merge(struct commit *commit, const char *arg, int arg_len,
 		 * value (a negative one would indicate that the `merge`
 		 * command needs to be rescheduled).
 		 */
-		ret = !!run_git_commit(git_path_merge_msg(), opts,
+		ret = !!run_git_commit(git_path_merge_msg(the_repository), opts,
 				     run_commit_flags);
 
 leave_merge:
@@ -3401,8 +3403,8 @@ static int continue_single_pick(void)
 {
 	const char *argv[] = { "commit", NULL };
 
-	if (!file_exists(git_path_cherry_pick_head()) &&
-	    !file_exists(git_path_revert_head()))
+	if (!file_exists(git_path_cherry_pick_head(the_repository)) &&
+	    !file_exists(git_path_revert_head(the_repository)))
 		return error(_("no cherry-pick or revert in progress"));
 	return run_command_v_opt(argv, RUN_GIT_CMD);
 }
@@ -3505,7 +3507,7 @@ static int commit_staged_changes(struct replay_opts *opts,
 	}
 
 	if (is_clean) {
-		const char *cherry_pick_head = git_path_cherry_pick_head();
+		const char *cherry_pick_head = git_path_cherry_pick_head(the_repository);
 
 		if (file_exists(cherry_pick_head) && unlink(cherry_pick_head))
 			return error(_("could not remove CHERRY_PICK_HEAD"));
@@ -3555,8 +3557,8 @@ int sequencer_continue(struct replay_opts *opts)
 
 	if (!is_rebase_i(opts)) {
 		/* Verify that the conflict has been resolved */
-		if (file_exists(git_path_cherry_pick_head()) ||
-		    file_exists(git_path_revert_head())) {
+		if (file_exists(git_path_cherry_pick_head(the_repository)) ||
+		    file_exists(git_path_revert_head(the_repository))) {
 			res = continue_single_pick();
 			if (res)
 				goto release_todo_list;
@@ -3608,7 +3610,7 @@ int sequencer_pick_revisions(struct replay_opts *opts)
 			continue;
 
 		if (!get_oid(name, &oid)) {
-			if (!lookup_commit_reference_gently(&oid, 1)) {
+			if (!lookup_commit_reference_gently(the_repository, &oid, 1)) {
 				enum object_type type = oid_object_info(the_repository,
 									&oid,
 									NULL);

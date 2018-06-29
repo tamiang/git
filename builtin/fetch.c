@@ -6,6 +6,7 @@
 #include "repository.h"
 #include "refs.h"
 #include "refspec.h"
+#include "object-store.h"
 #include "commit.h"
 #include "builtin.h"
 #include "string-list.h"
@@ -683,8 +684,10 @@ static int update_local_ref(struct ref *ref,
 		return r;
 	}
 
-	current = lookup_commit_reference_gently(&ref->old_oid, 1);
-	updated = lookup_commit_reference_gently(&ref->new_oid, 1);
+	current = lookup_commit_reference_gently(the_repository,
+						 &ref->old_oid, 1);
+	updated = lookup_commit_reference_gently(the_repository,
+						 &ref->new_oid, 1);
 	if (!current || !updated) {
 		const char *msg;
 		const char *what;
@@ -777,7 +780,7 @@ static int store_updated_refs(const char *raw_url, const char *remote_name,
 	const char *what, *kind;
 	struct ref *rm;
 	char *url;
-	const char *filename = dry_run ? "/dev/null" : git_path_fetch_head();
+	const char *filename = dry_run ? "/dev/null" : git_path_fetch_head(the_repository);
 	int want_status;
 	int summary_width = transport_summary_width(ref_map);
 
@@ -817,7 +820,8 @@ static int store_updated_refs(const char *raw_url, const char *remote_name,
 				continue;
 			}
 
-			commit = lookup_commit_reference_gently(&rm->old_oid,
+			commit = lookup_commit_reference_gently(the_repository,
+								&rm->old_oid,
 								1);
 			if (!commit)
 				rm->fetch_head_status = FETCH_HEAD_NOT_FOR_MERGE;
@@ -1029,7 +1033,7 @@ static void check_not_current_branch(struct ref *ref_map)
 
 static int truncate_fetch_head(void)
 {
-	const char *filename = git_path_fetch_head();
+	const char *filename = git_path_fetch_head(the_repository);
 	FILE *fp = fopen_for_writing(filename);
 
 	if (!fp)
@@ -1449,7 +1453,7 @@ int cmd_fetch(int argc, const char **argv, const char *prefix)
 	if (unshallow) {
 		if (depth)
 			die(_("--depth and --unshallow cannot be used together"));
-		else if (!is_repository_shallow())
+		else if (!is_repository_shallow(the_repository))
 			die(_("--unshallow on a complete repository does not make sense"));
 		else
 			depth = xstrfmt("%d", INFINITE_DEPTH);

@@ -63,9 +63,11 @@ enum decoration_type {
 void add_name_decoration(enum decoration_type type, const char *name, struct object *obj);
 const struct name_decoration *get_name_decoration(const struct object *obj);
 
-struct commit *lookup_commit(const struct object_id *oid);
-struct commit *lookup_commit_reference(const struct object_id *oid);
-struct commit *lookup_commit_reference_gently(const struct object_id *oid,
+struct commit *lookup_commit(struct repository *r, const struct object_id *oid);
+struct commit *lookup_commit_reference(struct repository *r,
+				       const struct object_id *oid);
+struct commit *lookup_commit_reference_gently(struct repository *r,
+					      const struct object_id *oid,
 					      int quiet);
 struct commit *lookup_commit_reference_by_name(const char *name);
 
@@ -76,8 +78,9 @@ struct commit *lookup_commit_reference_by_name(const char *name);
  */
 struct commit *lookup_commit_or_die(const struct object_id *oid, const char *ref_name);
 
-int parse_commit_buffer(struct commit *item, const void *buffer, unsigned long size, int check_graph);
-int parse_commit_internal(struct commit *item, int quiet_on_missing, int use_commit_graph);
+int parse_commit_buffer(struct repository *r, struct commit *item, const void *buffer,
+			unsigned long size, int check_graph);
+int parse_commit_internal(struct repository *r, struct commit *item, int quiet_on_missing, int use_commit_graph);
 int parse_commit_gently(struct commit *item, int quiet_on_missing);
 static inline int parse_commit(struct commit *item)
 {
@@ -85,17 +88,21 @@ static inline int parse_commit(struct commit *item)
 }
 void parse_commit_or_die(struct commit *item);
 
+struct buffer_slab;
+struct buffer_slab *allocate_commit_buffer_slab(void);
+void free_commit_buffer_slab(struct buffer_slab *bs);
+
 /*
  * Associate an object buffer with the commit. The ownership of the
  * memory is handed over to the commit, and must be free()-able.
  */
-void set_commit_buffer(struct commit *, void *buffer, unsigned long size);
+void set_commit_buffer(struct repository *r, struct commit *, void *buffer, unsigned long size);
 
 /*
  * Get any cached object buffer associated with the commit. Returns NULL
  * if none. The resulting memory should not be freed.
  */
-const void *get_cached_commit_buffer(const struct commit *, unsigned long *size);
+const void *get_cached_commit_buffer(struct repository *, const struct commit *, unsigned long *size);
 
 /*
  * Get the commit's object contents, either from cache or by reading the object
@@ -195,8 +202,8 @@ struct commit_graft {
 typedef int (*each_commit_graft_fn)(const struct commit_graft *, void *);
 
 struct commit_graft *read_graft_line(struct strbuf *line);
-int register_commit_graft(struct commit_graft *, int);
-struct commit_graft *lookup_commit_graft(const struct object_id *oid);
+int register_commit_graft(struct repository *r, struct commit_graft *, int);
+struct commit_graft *lookup_commit_graft(struct repository *r, const struct object_id *oid);
 
 extern struct commit_list *get_merge_bases(struct commit *rev1, struct commit *rev2);
 extern struct commit_list *get_merge_bases_many(struct commit *one, int n, struct commit **twos);
@@ -210,15 +217,15 @@ extern struct commit_list *get_merge_bases_many_dirty(struct commit *one, int n,
 
 struct oid_array;
 struct ref;
-extern int register_shallow(const struct object_id *oid);
+extern int register_shallow(struct repository *r, const struct object_id *oid);
 extern int unregister_shallow(const struct object_id *oid);
 extern int for_each_commit_graft(each_commit_graft_fn, void *);
-extern int is_repository_shallow(void);
+extern int is_repository_shallow(struct repository *r);
 extern struct commit_list *get_shallow_commits(struct object_array *heads,
 		int depth, int shallow_flag, int not_shallow_flag);
 extern struct commit_list *get_shallow_commits_by_rev_list(
 		int ac, const char **av, int shallow_flag, int not_shallow_flag);
-extern void set_alternate_shallow_file(const char *path, int override);
+extern void set_alternate_shallow_file(struct repository *r, const char *path, int override);
 extern int write_shallow_commits(struct strbuf *out, int use_pack_protocol,
 				 const struct oid_array *extra);
 extern void setup_alternate_shallow(struct lock_file *shallow_lock,

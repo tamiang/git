@@ -14,6 +14,7 @@
 #include "quote.h"
 #include "hashmap.h"
 #include "string-list.h"
+#include "object-store.h"
 #include "utf8.h"
 #include "dir.h"
 #include "color.h"
@@ -1233,7 +1234,7 @@ static int git_default_core_config(const char *var, const char *value)
 		}
 		eol_rndtrp_die = git_config_bool(var, value);
 		global_conv_flags_eol = eol_rndtrp_die ?
-			CONV_EOL_RNDTRP_DIE : CONV_EOL_RNDTRP_WARN;
+			CONV_EOL_RNDTRP_DIE : 0;
 		return 0;
 	}
 

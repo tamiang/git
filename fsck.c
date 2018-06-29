@@ -1,4 +1,6 @@
 #include "cache.h"
+#include "object-store.h"
+#include "repository.h"
 #include "object.h"
 #include "blob.h"
 #include "tree.h"
@@ -405,14 +407,14 @@ static int fsck_walk_tree(struct tree *tree, void *data, struct fsck_options *op
 			continue;
 
 		if (S_ISDIR(entry.mode)) {
-			obj = (struct object *)lookup_tree(entry.oid);
+			obj = (struct object *)lookup_tree(the_repository, entry.oid);
 			if (name && obj)
 				put_object_name(options, obj, "%s%s/", name,
 					entry.path);
 			result = options->walk(obj, OBJ_TREE, data, options);
 		}
 		else if (S_ISREG(entry.mode) || S_ISLNK(entry.mode)) {
-			obj = (struct object *)lookup_blob(entry.oid);
+			obj = (struct object *)lookup_blob(the_repository, entry.oid);
 			if (name && obj)
 				put_object_name(options, obj, "%s%s", name,
 					entry.path);
@@ -510,7 +512,7 @@ int fsck_walk(struct object *obj, void *data, struct fsck_options *options)
 		return -1;
 
 	if (obj->type == OBJ_NONE)
-		parse_object(&obj->oid);
+		parse_object(the_repository, &obj->oid);
 
 	switch (obj->type) {
 	case OBJ_BLOB:
@@ -795,7 +797,7 @@ static int fsck_commit_buffer(struct commit *commit, const char *buffer,
 		buffer = p + 1;
 		parent_line_count++;
 	}
-	graft = lookup_commit_graft(&commit->object.oid);
+	graft = lookup_commit_graft(the_repository, &commit->object.oid);
 	parent_count = commit_list_count(commit->parents);
 	if (graft) {
 		if (graft->nr_parent == -1 && !parent_count)
@@ -1068,7 +1070,7 @@ int fsck_finish(struct fsck_options *options)
 		if (oidset_contains(&gitmodules_done, oid))
 			continue;
 
-		blob = lookup_blob(oid);
+		blob = lookup_blob(the_repository, oid);
 		if (!blob) {
 			struct object *obj = lookup_unknown_object(oid->hash);
 			ret |= report(options, obj,
