@@ -89,8 +89,6 @@ inline void remote_odb_reinit(void)
 
 struct odb_helper *find_odb_helper(const char *remote)
 {
-	struct odb_helper *o;
-
 	remote_odb_init();
 
 	if (!remote)
