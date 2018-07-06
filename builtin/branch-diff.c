@@ -329,7 +329,7 @@ static void output_pair_header(struct diff_options *diffopt, struct strbuf *buf,
 		strbuf_addf(buf, " %d:  %s", j + 1,
 			    find_unique_abbrev(&b_util->oid, DEFAULT_ABBREV));
 
-	commit = lookup_commit_reference(oid);
+	commit = lookup_commit_reference(the_repository, oid);
 	if (commit) {
 		const char *commit_buffer = get_commit_buffer(commit, NULL);
 		const char *subject;
