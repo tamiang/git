@@ -476,6 +476,13 @@ done:
 
 static int gc_before_repack(void)
 {
+	/*
+	 * Shut down everything, we should have all the info we need
+	 * at this point. Leaving some file descriptors open may
+	 * prevent them from being removed on Windows.
+	 */
+	repo_clear(the_repository);
+
 	if (pack_refs && run_command_v_opt(pack_refs_cmd.argv, RUN_GIT_CMD))
 		return error(FAILED_RUN, pack_refs_cmd.argv[0]);
 
