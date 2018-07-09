@@ -647,7 +647,8 @@ static int grep_objects(struct grep_opt *opt, const struct pathspec *pathspec,
 
 	for (i = 0; i < nr; i++) {
 		struct object *real_obj;
-		real_obj = deref_tag(list->objects[i].item, NULL, 0);
+		real_obj = deref_tag(the_repository, list->objects[i].item,
+				     NULL, 0);
 
 		/* load the gitmodules file for this rev */
 		if (recurse_submodules) {
@@ -828,6 +829,7 @@ int cmd_grep(int argc, const char **argv, const char *prefix)
 			    GREP_PATTERN_TYPE_PCRE),
 		OPT_GROUP(""),
 		OPT_BOOL('n', "line-number", &opt.linenum, N_("show line numbers")),
+		OPT_BOOL(0, "column", &opt.columnnum, N_("show column number of first match")),
 		OPT_NEGBIT('h', NULL, &opt.pathname, N_("don't show filenames"), 1),
 		OPT_BIT('H', NULL, &opt.pathname, N_("show filenames"), 1),
 		OPT_NEGBIT(0, "full-name", &opt.relative,
@@ -842,6 +844,8 @@ int cmd_grep(int argc, const char **argv, const char *prefix)
 		OPT_BOOL_F('z', "null", &opt.null_following_name,
 			   N_("print NUL after filenames"),
 			   PARSE_OPT_NOCOMPLETE),
+		OPT_BOOL('o', "only-matching", &opt.only_matching,
+			N_("show only matching parts of a line")),
 		OPT_BOOL('c', "count", &opt.count,
 			N_("show the number of matches instead of matching lines")),
 		OPT__COLOR(&opt.color, N_("highlight matches")),
@@ -960,6 +964,10 @@ int cmd_grep(int argc, const char **argv, const char *prefix)
 
 	if (!opt.pattern_list)
 		die(_("no pattern given."));
+
+	/* --only-matching has no effect with --invert. */
+	if (opt.invert)
+		opt.only_matching = 0;
 
 	/*
 	 * We have to find "--" in a separate pass, because its presence

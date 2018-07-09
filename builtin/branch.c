@@ -22,6 +22,7 @@
 #include "wt-status.h"
 #include "ref-filter.h"
 #include "worktree.h"
+#include "help.h"
 
 static const char * const builtin_branch_usage[] = {
 	N_("git branch [<options>] [-r | -a] [--merged | --no-merged]"),
@@ -55,25 +56,19 @@ enum color_branch {
 	BRANCH_COLOR_UPSTREAM = 5
 };
 
+static const char *color_branch_slots[] = {
+	[BRANCH_COLOR_RESET]	= "reset",
+	[BRANCH_COLOR_PLAIN]	= "plain",
+	[BRANCH_COLOR_REMOTE]	= "remote",
+	[BRANCH_COLOR_LOCAL]	= "local",
+	[BRANCH_COLOR_CURRENT]	= "current",
+	[BRANCH_COLOR_UPSTREAM] = "upstream",
+};
+
 static struct string_list output = STRING_LIST_INIT_DUP;
 static unsigned int colopts;
 
-static int parse_branch_color_slot(const char *slot)
-{
-	if (!strcasecmp(slot, "plain"))
-		return BRANCH_COLOR_PLAIN;
-	if (!strcasecmp(slot, "reset"))
-		return BRANCH_COLOR_RESET;
-	if (!strcasecmp(slot, "remote"))
-		return BRANCH_COLOR_REMOTE;
-	if (!strcasecmp(slot, "local"))
-		return BRANCH_COLOR_LOCAL;
-	if (!strcasecmp(slot, "current"))
-		return BRANCH_COLOR_CURRENT;
-	if (!strcasecmp(slot, "upstream"))
-		return BRANCH_COLOR_UPSTREAM;
-	return -1;
-}
+define_list_config_array(color_branch_slots);
 
 static int git_branch_config(const char *var, const char *value, void *cb)
 {
@@ -86,7 +81,7 @@ static int git_branch_config(const char *var, const char *value, void *cb)
 		return 0;
 	}
 	if (skip_prefix(var, "color.branch.", &slot_name)) {
-		int slot = parse_branch_color_slot(slot_name);
+		int slot = LOOKUP_CONFIG(color_branch_slots, slot_name);
 		if (slot < 0)
 			return 0;
 		if (!value)
@@ -126,7 +121,8 @@ static int branch_merged(int kind, const char *name,
 		    (reference_name = reference_name_to_free =
 		     resolve_refdup(upstream, RESOLVE_REF_READING,
 				    &oid, NULL)) != NULL)
-			reference_rev = lookup_commit_reference(&oid);
+			reference_rev = lookup_commit_reference(the_repository,
+								&oid);
 	}
 	if (!reference_rev)
 		reference_rev = head_rev;
@@ -159,7 +155,7 @@ static int check_branch_commit(const char *branchname, const char *refname,
 			       const struct object_id *oid, struct commit *head_rev,
 			       int kinds, int force)
 {
-	struct commit *rev = lookup_commit_reference(oid);
+	struct commit *rev = lookup_commit_reference(the_repository, oid);
 	if (!rev) {
 		error(_("Couldn't look up commit object for '%s'"), refname);
 		return -1;
@@ -213,7 +209,7 @@ static int delete_branches(int argc, const char **argv, int force, int kinds,
 	}
 
 	if (!force) {
-		head_rev = lookup_commit_reference(&head_oid);
+		head_rev = lookup_commit_reference(the_repository, &head_oid);
 		if (!head_rev)
 			die(_("Couldn't look up commit object for HEAD"));
 	}
@@ -614,8 +610,8 @@ int cmd_branch(int argc, const char **argv, const char *prefix)
 		OPT_BIT('M', NULL, &rename, N_("move/rename a branch, even if target exists"), 2),
 		OPT_BIT('c', "copy", &copy, N_("copy a branch and its reflog"), 1),
 		OPT_BIT('C', NULL, &copy, N_("copy a branch, even if target exists"), 2),
-		OPT_BOOL(0, "list", &list, N_("list branch names")),
-		OPT_BOOL('l', "create-reflog", &reflog, N_("create the branch's reflog")),
+		OPT_BOOL('l', "list", &list, N_("list branch names")),
+		OPT_BOOL(0, "create-reflog", &reflog, N_("create the branch's reflog")),
 		OPT_BOOL(0, "edit-description", &edit_description,
 			 N_("edit the description for the branch")),
 		OPT__FORCE(&force, N_("force creation, move/rename, deletion"), PARSE_OPT_NOCOMPLETE),

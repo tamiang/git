@@ -270,7 +270,8 @@ static int disambiguate_committish_only(const struct object_id *oid, void *cb_da
 		return 0;
 
 	/* We need to do this the hard way... */
-	obj = deref_tag(parse_object(oid), NULL, 0);
+	obj = deref_tag(the_repository, parse_object(the_repository, oid),
+			NULL, 0);
 	if (obj && obj->type == OBJ_COMMIT)
 		return 1;
 	return 0;
@@ -294,7 +295,8 @@ static int disambiguate_treeish_only(const struct object_id *oid, void *cb_data_
 		return 0;
 
 	/* We need to do this the hard way... */
-	obj = deref_tag(parse_object(oid), NULL, 0);
+	obj = deref_tag(the_repository, parse_object(the_repository, oid),
+			NULL, 0);
 	if (obj && (obj->type == OBJ_TREE || obj->type == OBJ_COMMIT))
 		return 1;
 	return 0;
@@ -382,14 +384,14 @@ static int show_ambiguous_object(const struct object_id *oid, void *data)
 
 	type = oid_object_info(the_repository, oid, NULL);
 	if (type == OBJ_COMMIT) {
-		struct commit *commit = lookup_commit(oid);
+		struct commit *commit = lookup_commit(the_repository, oid);
 		if (commit) {
 			struct pretty_print_context pp = {0};
 			pp.date_mode.type = DATE_SHORT;
 			format_commit_message(commit, " %ad - %s", &desc, &pp);
 		}
 	} else if (type == OBJ_TAG) {
-		struct tag *tag = lookup_tag(oid);
+		struct tag *tag = lookup_tag(the_repository, oid);
 		if (!parse_tag(tag) && tag->tag)
 			strbuf_addf(&desc, " %s", tag->tag);
 	}
@@ -914,7 +916,7 @@ static int get_parent(const char *name, int len,
 
 	if (ret)
 		return ret;
-	commit = lookup_commit_reference(&oid);
+	commit = lookup_commit_reference(the_repository, &oid);
 	if (parse_commit(commit))
 		return -1;
 	if (!idx) {
@@ -942,7 +944,7 @@ static int get_nth_ancestor(const char *name, int len,
 	ret = get_oid_1(name, len, &oid, GET_OID_COMMITTISH);
 	if (ret)
 		return ret;
-	commit = lookup_commit_reference(&oid);
+	commit = lookup_commit_reference(the_repository, &oid);
 	if (!commit)
 		return -1;
 
@@ -961,7 +963,7 @@ struct object *peel_to_type(const char *name, int namelen,
 	if (name && !namelen)
 		namelen = strlen(name);
 	while (1) {
-		if (!o || (!o->parsed && !parse_object(&o->oid)))
+		if (!o || (!o->parsed && !parse_object(the_repository, &o->oid)))
 			return NULL;
 		if (expected_type == OBJ_ANY || o->type == expected_type)
 			return o;
@@ -1034,12 +1036,12 @@ static int peel_onion(const char *name, int len, struct object_id *oid,
 	if (get_oid_1(name, sp - name - 2, &outer, lookup_flags))
 		return -1;
 
-	o = parse_object(&outer);
+	o = parse_object(the_repository, &outer);
 	if (!o)
 		return -1;
 	if (!expected_type) {
-		o = deref_tag(o, name, sp - name - 2);
-		if (!o || (!o->parsed && !parse_object(&o->oid)))
+		o = deref_tag(the_repository, o, name, sp - name - 2);
+		if (!o || (!o->parsed && !parse_object(the_repository, &o->oid)))
 			return -1;
 		oidcpy(oid, &o->oid);
 		return 0;
@@ -1166,11 +1168,12 @@ static int handle_one_ref(const char *path, const struct object_id *oid,
 			  int flag, void *cb_data)
 {
 	struct commit_list **list = cb_data;
-	struct object *object = parse_object(oid);
+	struct object *object = parse_object(the_repository, oid);
 	if (!object)
 		return 0;
 	if (object->type == OBJ_TAG) {
-		object = deref_tag(object, path, strlen(path));
+		object = deref_tag(the_repository, object, path,
+				   strlen(path));
 		if (!object)
 			return 0;
 	}
@@ -1212,7 +1215,7 @@ static int get_oid_oneline(const char *prefix, struct object_id *oid,
 		int matches;
 
 		commit = pop_most_recent_commit(&list, ONELINE_SEEN);
-		if (!parse_object(&commit->object.oid))
+		if (!parse_object(the_repository, &commit->object.oid))
 			continue;
 		buf = get_commit_buffer(commit, NULL);
 		p = strstr(buf, "\n\n");
@@ -1321,13 +1324,13 @@ int get_oid_mb(const char *name, struct object_id *oid)
 	}
 	if (st)
 		return st;
-	one = lookup_commit_reference_gently(&oid_tmp, 0);
+	one = lookup_commit_reference_gently(the_repository, &oid_tmp, 0);
 	if (!one)
 		return -1;
 
 	if (get_oid_committish(dots[3] ? (dots + 3) : "HEAD", &oid_tmp))
 		return -1;
-	two = lookup_commit_reference_gently(&oid_tmp, 0);
+	two = lookup_commit_reference_gently(the_repository, &oid_tmp, 0);
 	if (!two)
 		return -1;
 	mbs = get_merge_bases(one, two);
@@ -1630,11 +1633,11 @@ static void diagnose_invalid_index_path(int stage,
 		prefix = "";
 
 	/* Wrong stage number? */
-	pos = cache_name_pos(filename, namelen);
+	pos = index_name_pos(&the_index, filename, namelen);
 	if (pos < 0)
 		pos = -pos - 1;
-	if (pos < active_nr) {
-		ce = active_cache[pos];
+	if (pos < the_index.cache_nr) {
+		ce = the_index.cache[pos];
 		if (ce_namelen(ce) == namelen &&
 		    !memcmp(ce->name, filename, namelen))
 			die("Path '%s' is in the index, but not at stage %d.\n"
@@ -1646,11 +1649,11 @@ static void diagnose_invalid_index_path(int stage,
 	/* Confusion between relative and absolute filenames? */
 	strbuf_addstr(&fullname, prefix);
 	strbuf_addstr(&fullname, filename);
-	pos = cache_name_pos(fullname.buf, fullname.len);
+	pos = index_name_pos(&the_index, fullname.buf, fullname.len);
 	if (pos < 0)
 		pos = -pos - 1;
-	if (pos < active_nr) {
-		ce = active_cache[pos];
+	if (pos < the_index.cache_nr) {
+		ce = the_index.cache[pos];
 		if (ce_namelen(ce) == fullname.len &&
 		    !memcmp(ce->name, fullname.buf, fullname.len))
 			die("Path '%s' is in the index, but not '%s'.\n"
@@ -1742,13 +1745,13 @@ static int get_oid_with_context_1(const char *name,
 		if (flags & GET_OID_RECORD_PATH)
 			oc->path = xstrdup(cp);
 
-		if (!active_cache)
-			read_cache();
-		pos = cache_name_pos(cp, namelen);
+		if (!the_index.cache)
+			read_index(&the_index);
+		pos = index_name_pos(&the_index, cp, namelen);
 		if (pos < 0)
 			pos = -pos - 1;
-		while (pos < active_nr) {
-			ce = active_cache[pos];
+		while (pos < the_index.cache_nr) {
+			ce = the_index.cache[pos];
 			if (ce_namelen(ce) != namelen ||
 			    memcmp(ce->name, cp, namelen))
 				break;

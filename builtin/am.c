@@ -32,22 +32,7 @@
 #include "apply.h"
 #include "string-list.h"
 #include "packfile.h"
-
-/**
- * Returns 1 if the file is empty or does not exist, 0 otherwise.
- */
-static int is_empty_file(const char *filename)
-{
-	struct stat st;
-
-	if (stat(filename, &st) < 0) {
-		if (errno == ENOENT)
-			return 1;
-		die_errno(_("could not stat %s"), filename);
-	}
-
-	return !st.st_size;
-}
+#include "repository.h"
 
 /**
  * Returns the length of the first line of msg.
@@ -1267,7 +1252,7 @@ static int parse_mail(struct am_state *state, const char *mail)
 		goto finish;
 	}
 
-	if (is_empty_file(am_path(state, "patch"))) {
+	if (is_empty_or_missing_file(am_path(state, "patch"))) {
 		printf_ln(_("Patch is empty."));
 		die_user_resolve(state);
 	}
@@ -1400,9 +1385,10 @@ static void write_index_patch(const struct am_state *state)
 	FILE *fp;
 
 	if (!get_oid_tree("HEAD", &head))
-		tree = lookup_tree(&head);
+		tree = lookup_tree(the_repository, &head);
 	else
-		tree = lookup_tree(the_hash_algo->empty_tree);
+		tree = lookup_tree(the_repository,
+				   the_repository->hash_algo->empty_tree);
 
 	fp = xfopen(am_path(state, "patch"), "w");
 	init_revisions(&rev_info, NULL);
@@ -1631,7 +1617,8 @@ static void do_commit(const struct am_state *state)
 
 	if (!get_oid_commit("HEAD", &parent)) {
 		old_oid = &parent;
-		commit_list_insert(lookup_commit(&parent), &parents);
+		commit_list_insert(lookup_commit(the_repository, &parent),
+				   &parents);
 	} else {
 		old_oid = NULL;
 		say(state, stderr, _("applying to an empty history"));
@@ -1827,15 +1814,11 @@ static void am_run(struct am_state *state, int resume)
 		}
 
 		if (apply_status) {
-			int advice_amworkdir = 1;
-
 			printf_ln(_("Patch failed at %s %.*s"), msgnum(state),
 				linelen(state->msg), state->msg);
 
-			git_config_get_bool("advice.amworkdir", &advice_amworkdir);
-
 			if (advice_amworkdir)
-				printf_ln(_("Use 'git am --show-current-patch' to see the failed patch"));
+				advise(_("Use 'git am --show-current-patch' to see the failed patch"));
 
 			die_user_resolve(state);
 		}
@@ -1850,7 +1833,7 @@ next:
 		resume = 0;
 	}
 
-	if (!is_empty_file(am_path(state, "rewritten"))) {
+	if (!is_empty_or_missing_file(am_path(state, "rewritten"))) {
 		assert(state->rebasing);
 		copy_notes_for_rebase(state);
 		run_post_rewrite_hook(state);

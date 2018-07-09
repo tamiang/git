@@ -20,12 +20,14 @@
 #include "sigchain.h"
 #include "argv-array.h"
 #include "commit.h"
+#include "commit-graph.h"
 #include "packfile.h"
 #include "object-store.h"
 #include "pack.h"
 #include "pack-objects.h"
 #include "blob.h"
 #include "tree.h"
+#include "remote-odb.h"
 
 #define FAILED_RUN "failed to run %s"
 
@@ -40,6 +42,7 @@ static int aggressive_depth = 50;
 static int aggressive_window = 250;
 static int gc_auto_threshold = 6700;
 static int gc_auto_pack_limit = 50;
+static int gc_write_commit_graph;
 static int detach_auto = 1;
 static timestamp_t gc_log_expire_time;
 static const char *gc_log_expire = "1.day.ago";
@@ -129,6 +132,7 @@ static void gc_config(void)
 	git_config_get_int("gc.aggressivedepth", &aggressive_depth);
 	git_config_get_int("gc.auto", &gc_auto_threshold);
 	git_config_get_int("gc.autopacklimit", &gc_auto_pack_limit);
+	git_config_get_bool("gc.writecommitgraph", &gc_write_commit_graph);
 	git_config_get_bool("gc.autodetach", &detach_auto);
 	git_config_get_expiry("gc.pruneexpire", &prune_expire);
 	git_config_get_expiry("gc.worktreepruneexpire", &prune_worktrees_expire);
@@ -473,6 +477,13 @@ done:
 
 static int gc_before_repack(void)
 {
+	/*
+	 * Shut down everything, we should have all the info we need
+	 * at this point. Leaving some file descriptors open may
+	 * prevent them from being removed on Windows.
+	 */
+	repo_clear(the_repository);
+
 	if (pack_refs && run_command_v_opt(pack_refs_cmd.argv, RUN_GIT_CMD))
 		return error(FAILED_RUN, pack_refs_cmd.argv[0]);
 
@@ -619,7 +630,7 @@ int cmd_gc(int argc, const char **argv, const char *prefix)
 			argv_array_push(&prune, prune_expire);
 			if (quiet)
 				argv_array_push(&prune, "--no-progress");
-			if (repository_format_partial_clone)
+			if (has_remote_odb())
 				argv_array_push(&prune,
 						"--exclude-promisor-objects");
 			if (run_command_v_opt(prune.argv, RUN_GIT_CMD))
@@ -640,6 +651,9 @@ int cmd_gc(int argc, const char **argv, const char *prefix)
 	reprepare_packed_git(the_repository);
 	if (pack_garbage.nr > 0)
 		clean_pack_garbage();
+
+	if (gc_write_commit_graph)
+		write_commit_graph_reachable(get_object_directory(), 0);
 
 	if (auto_gc && too_many_loose_objects())
 		warning(_("There are too many unreachable loose objects; "

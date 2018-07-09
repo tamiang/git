@@ -13,6 +13,7 @@
 #include "attr.h"
 #include "run-command.h"
 #include "utf8.h"
+#include "object-store.h"
 #include "userdiff.h"
 #include "submodule-config.h"
 #include "submodule.h"
@@ -22,6 +23,7 @@
 #include "argv-array.h"
 #include "graph.h"
 #include "packfile.h"
+#include "help.h"
 
 #ifdef NO_FAST_WORKING_DIRECTORY
 #define FAST_WORKING_DIRECTORY 0
@@ -67,6 +69,29 @@ static char diff_colors[][COLOR_MAXLEN] = {
 	GIT_COLOR_BOLD_YELLOW,	/* NEW_MOVED ALTERNATIVE */
 	GIT_COLOR_FAINT,	/* NEW_MOVED_DIM */
 	GIT_COLOR_FAINT_ITALIC,	/* NEW_MOVED_ALTERNATIVE_DIM */
+	GIT_COLOR_INV_RED,	/* OLD_INV */
+	GIT_COLOR_INV_GREEN,	/* NEW_INV */
+};
+
+static const char *color_diff_slots[] = {
+	[DIFF_CONTEXT]		      = "context",
+	[DIFF_METAINFO]		      = "meta",
+	[DIFF_FRAGINFO]		      = "frag",
+	[DIFF_FILE_OLD]		      = "old",
+	[DIFF_FILE_NEW]		      = "new",
+	[DIFF_COMMIT]		      = "commit",
+	[DIFF_WHITESPACE]	      = "whitespace",
+	[DIFF_FUNCINFO]		      = "func",
+	[DIFF_FILE_OLD_MOVED]	      = "oldMoved",
+	[DIFF_FILE_OLD_MOVED_ALT]     = "oldMovedAlternative",
+	[DIFF_FILE_OLD_MOVED_DIM]     = "oldMovedDimmed",
+	[DIFF_FILE_OLD_MOVED_ALT_DIM] = "oldMovedAlternativeDimmed",
+	[DIFF_FILE_NEW_MOVED]	      = "newMoved",
+	[DIFF_FILE_NEW_MOVED_ALT]     = "newMovedAlternative",
+	[DIFF_FILE_NEW_MOVED_DIM]     = "newMovedDimmed",
+	[DIFF_FILE_NEW_MOVED_ALT_DIM] = "newMovedAlternativeDimmed",
+	[DIFF_FILE_OLD_INV]	      = "oldinv",
+	[DIFF_FILE_NEW_INV]	      = "newinv",
 };
 
 static NORETURN void die_want_option(const char *option_name)
@@ -74,41 +99,13 @@ static NORETURN void die_want_option(const char *option_name)
 	die(_("option '%s' requires a value"), option_name);
 }
 
+define_list_config_array_extra(color_diff_slots, {"plain"});
+
 static int parse_diff_color_slot(const char *var)
 {
-	if (!strcasecmp(var, "context") || !strcasecmp(var, "plain"))
+	if (!strcasecmp(var, "plain"))
 		return DIFF_CONTEXT;
-	if (!strcasecmp(var, "meta"))
-		return DIFF_METAINFO;
-	if (!strcasecmp(var, "frag"))
-		return DIFF_FRAGINFO;
-	if (!strcasecmp(var, "old"))
-		return DIFF_FILE_OLD;
-	if (!strcasecmp(var, "new"))
-		return DIFF_FILE_NEW;
-	if (!strcasecmp(var, "commit"))
-		return DIFF_COMMIT;
-	if (!strcasecmp(var, "whitespace"))
-		return DIFF_WHITESPACE;
-	if (!strcasecmp(var, "func"))
-		return DIFF_FUNCINFO;
-	if (!strcasecmp(var, "oldmoved"))
-		return DIFF_FILE_OLD_MOVED;
-	if (!strcasecmp(var, "oldmovedalternative"))
-		return DIFF_FILE_OLD_MOVED_ALT;
-	if (!strcasecmp(var, "oldmoveddimmed"))
-		return DIFF_FILE_OLD_MOVED_DIM;
-	if (!strcasecmp(var, "oldmovedalternativedimmed"))
-		return DIFF_FILE_OLD_MOVED_ALT_DIM;
-	if (!strcasecmp(var, "newmoved"))
-		return DIFF_FILE_NEW_MOVED;
-	if (!strcasecmp(var, "newmovedalternative"))
-		return DIFF_FILE_NEW_MOVED_ALT;
-	if (!strcasecmp(var, "newmoveddimmed"))
-		return DIFF_FILE_NEW_MOVED_DIM;
-	if (!strcasecmp(var, "newmovedalternativedimmed"))
-		return DIFF_FILE_NEW_MOVED_ALT_DIM;
-	return -1;
+	return LOOKUP_CONFIG(color_diff_slots, var);
 }
 
 static int parse_dirstat_params(struct diff_options *options, const char *params_string,
@@ -271,6 +268,8 @@ static int parse_color_moved(const char *arg)
 		return COLOR_MOVED_NO;
 	else if (!strcmp(arg, "plain"))
 		return COLOR_MOVED_PLAIN;
+	else if (!strcmp(arg, "blocks"))
+		return COLOR_MOVED_BLOCKS;
 	else if (!strcmp(arg, "zebra"))
 		return COLOR_MOVED_ZEBRA;
 	else if (!strcmp(arg, "default"))
@@ -278,7 +277,43 @@ static int parse_color_moved(const char *arg)
 	else if (!strcmp(arg, "dimmed_zebra"))
 		return COLOR_MOVED_ZEBRA_DIM;
 	else
-		return error(_("color moved setting must be one of 'no', 'default', 'zebra', 'dimmed_zebra', 'plain'"));
+		return error(_("color moved setting must be one of 'no', 'default', 'blocks', 'zebra', 'dimmed_zebra', 'plain'"));
+}
+
+static int parse_color_moved_ws(const char *arg)
+{
+	int ret = 0;
+	struct string_list l = STRING_LIST_INIT_DUP;
+	struct string_list_item *i;
+
+	string_list_split(&l, arg, ',', -1);
+
+	for_each_string_list_item(i, &l) {
+		struct strbuf sb = STRBUF_INIT;
+		strbuf_addstr(&sb, i->string);
+		strbuf_trim(&sb);
+
+		if (!strcmp(sb.buf, "ignore-space-change"))
+			ret |= XDF_IGNORE_WHITESPACE_CHANGE;
+		else if (!strcmp(sb.buf, "ignore-space-at-eol"))
+			ret |= XDF_IGNORE_WHITESPACE_AT_EOL;
+		else if (!strcmp(sb.buf, "ignore-all-space"))
+			ret |= XDF_IGNORE_WHITESPACE;
+		else if (!strcmp(sb.buf, "allow-indentation-change"))
+			ret |= COLOR_MOVED_WS_ALLOW_INDENTATION_CHANGE;
+		else
+			error(_("ignoring unknown color-moved-ws mode '%s'"), sb.buf);
+
+		strbuf_release(&sb);
+	}
+
+	if ((ret & COLOR_MOVED_WS_ALLOW_INDENTATION_CHANGE) &&
+	    (ret & XDF_WHITESPACE_FLAGS))
+		die(_("color-moved-ws: allow-indentation-change cannot be combined with other white space modes"));
+
+	string_list_clear(&l, 0);
+
+	return ret;
 }
 
 int git_diff_ui_config(const char *var, const char *value, void *cb)
@@ -577,7 +612,10 @@ static void emit_line_0(struct diff_options *o, const char *set, const char *res
 	int nofirst;
 	FILE *file = o->file;
 
-	fputs(diff_line_prefix(o), file);
+	if (first)
+		fputs(diff_line_prefix(o), file);
+	else if (!len)
+		return;
 
 	if (len == 0) {
 		has_trailing_newline = (first == '\n');
@@ -596,7 +634,7 @@ static void emit_line_0(struct diff_options *o, const char *set, const char *res
 
 	if (len || !nofirst) {
 		fputs(set, file);
-		if (!nofirst)
+		if (first && !nofirst)
 			fputc(first, file);
 		fwrite(line, len, 1, file);
 		fputs(reset, file);
@@ -705,16 +743,116 @@ struct moved_entry {
 	struct hashmap_entry ent;
 	const struct emitted_diff_symbol *es;
 	struct moved_entry *next_line;
+	struct ws_delta *wsd;
 };
 
-static int moved_entry_cmp(const struct diff_options *diffopt,
-			   const struct moved_entry *a,
-			   const struct moved_entry *b,
+/**
+ * The struct ws_delta holds white space differences between moved lines, i.e.
+ * between '+' and '-' lines that have been detected to be a move.
+ * The string contains the difference in leading white spaces, before the
+ * rest of the line is compared using the white space config for move
+ * coloring. The current_longer indicates if the first string in the
+ * comparision is longer than the second.
+ */
+struct ws_delta {
+	char *string;
+	unsigned int current_longer : 1;
+};
+#define WS_DELTA_INIT { NULL, 0 }
+
+static int compute_ws_delta(const struct emitted_diff_symbol *a,
+			     const struct emitted_diff_symbol *b,
+			     struct ws_delta *out)
+{
+	const struct emitted_diff_symbol *longer =  a->len > b->len ? a : b;
+	const struct emitted_diff_symbol *shorter = a->len > b->len ? b : a;
+	int d = longer->len - shorter->len;
+
+	out->string = xmemdupz(longer->line, d);
+	out->current_longer = (a == longer);
+
+	return !strncmp(longer->line + d, shorter->line, shorter->len);
+}
+
+static int cmp_in_block_with_wsd(const struct diff_options *o,
+				 const struct moved_entry *cur,
+				 const struct moved_entry *match,
+				 struct moved_entry *pmb,
+				 int n)
+{
+	struct emitted_diff_symbol *l = &o->emitted_symbols->buf[n];
+	int al = cur->es->len, cl = l->len;
+	const char *a = cur->es->line,
+		   *b = match->es->line,
+		   *c = l->line;
+
+	int wslen;
+
+	/*
+	 * We need to check if 'cur' is equal to 'match'.
+	 * As those are from the same (+/-) side, we do not need to adjust for
+	 * indent changes. However these were found using fuzzy matching
+	 * so we do have to check if they are equal.
+	 */
+	if (strcmp(a, b))
+		return 1;
+
+	if (!pmb->wsd)
+		/*
+		 * No white space delta was carried forward? This can happen
+		 * when we exit early in this function and do not carry
+		 * forward ws.
+		 */
+		return 1;
+
+	/*
+	 * The indent changes of the block are known and carried forward in
+	 * pmb->wsd; however we need to check if the indent changes of the
+	 * current line are still the same as before.
+	 *
+	 * To do so we need to compare 'l' to 'cur', adjusting the
+	 * one of them for the white spaces, depending which was longer.
+	 */
+
+	wslen = strlen(pmb->wsd->string);
+	if (pmb->wsd->current_longer) {
+		c += wslen;
+		cl -= wslen;
+	} else {
+		a += wslen;
+		al -= wslen;
+	}
+
+	if (strcmp(a, c))
+		return 1;
+
+	return 0;
+}
+
+static int moved_entry_cmp(const void *hashmap_cmp_fn_data,
+			   const void *entry,
+			   const void *entry_or_key,
 			   const void *keydata)
 {
+	const struct diff_options *diffopt = hashmap_cmp_fn_data;
+	const struct moved_entry *a = entry;
+	const struct moved_entry *b = entry_or_key;
+	unsigned flags = diffopt->color_moved_ws_handling
+			 & XDF_WHITESPACE_FLAGS;
+
+	if (diffopt->color_moved_ws_handling &
+	    COLOR_MOVED_WS_ALLOW_INDENTATION_CHANGE)
+		/*
+		 * As there is not specific white space config given,
+		 * we'd need to check for a new block, so ignore all
+		 * white space. The setup of the white space
+		 * configuration for the next block is done else where
+		 */
+		flags |= XDF_IGNORE_WHITESPACE;
+
 	return !xdiff_compare_lines(a->es->line, a->es->len,
 				    b->es->line, b->es->len,
-				    diffopt->xdl_opts);
+				    flags);
 }
 
 static struct moved_entry *prepare_entry(struct diff_options *o,
@@ -722,10 +860,12 @@ static struct moved_entry *prepare_entry(struct diff_options *o,
 {
 	struct moved_entry *ret = xmalloc(sizeof(*ret));
 	struct emitted_diff_symbol *l = &o->emitted_symbols->buf[line_no];
+	unsigned flags = o->color_moved_ws_handling & XDF_WHITESPACE_FLAGS;
 
-	ret->ent.hash = xdiff_hash_string(l->line, l->len, o->xdl_opts);
+	ret->ent.hash = xdiff_hash_string(l->line, l->len, flags);
 	ret->es = l;
 	ret->next_line = NULL;
+	ret->wsd = NULL;
 
 	return ret;
 }
@@ -762,6 +902,56 @@ static void add_lines_to_move_detection(struct diff_options *o,
 	}
 }
 
+static void pmb_advance_or_null(struct diff_options *o,
+				struct moved_entry *match,
+				struct hashmap *hm,
+				struct moved_entry **pmb,
+				int pmb_nr)
+{
+	int i;
+	for (i = 0; i < pmb_nr; i++) {
+		struct moved_entry *prev = pmb[i];
+		struct moved_entry *cur = (prev && prev->next_line) ?
+				prev->next_line : NULL;
+		if (cur && !hm->cmpfn(o, cur, match, NULL)) {
+			pmb[i] = cur;
+		} else {
+			pmb[i] = NULL;
+		}
+	}
+}
+
+static void pmb_advance_or_null_multi_match(struct diff_options *o,
+					    struct moved_entry *match,
+					    struct hashmap *hm,
+					    struct moved_entry **pmb,
+					    int pmb_nr, int n)
+{
+	int i;
+	char *got_match = xcalloc(1, pmb_nr);
+
+	for (; match; match = hashmap_get_next(hm, match)) {
+		for (i = 0; i < pmb_nr; i++) {
+			struct moved_entry *prev = pmb[i];
+			struct moved_entry *cur = (prev && prev->next_line) ?
+					prev->next_line : NULL;
+			if (!cur)
+				continue;
+			if (!cmp_in_block_with_wsd(o, cur, match, pmb[i], n))
+				got_match[i] |= 1;
+		}
+	}
+
+	for (i = 0; i <pmb_nr; i++) {
+		if (got_match[i]) {
+			/* Carry the white space delta forward */
+			pmb[i]->next_line->wsd = pmb[i]->wsd;
+			pmb[i] = pmb[i]->next_line;
+		} else
+			pmb[i] = NULL;
+	}
+}
+
 static int shrink_potential_moved_blocks(struct moved_entry **pmb,
 					 int pmb_nr)
 {
@@ -779,6 +969,10 @@ static int shrink_potential_moved_blocks(struct moved_entry **pmb,
 
 		if (lp < pmb_nr && rp > -1 && lp < rp) {
 			pmb[lp] = pmb[rp];
+			if (pmb[rp]->wsd) {
+				free(pmb[rp]->wsd->string);
+				FREE_AND_NULL(pmb[rp]->wsd);
+			}
 			pmb[rp] = NULL;
 			rp--;
 			lp++;
@@ -836,19 +1030,18 @@ static void mark_color_as_moved(struct diff_options *o,
 		struct moved_entry *key;
 		struct moved_entry *match = NULL;
 		struct emitted_diff_symbol *l = &o->emitted_symbols->buf[n];
-		int i;
 
 		switch (l->s) {
 		case DIFF_SYMBOL_PLUS:
 			hm = del_lines;
 			key = prepare_entry(o, n);
-			match = hashmap_get(hm, key, o);
+			match = hashmap_get(hm, key, NULL);
 			free(key);
 			break;
 		case DIFF_SYMBOL_MINUS:
 			hm = add_lines;
 			key = prepare_entry(o, n);
-			match = hashmap_get(hm, key, o);
+			match = hashmap_get(hm, key, NULL);
 			free(key);
 			break;
 		default:
@@ -867,17 +1060,11 @@ static void mark_color_as_moved(struct diff_options *o,
 		if (o->color_moved == COLOR_MOVED_PLAIN)
 			continue;
 
-		/* Check any potential block runs, advance each or nullify */
-		for (i = 0; i < pmb_nr; i++) {
-			struct moved_entry *p = pmb[i];
-			struct moved_entry *pnext = (p && p->next_line) ?
-					p->next_line : NULL;
-			if (pnext && !hm->cmpfn(o, pnext, match, NULL)) {
-				pmb[i] = p->next_line;
-			} else {
-				pmb[i] = NULL;
-			}
-		}
+		if (o->color_moved_ws_handling &
+		    COLOR_MOVED_WS_ALLOW_INDENTATION_CHANGE)
+			pmb_advance_or_null_multi_match(o, match, hm, pmb, pmb_nr, n);
+		else
+			pmb_advance_or_null(o, match, hm, pmb, pmb_nr);
 
 		pmb_nr = shrink_potential_moved_blocks(pmb, pmb_nr);
 
@@ -888,7 +1075,17 @@ static void mark_color_as_moved(struct diff_options *o,
 			 */
 			for (; match; match = hashmap_get_next(hm, match)) {
 				ALLOC_GROW(pmb, pmb_nr + 1, pmb_alloc);
-				pmb[pmb_nr++] = match;
+				if (o->color_moved_ws_handling &
+				    COLOR_MOVED_WS_ALLOW_INDENTATION_CHANGE) {
+					struct ws_delta *wsd = xmalloc(sizeof(*match->wsd));
+					if (compute_ws_delta(l, match->es, wsd)) {
+						match->wsd = wsd;
+						pmb[pmb_nr++] = match;
+					} else
+						free(wsd);
+				} else {
+					pmb[pmb_nr++] = match;
+				}
 			}
 
 			flipped_block = (flipped_block + 1) % 2;
@@ -899,7 +1096,7 @@ static void mark_color_as_moved(struct diff_options *o,
 
 		block_length++;
 
-		if (flipped_block)
+		if (flipped_block && o->color_moved != COLOR_MOVED_BLOCKS)
 			l->flags |= DIFF_SYMBOL_MOVED_LINE_ALT;
 	}
 	adjust_last_block(o, n, block_length);
@@ -970,7 +1167,8 @@ static void dim_moved_lines(struct diff_options *o)
 
 static void emit_line_ws_markup(struct diff_options *o,
 				const char *set, const char *reset,
-				const char *line, int len, char sign,
+				const char *line, int len,
+				const char *set_sign, char sign,
 				unsigned ws_rule, int blank_at_eof)
 {
 	const char *ws = NULL;
@@ -981,14 +1179,18 @@ static void emit_line_ws_markup(struct diff_options *o,
 			ws = NULL;
 	}
 
-	if (!ws)
+	if (!ws && set_sign == set)
 		emit_line_0(o, set, reset, sign, line, len);
-	else if (blank_at_eof)
+	else if (!ws) {
+		/* Emit just the prefix, then the rest. */
+		emit_line_0(o, set_sign, reset, sign, "", 0);
+		emit_line_0(o, set, reset, 0, line, len);
+	} else if (blank_at_eof)
 		/* Blank line at EOF - paint '+' as well */
 		emit_line_0(o, ws, reset, sign, line, len);
 	else {
 		/* Emit just the prefix, then the rest. */
-		emit_line_0(o, set, reset, sign, "", 0);
+		emit_line_0(o, set_sign, reset, sign, "", 0);
 		ws_check_emit(line, len, ws_rule,
 			      o->file, set, reset, ws);
 	}
@@ -998,7 +1200,7 @@ static void emit_diff_symbol_from_struct(struct diff_options *o,
 					 struct emitted_diff_symbol *eds)
 {
 	static const char *nneof = " No newline at end of file\n";
-	const char *context, *reset, *set, *meta, *fraginfo;
+	const char *context, *reset, *set, *set_sign, *meta, *fraginfo;
 	struct strbuf sb = STRBUF_INIT;
 
 	enum diff_symbol s = eds->s;
@@ -1038,7 +1240,16 @@ static void emit_diff_symbol_from_struct(struct diff_options *o,
 	case DIFF_SYMBOL_CONTEXT:
 		set = diff_get_color_opt(o, DIFF_CONTEXT);
 		reset = diff_get_color_opt(o, DIFF_RESET);
-		emit_line_ws_markup(o, set, reset, line, len, ' ',
+		set_sign = set;
+		if (o->flags.dual_color_diffed_diffs) {
+			char c = !len ? 0 : line[0];
+
+			if (c == '+')
+				set = diff_get_color_opt(o, DIFF_FILE_NEW);
+			else if (c == '-')
+				set = diff_get_color_opt(o, DIFF_FILE_OLD);
+		}
+		emit_line_ws_markup(o, set, reset, line, len, set_sign, ' ',
 				    flags & (DIFF_SYMBOL_CONTENT_WS_MASK), 0);
 		break;
 	case DIFF_SYMBOL_PLUS:
@@ -1065,7 +1276,24 @@ static void emit_diff_symbol_from_struct(struct diff_options *o,
 			set = diff_get_color_opt(o, DIFF_FILE_NEW);
 		}
 		reset = diff_get_color_opt(o, DIFF_RESET);
-		emit_line_ws_markup(o, set, reset, line, len, '+',
+		if (!o->flags.dual_color_diffed_diffs)
+			set_sign = set;
+		else {
+			char c = !len ? 0 : line[0];
+
+			set_sign = diff_get_color_opt(o, DIFF_FILE_NEW_INV);
+			if (c == '-')
+				set = diff_get_color_opt(o, DIFF_FILE_OLD);
+			else if (c != '+')
+				set = diff_get_color_opt(o, DIFF_CONTEXT);
+			/* Avoid space-before-tab warning */
+			if (c == ' ' && (len < 2 || line[1] == '\t' ||
+					 line[1] == '\r' || line[1] == '\n')) {
+				line++;
+				len--;
+			}
+		}
+		emit_line_ws_markup(o, set, reset, line, len, set_sign, '+',
 				    flags & DIFF_SYMBOL_CONTENT_WS_MASK,
 				    flags & DIFF_SYMBOL_CONTENT_BLANK_LINE_EOF);
 		break;
@@ -1093,7 +1321,18 @@ static void emit_diff_symbol_from_struct(struct diff_options *o,
 			set = diff_get_color_opt(o, DIFF_FILE_OLD);
 		}
 		reset = diff_get_color_opt(o, DIFF_RESET);
-		emit_line_ws_markup(o, set, reset, line, len, '-',
+		if (!o->flags.dual_color_diffed_diffs)
+			set_sign = set;
+		else {
+			char c = !len ? 0 : line[0];
+
+			set_sign = diff_get_color_opt(o, DIFF_FILE_OLD_INV);
+			if (c == '+')
+				set = diff_get_color_opt(o, DIFF_FILE_NEW);
+			else if (c != '-')
+				set = diff_get_color_opt(o, DIFF_CONTEXT);
+		}
+		emit_line_ws_markup(o, set, reset, line, len, set_sign, '-',
 				    flags & DIFF_SYMBOL_CONTENT_WS_MASK, 0);
 		break;
 	case DIFF_SYMBOL_WORDS_PORCELAIN:
@@ -3197,13 +3436,16 @@ static void builtin_diff(const char *name_a,
 		memset(&xpp, 0, sizeof(xpp));
 		memset(&xecfg, 0, sizeof(xecfg));
 		memset(&ecbdata, 0, sizeof(ecbdata));
+		if (o->flags.suppress_diff_headers)
+			lbl[0] = NULL;
 		ecbdata.label_path = lbl;
 		ecbdata.color_diff = want_color(o->use_color);
 		ecbdata.ws_rule = whitespace_rule(name_b);
 		if (ecbdata.ws_rule & WS_BLANK_AT_EOF)
 			check_blank_at_eof(&mf1, &mf2, &ecbdata);
 		ecbdata.opt = o;
-		ecbdata.header = header.len ? &header : NULL;
+		if (header.len && !o->flags.suppress_diff_headers)
+			ecbdata.header = &header;
 		xpp.flags = o->xdl_opts;
 		xpp.anchors = o->anchors;
 		xpp.anchors_nr = o->anchors_nr;
@@ -3460,7 +3702,7 @@ static int reuse_worktree_file(const char *name, const struct object_id *oid, in
 	 * by diff-cache --cached, which does read the cache before
 	 * calling us.
 	 */
-	if (!active_cache)
+	if (!the_index.cache)
 		return 0;
 
 	/* We want to avoid the working directory if our caller
@@ -3483,10 +3725,10 @@ static int reuse_worktree_file(const char *name, const struct object_id *oid, in
 		return 0;
 
 	len = strlen(name);
-	pos = cache_name_pos(name, len);
+	pos = index_name_pos(&the_index, name, len);
 	if (pos < 0)
 		return 0;
-	ce = active_cache[pos];
+	ce = the_index.cache[pos];
 
 	/*
 	 * This is not the sha1 we are looking for, or
@@ -3506,7 +3748,7 @@ static int reuse_worktree_file(const char *name, const struct object_id *oid, in
 	 * If ce matches the file in the work tree, we can reuse it.
 	 */
 	if (ce_uptodate(ce) ||
-	    (!lstat(name, &st) && !ce_match_stat(ce, &st, 0)))
+	    (!lstat(name, &st) && !ie_match_stat(&the_index, ce, &st, 0)))
 		return 1;
 
 	return 0;
@@ -4216,14 +4458,14 @@ void diff_setup_done(struct diff_options *options)
 	if (options->detect_rename && options->rename_limit < 0)
 		options->rename_limit = diff_rename_limit_default;
 	if (options->setup & DIFF_SETUP_USE_CACHE) {
-		if (!active_cache)
+		if (!the_index.cache)
 			/* read-cache does not die even when it fails
 			 * so it is safe for us to do this here.  Also
 			 * it does not smudge active_cache or active_nr
 			 * when it fails, so we do not have to worry about
 			 * cleaning it up ourselves either.
 			 */
-			read_cache();
+			read_index(&the_index);
 	}
 	if (hexsz < options->abbrev)
 		options->abbrev = hexsz; /* full */
@@ -4711,6 +4953,8 @@ int diff_opt_parse(struct diff_options *options,
 		if (cm < 0)
 			die("bad --color-moved argument: %s", arg);
 		options->color_moved = cm;
+	} else if (skip_prefix(arg, "--color-moved-ws=", &arg)) {
+		options->color_moved_ws_handling = parse_color_moved_ws(arg);
 	} else if (skip_to_optional_arg_default(arg, "--color-words", &options->word_regex, NULL)) {
 		options->use_color = 1;
 		options->word_diff = DIFF_WORDS_COLOR;
@@ -5541,10 +5785,12 @@ static void diff_flush_patch_all_file_pairs(struct diff_options *o)
 		if (o->color_moved) {
 			struct hashmap add_lines, del_lines;
 
-			hashmap_init(&del_lines,
-				     (hashmap_cmp_fn)moved_entry_cmp, o, 0);
-			hashmap_init(&add_lines,
-				     (hashmap_cmp_fn)moved_entry_cmp, o, 0);
+			if (o->color_moved_ws_handling &
+			    COLOR_MOVED_WS_ALLOW_INDENTATION_CHANGE)
+				o->color_moved_ws_handling |= XDF_IGNORE_WHITESPACE;
+
+			hashmap_init(&del_lines, moved_entry_cmp, o, 0);
+			hashmap_init(&add_lines, moved_entry_cmp, o, 0);
 
 			add_lines_to_move_detection(o, &add_lines, &del_lines);
 			mark_color_as_moved(o, &add_lines, &del_lines);

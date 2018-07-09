@@ -1,4 +1,5 @@
 #include "cache.h"
+#include "repository.h"
 #include "commit.h"
 #include "tag.h"
 #include "blob.h"
@@ -13,6 +14,7 @@
 #include "argv-array.h"
 #include "packfile.h"
 #include "object-store.h"
+
 
 #ifdef EXPAT_NEEDS_XMLPARSE_H
 #include <xmlparse.h>
@@ -200,10 +202,8 @@ static void curl_setup_http(CURL *curl, const char *url,
 	curl_easy_setopt(curl, CURLOPT_INFILE, buffer);
 	curl_easy_setopt(curl, CURLOPT_INFILESIZE, buffer->buf.len);
 	curl_easy_setopt(curl, CURLOPT_READFUNCTION, fread_buffer);
-#ifndef NO_CURL_IOCTL
 	curl_easy_setopt(curl, CURLOPT_IOCTLFUNCTION, ioctl_buffer);
 	curl_easy_setopt(curl, CURLOPT_IOCTLDATA, buffer);
-#endif
 	curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_fn);
 	curl_easy_setopt(curl, CURLOPT_NOBODY, 0);
 	curl_easy_setopt(curl, CURLOPT_CUSTOMREQUEST, custom_req);
@@ -245,8 +245,6 @@ static void process_response(void *callback_data)
 
 	finish_request(request);
 }
-
-#ifdef USE_CURL_MULTI
 
 static void start_fetch_loose(struct transfer_request *request)
 {
@@ -296,7 +294,6 @@ static void start_mkcol(struct transfer_request *request)
 		FREE_AND_NULL(request->url);
 	}
 }
-#endif
 
 static void start_fetch_packed(struct transfer_request *request)
 {
@@ -598,7 +595,6 @@ static void finish_request(struct transfer_request *request)
 	}
 }
 
-#ifdef USE_CURL_MULTI
 static int is_running_queue;
 static int fill_active_slot(void *unused)
 {
@@ -622,7 +618,6 @@ static int fill_active_slot(void *unused)
 	}
 	return 0;
 }
-#endif
 
 static void get_remote_object_list(unsigned char parent);
 
@@ -651,10 +646,8 @@ static void add_fetch_request(struct object *obj)
 	request->next = request_queue_head;
 	request_queue_head = request;
 
-#ifdef USE_CURL_MULTI
 	fill_active_slots();
 	step_active_slots();
-#endif
 }
 
 static int add_send_request(struct object *obj, struct remote_lock *lock)
@@ -689,10 +682,8 @@ static int add_send_request(struct object *obj, struct remote_lock *lock)
 	request->next = request_queue_head;
 	request_queue_head = request;
 
-#ifdef USE_CURL_MULTI
 	fill_active_slots();
 	step_active_slots();
-#endif
 
 	return 1;
 }
@@ -720,9 +711,9 @@ static void one_remote_object(const struct object_id *oid)
 {
 	struct object *obj;
 
-	obj = lookup_object(oid->hash);
+	obj = lookup_object(the_repository, oid->hash);
 	if (!obj)
-		obj = parse_object(oid);
+		obj = parse_object(the_repository, oid);
 
 	/* Ignore remote objects that don't exist locally */
 	if (!obj)
@@ -1309,10 +1300,12 @@ static struct object_list **process_tree(struct tree *tree,
 	while (tree_entry(&desc, &entry))
 		switch (object_type(entry.mode)) {
 		case OBJ_TREE:
-			p = process_tree(lookup_tree(entry.oid), p);
+			p = process_tree(lookup_tree(the_repository, entry.oid),
+					 p);
 			break;
 		case OBJ_BLOB:
-			p = process_blob(lookup_blob(entry.oid), p);
+			p = process_blob(lookup_blob(the_repository, entry.oid),
+					 p);
 			break;
 		default:
 			/* Subproject commit - not in this repository */
@@ -1459,7 +1452,7 @@ static void add_remote_info_ref(struct remote_ls_ctx *ls)
 		return;
 	}
 
-	o = parse_object(&ref->old_oid);
+	o = parse_object(the_repository, &ref->old_oid);
 	if (!o) {
 		fprintf(stderr,
 			"Unable to parse object %s for remote ref %s\n",
@@ -1473,7 +1466,7 @@ static void add_remote_info_ref(struct remote_ls_ctx *ls)
 		    oid_to_hex(&ref->old_oid), ls->dentry_name);
 
 	if (o->type == OBJ_TAG) {
-		o = deref_tag(o, ls->dentry_name, 0);
+		o = deref_tag(the_repository, o, ls->dentry_name, 0);
 		if (o)
 			strbuf_addf(buf, "%s\t%s^{}\n",
 				    oid_to_hex(&o->oid), ls->dentry_name);
@@ -1671,21 +1664,15 @@ static int delete_remote_branch(const char *pattern, int force)
 
 static void run_request_queue(void)
 {
-#ifdef USE_CURL_MULTI
 	is_running_queue = 1;
 	fill_active_slots();
 	add_fill_function(NULL, fill_active_slot);
-#endif
 	do {
 		finish_all_active_slots();
-#ifdef USE_CURL_MULTI
 		fill_active_slots();
-#endif
 	} while (request_queue_head && !aborted);
 
-#ifdef USE_CURL_MULTI
 	is_running_queue = 0;
-#endif
 }
 
 int cmd_main(int argc, const char **argv)
@@ -1759,10 +1746,6 @@ int cmd_main(int argc, const char **argv)
 		break;
 	}
 
-#ifndef USE_CURL_MULTI
-	die("git-push is not available for http/https repository when not compiled with USE_CURL_MULTI");
-#endif
-
 	if (!repo->url)
 		usage(http_push_usage);
 
@@ -1775,9 +1758,7 @@ int cmd_main(int argc, const char **argv)
 
 	http_init(NULL, repo->url, 1);
 
-#ifdef USE_CURL_MULTI
 	is_running_queue = 0;
-#endif
 
 	/* Verify DAV compliance/lock support */
 	if (!locking_available()) {

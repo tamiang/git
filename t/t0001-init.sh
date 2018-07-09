@@ -287,6 +287,7 @@ test_expect_success 'init notices EEXIST (2)' '
 '
 
 test_expect_success POSIXPERM,SANITY 'init notices EPERM' '
+	test_when_finished "chmod +w newdir" &&
 	rm -fr newdir &&
 	mkdir newdir &&
 	chmod -w newdir &&
@@ -407,7 +408,7 @@ is_hidden () {
 test_expect_success MINGW '.git hidden' '
 	rm -rf newdir &&
 	(
-		unset GIT_DIR GIT_WORK_TREE
+		sane_unset GIT_DIR GIT_WORK_TREE &&
 		mkdir newdir &&
 		cd newdir &&
 		git init &&
@@ -419,7 +420,7 @@ test_expect_success MINGW '.git hidden' '
 test_expect_success MINGW 'bare git dir not hidden' '
 	rm -rf newdir &&
 	(
-		unset GIT_DIR GIT_WORK_TREE GIT_CONFIG
+		sane_unset GIT_DIR GIT_WORK_TREE GIT_CONFIG &&
 		mkdir newdir &&
 		cd newdir &&
 		git --bare init

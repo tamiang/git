@@ -9,6 +9,7 @@
 #include "config.h"
 #include "color.h"
 #include "builtin.h"
+#include "repository.h"
 #include "commit.h"
 #include "diff.h"
 #include "revision.h"
@@ -23,6 +24,7 @@
 #include "line-log.h"
 #include "dir.h"
 #include "progress.h"
+#include "object-store.h"
 #include "blame.h"
 #include "string-list.h"
 
@@ -543,7 +545,7 @@ static void output(struct blame_scoreboard *sb, int option)
 			struct commit *commit = ent->suspect->commit;
 			if (commit->object.flags & MORE_THAN_ONE_PATH)
 				continue;
-			for (suspect = commit->util; suspect; suspect = suspect->next) {
+			for (suspect = get_blame_suspects(commit); suspect; suspect = suspect->next) {
 				if (suspect->guilty && count++) {
 					commit->object.flags |= MORE_THAN_ONE_PATH;
 					break;
@@ -576,7 +578,7 @@ static int read_ancestry(const char *graft_file)
 		/* The format is just "Commit Parent1 Parent2 ...\n" */
 		struct commit_graft *graft = read_graft_line(&buf);
 		if (graft)
-			register_commit_graft(graft, 0);
+			register_commit_graft(the_repository, graft, 0);
 	}
 	fclose(fp);
 	strbuf_release(&buf);
@@ -1000,13 +1002,13 @@ parse_done:
 				    nth_line_cb, &sb, lno, anchor,
 				    &bottom, &top, sb.path))
 			usage(blame_usage);
-		if (lno < top || ((lno || bottom) && lno < bottom))
+		if ((!lno && (top || bottom)) || lno < bottom)
 			die(Q_("file %s has only %lu line",
 			       "file %s has only %lu lines",
 			       lno), path, lno);
 		if (bottom < 1)
 			bottom = 1;
-		if (top < 1)
+		if (top < 1 || lno < top)
 			top = lno;
 		bottom--;
 		range_set_append_unsafe(&ranges, bottom, top);

@@ -379,7 +379,7 @@ test_expect_success "'--recurse-submodules=on-demand' recurses as deep as necess
 			git config -f .gitmodules submodule.subdir/deepsubmodule.fetchRecursive false
 		) &&
 		git fetch --recurse-submodules=on-demand >../actual.out 2>../actual.err &&
-		git config --unset fetch.recurseSubmodules
+		git config --unset fetch.recurseSubmodules &&
 		(
 			cd submodule &&
 			git config --unset -f .gitmodules submodule.subdir/deepsubmodule.fetchRecursive
@@ -574,11 +574,7 @@ test_expect_success "fetch new commits when submodule got renamed" '
 	git clone . downstream_rename &&
 	(
 		cd downstream_rename &&
-		git submodule update --init &&
-# NEEDSWORK: we omitted --recursive for the submodule update here since
-# that does not work. See test 7001 for mv "moving nested submodules"
-# for details. Once that is fixed we should add the --recursive option
-# here.
+		git submodule update --init --recursive &&
 		git checkout -b rename &&
 		git mv submodule submodule_renamed &&
 		(

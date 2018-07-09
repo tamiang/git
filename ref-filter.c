@@ -3,6 +3,8 @@
 #include "parse-options.h"
 #include "refs.h"
 #include "wildmatch.h"
+#include "object-store.h"
+#include "repository.h"
 #include "commit.h"
 #include "remote.h"
 #include "color.h"
@@ -16,6 +18,7 @@
 #include "trailer.h"
 #include "wt-status.h"
 #include "commit-slab.h"
+#include "commit-graph.h"
 
 static struct ref_msg {
 	const char *gone;
@@ -804,7 +807,8 @@ static void *get_obj(const struct object_id *oid, struct object **obj, unsigned 
 	void *buf = read_object_file(oid, &type, sz);
 
 	if (buf)
-		*obj = parse_object_buffer(oid, type, *sz, buf, eaten);
+		*obj = parse_object_buffer(the_repository, oid, type, *sz,
+					   buf, eaten);
 	else
 		*obj = NULL;
 	return buf;
@@ -1662,12 +1666,13 @@ static int in_commit_list(const struct commit_list *want, struct commit *c)
 }
 
 /*
- * Test whether the candidate or one of its parents is contained in the list.
+ * Test whether the candidate is contained in the list.
  * Do not recurse to find out, though, but return -1 if inconclusive.
  */
 static enum contains_result contains_test(struct commit *candidate,
 					  const struct commit_list *want,
-					  struct contains_cache *cache)
+					  struct contains_cache *cache,
+					  uint32_t cutoff)
 {
 	enum contains_result *cached = contains_cache_at(cache, candidate);
 
@@ -1683,6 +1688,10 @@ static enum contains_result contains_test(struct commit *candidate,
 
 	/* Otherwise, we don't know; prepare to recurse */
 	parse_commit_or_die(candidate);
+
+	if (candidate->generation < cutoff)
+		return CONTAINS_NO;
+
 	return CONTAINS_UNKNOWN;
 }
 
@@ -1698,8 +1707,18 @@ static enum contains_result contains_tag_algo(struct commit *candidate,
 					      struct contains_cache *cache)
 {
 	struct contains_stack contains_stack = { 0, 0, NULL };
-	enum contains_result result = contains_test(candidate, want, cache);
+	enum contains_result result;
+	uint32_t cutoff = GENERATION_NUMBER_INFINITY;
+	const struct commit_list *p;
 
+	for (p = want; p; p = p->next) {
+		struct commit *c = p->item;
+		load_commit_graph_info(c);
+		if (c->generation < cutoff)
+			cutoff = c->generation;
+	}
+
+	result = contains_test(candidate, want, cache, cutoff);
 	if (result != CONTAINS_UNKNOWN)
 		return result;
 
@@ -1717,7 +1736,7 @@ static enum contains_result contains_tag_algo(struct commit *candidate,
 		 * If we just popped the stack, parents->item has been marked,
 		 * therefore contains_test will return a meaningful yes/no.
 		 */
-		else switch (contains_test(parents->item, want, cache)) {
+		else switch (contains_test(parents->item, want, cache, cutoff)) {
 		case CONTAINS_YES:
 			*contains_cache_at(cache, commit) = CONTAINS_YES;
 			contains_stack.nr--;
@@ -1731,7 +1750,7 @@ static enum contains_result contains_tag_algo(struct commit *candidate,
 		}
 	}
 	free(contains_stack.contains_stack);
-	return contains_test(candidate, want, cache);
+	return contains_test(candidate, want, cache, cutoff);
 }
 
 static int commit_contains(struct ref_filter *filter, struct commit *commit,
@@ -1797,7 +1816,7 @@ static int match_name_as_path(const struct ref_filter *filter, const char *refna
 		     refname[plen] == '/' ||
 		     p[plen-1] == '/'))
 			return 1;
-		if (!wildmatch(p, refname, WM_PATHNAME))
+		if (!wildmatch(p, refname, flags))
 			return 1;
 	}
 	return 0;
@@ -1852,6 +1871,15 @@ static int for_each_fullref_in_pattern(struct ref_filter *filter,
 		return for_each_fullref_in("", cb, cb_data, broken);
 	}
 
+	if (filter->ignore_case) {
+		/*
+		 * we can't handle case-insensitive comparisons,
+		 * so just return everything and let the caller
+		 * sort it out.
+		 */
+		return for_each_fullref_in("", cb, cb_data, broken);
+	}
+
 	if (!filter->name_patterns[0]) {
 		/* no patterns; we have to look at everything */
 		return for_each_fullref_in("", cb, cb_data, broken);
@@ -1897,7 +1925,7 @@ static const struct object_id *match_points_at(struct oid_array *points_at,
 
 	if (oid_array_lookup(points_at, oid) >= 0)
 		return oid;
-	obj = parse_object(oid);
+	obj = parse_object(the_repository, oid);
 	if (!obj)
 		die(_("malformed object at '%s'"), refname);
 	if (obj->type == OBJ_TAG)
@@ -2007,7 +2035,8 @@ static int ref_filter_handler(const char *refname, const struct object_id *oid, 
 	 * non-commits early. The actual filtering is done later.
 	 */
 	if (filter->merge_commit || filter->with_commit || filter->no_commit || filter->verbose) {
-		commit = lookup_commit_reference_gently(oid, 1);
+		commit = lookup_commit_reference_gently(the_repository, oid,
+							1);
 		if (!commit)
 			return 0;
 		/* We perform the filtering for the '--contains' option... */
@@ -2364,7 +2393,8 @@ int parse_opt_merge_filter(const struct option *opt, const char *arg, int unset)
 	if (get_oid(arg, &oid))
 		die(_("malformed object name %s"), arg);
 
-	rf->merge_commit = lookup_commit_reference_gently(&oid, 0);
+	rf->merge_commit = lookup_commit_reference_gently(the_repository,
+							  &oid, 0);
 	if (!rf->merge_commit)
 		return opterror(opt, "must point to a commit", 0);
 

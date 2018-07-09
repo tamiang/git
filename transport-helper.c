@@ -651,14 +651,16 @@ static int connect_helper(struct transport *transport, const char *name,
 }
 
 static int fetch(struct transport *transport,
-		 int nr_heads, struct ref **to_fetch)
+		 int nr_heads, struct ref **to_fetch,
+		 struct ref **fetched_refs)
 {
 	struct helper_data *data = transport->data;
 	int i, count;
 
 	if (process_connect(transport, 0)) {
 		do_take_over(transport);
-		return transport->vtable->fetch(transport, nr_heads, to_fetch);
+		return transport->vtable->fetch(transport, nr_heads, to_fetch,
+						fetched_refs);
 	}
 
 	count = 0;
@@ -683,6 +685,9 @@ static int fetch(struct transport *transport,
 		set_helper_option(
 			transport, "filter",
 			data->transport_options.filter_options.filter_spec);
+
+	if (data->transport_options.negotiation_tips)
+		warning("Ignoring --negotiation-tip because the protocol does not support it.");
 
 	if (data->fetch)
 		return fetch_with_fetch(transport, nr_heads, to_fetch);

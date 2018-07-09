@@ -21,6 +21,7 @@
 /git-bisect--helper
 /git-blame
 /git-branch
+/git-branch-diff
 /git-bundle
 /git-cat-file
 /git-check-attr
@@ -120,6 +121,7 @@
 /git-rebase--helper
 /git-rebase--interactive
 /git-rebase--merge
+/git-rebase--preserve-merges
 /git-receive-pack
 /git-reflog
 /git-remote

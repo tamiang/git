@@ -517,8 +517,8 @@ static void show_submodule_header(struct diff_options *o, const char *path,
 	 * Attempt to lookup the commit references, and determine if this is
 	 * a fast forward or fast backwards update.
 	 */
-	*left = lookup_commit_reference(one);
-	*right = lookup_commit_reference(two);
+	*left = lookup_commit_reference(the_repository, one);
+	*right = lookup_commit_reference(the_repository, two);
 
 	/*
 	 * Warn about missing commits in the submodule project, but only if
@@ -740,12 +740,14 @@ static void collect_changed_submodules_cb(struct diff_queue_struct *q,
 		else {
 			name = default_name_or_path(p->two->path);
 			/* make sure name does not collide with existing one */
-			submodule = submodule_from_name(the_repository, commit_oid, name);
+			if (name)
+				submodule = submodule_from_name(the_repository,
+								commit_oid, name);
 			if (submodule) {
 				warning("Submodule in commit %s at path: "
 					"'%s' collides with a submodule named "
 					"the same. Skipping it.",
-					oid_to_hex(commit_oid), name);
+					oid_to_hex(commit_oid), p->two->path);
 				name = NULL;
 			}
 		}
@@ -1532,6 +1534,18 @@ out:
 	return ret;
 }
 
+void submodule_unset_core_worktree(const struct submodule *sub)
+{
+	char *config_path = xstrfmt("%s/modules/%s/config",
+				    get_git_common_dir(), sub->name);
+
+	if (git_config_set_in_file_gently(config_path, "core.worktree", NULL))
+		warning(_("Could not unset core.worktree setting in submodule '%s'"),
+			  sub->path);
+
+	free(config_path);
+}
+
 static const char *get_super_prefix_or_empty(void)
 {
 	const char *s = get_super_prefix();
@@ -1668,7 +1682,7 @@ int submodule_move_head(const char *path,
 	argv_array_push(&cp.args, new_head ? new_head : empty_tree_oid_hex());
 
 	if (run_command(&cp)) {
-		ret = -1;
+		ret = error(_("Submodule '%s' could not be updated."), path);
 		goto out;
 	}
 
@@ -1697,6 +1711,8 @@ int submodule_move_head(const char *path,
 
 			if (is_empty_dir(path))
 				rmdir_or_warn(path);
+
+			submodule_unset_core_worktree(sub);
 		}
 	}
 out:

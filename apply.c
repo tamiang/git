@@ -9,6 +9,7 @@
 
 #include "cache.h"
 #include "config.h"
+#include "object-store.h"
 #include "blob.h"
 #include "delta.h"
 #include "diff.h"
@@ -141,6 +142,8 @@ int check_apply_state(struct apply_state *state, int force_apply)
 			return error(_("--cached outside a repository"));
 		state->check_index = 1;
 	}
+	if (state->ita_only && (state->check_index || is_not_gitdir))
+		state->ita_only = 0;
 	if (state->check_index)
 		state->unsafe_paths = 0;
 
@@ -3378,7 +3381,8 @@ static int verify_index_match(const struct cache_entry *ce, struct stat *st)
 			return -1;
 		return 0;
 	}
-	return ce_match_stat(ce, st, CE_MATCH_IGNORE_VALID|CE_MATCH_IGNORE_SKIP_WORKTREE);
+	return ie_match_stat(&the_index, ce, st,
+			     CE_MATCH_IGNORE_VALID | CE_MATCH_IGNORE_SKIP_WORKTREE);
 }
 
 #define SUBMODULE_PATCH_WITHOUT_INDEX 1
@@ -3511,10 +3515,10 @@ static int load_current(struct apply_state *state,
 	if (!patch->is_new)
 		BUG("patch to %s is not a creation", patch->old_name);
 
-	pos = cache_name_pos(name, strlen(name));
+	pos = index_name_pos(&the_index, name, strlen(name));
 	if (pos < 0)
 		return error(_("%s: does not exist in index"), name);
-	ce = active_cache[pos];
+	ce = the_index.cache[pos];
 	if (lstat(name, &st)) {
 		if (errno != ENOENT)
 			return error_errno("%s", name);
@@ -3680,13 +3684,14 @@ static int check_preimage(struct apply_state *state,
 	}
 
 	if (state->check_index && !previous) {
-		int pos = cache_name_pos(old_name, strlen(old_name));
+		int pos = index_name_pos(&the_index, old_name,
+					 strlen(old_name));
 		if (pos < 0) {
 			if (patch->is_new < 0)
 				goto is_new;
 			return error(_("%s: does not exist in index"), old_name);
 		}
-		*ce = active_cache[pos];
+		*ce = the_index.cache[pos];
 		if (stat_ret < 0) {
 			if (checkout_target(&the_index, *ce, st))
 				return -1;
@@ -3735,7 +3740,7 @@ static int check_to_create(struct apply_state *state,
 	struct stat nst;
 
 	if (state->check_index &&
-	    cache_name_pos(new_name, strlen(new_name)) >= 0 &&
+	    index_name_pos(&the_index, new_name, strlen(new_name)) >= 0 &&
 	    !ok_if_exists)
 		return EXISTS_IN_INDEX;
 	if (state->cached)
@@ -3824,7 +3829,8 @@ static int path_is_beyond_symlink_1(struct apply_state *state, struct strbuf *na
 		if (state->check_index) {
 			struct cache_entry *ce;
 
-			ce = cache_file_exists(name->buf, name->len, ignore_case);
+			ce = index_file_exists(&the_index, name->buf,
+					       name->len, ignore_case);
 			if (ce && S_ISLNK(ce->ce_mode))
 				return 1;
 		} else {
@@ -3999,9 +4005,10 @@ static int check_patch_list(struct apply_state *state, struct patch *patch)
 static int read_apply_cache(struct apply_state *state)
 {
 	if (state->index_file)
-		return read_cache_from(state->index_file);
+		return read_index_from(&the_index, state->index_file,
+				       get_git_dir());
 	else
-		return read_cache();
+		return read_index(&the_index);
 }
 
 /* This function tries to read the object name from the current index */
@@ -4012,10 +4019,10 @@ static int get_current_oid(struct apply_state *state, const char *path,
 
 	if (read_apply_cache(state) < 0)
 		return -1;
-	pos = cache_name_pos(path, strlen(path));
+	pos = index_name_pos(&the_index, path, strlen(path));
 	if (pos < 0)
 		return -1;
-	oidcpy(oid, &active_cache[pos]->oid);
+	oidcpy(oid, &the_index.cache[pos]->oid);
 	return 0;
 }
 
@@ -4053,7 +4060,7 @@ static int preimage_oid_in_gitlink_patch(struct patch *p, struct object_id *oid)
 	return get_oid_hex(p->old_sha1_prefix, oid);
 }
 
-/* Build an index that contains the just the files needed for a 3way merge */
+/* Build an index that contains just the files needed for a 3way merge */
 static int build_fake_ancestor(struct apply_state *state, struct patch *list)
 {
 	struct patch *patch;
@@ -4090,12 +4097,12 @@ static int build_fake_ancestor(struct apply_state *state, struct patch *list)
 			return error(_("sha1 information is lacking or useless "
 				       "(%s)."), name);
 
-		ce = make_cache_entry(patch->old_mode, oid.hash, name, 0, 0);
+		ce = make_cache_entry(&result, patch->old_mode, &oid, name, 0, 0);
 		if (!ce)
 			return error(_("make_cache_entry failed for path '%s'"),
 				     name);
 		if (add_index_entry(&result, ce, ADD_CACHE_OK_TO_ADD)) {
-			free(ce);
+			discard_cache_entry(ce);
 			return error(_("could not add %s to temporary index"),
 				     name);
 		}
@@ -4242,8 +4249,8 @@ static void patch_stats(struct apply_state *state, struct patch *patch)
 
 static int remove_file(struct apply_state *state, struct patch *patch, int rmdir_empty)
 {
-	if (state->update_index) {
-		if (remove_file_from_cache(patch->old_name) < 0)
+	if (state->update_index && !state->ita_only) {
+		if (remove_file_from_index(&the_index, patch->old_name) < 0)
 			return error(_("unable to remove %s from index"), patch->old_name);
 	}
 	if (!state->cached) {
@@ -4263,28 +4270,27 @@ static int add_index_file(struct apply_state *state,
 	struct stat st;
 	struct cache_entry *ce;
 	int namelen = strlen(path);
-	unsigned ce_size = cache_entry_size(namelen);
 
-	if (!state->update_index)
-		return 0;
-
-	ce = xcalloc(1, ce_size);
+	ce = make_empty_cache_entry(&the_index, namelen);
 	memcpy(ce->name, path, namelen);
 	ce->ce_mode = create_ce_mode(mode);
 	ce->ce_flags = create_ce_flags(0);
 	ce->ce_namelen = namelen;
-	if (S_ISGITLINK(mode)) {
+	if (state->ita_only) {
+		ce->ce_flags |= CE_INTENT_TO_ADD;
+		set_object_name_for_intent_to_add_entry(ce);
+	} else if (S_ISGITLINK(mode)) {
 		const char *s;
 
 		if (!skip_prefix(buf, "Subproject commit ", &s) ||
 		    get_oid_hex(s, &ce->oid)) {
-			free(ce);
-		       return error(_("corrupt patch for submodule %s"), path);
+			discard_cache_entry(ce);
+			return error(_("corrupt patch for submodule %s"), path);
 		}
 	} else {
 		if (!state->cached) {
 			if (lstat(path, &st) < 0) {
-				free(ce);
+				discard_cache_entry(ce);
 				return error_errno(_("unable to stat newly "
 						     "created file '%s'"),
 						   path);
@@ -4292,13 +4298,13 @@ static int add_index_file(struct apply_state *state,
 			fill_stat_cache_info(ce, &st);
 		}
 		if (write_object_file(buf, size, blob_type, &ce->oid) < 0) {
-			free(ce);
+			discard_cache_entry(ce);
 			return error(_("unable to create backing store "
 				       "for newly created file %s"), path);
 		}
 	}
-	if (add_cache_entry(ce, ADD_CACHE_OK_TO_ADD) < 0) {
-		free(ce);
+	if (add_index_entry(&the_index, ce, ADD_CACHE_OK_TO_ADD) < 0) {
+		discard_cache_entry(ce);
 		return error(_("unable to add cache entry for %s"), path);
 	}
 
@@ -4422,27 +4428,26 @@ static int add_conflicted_stages_file(struct apply_state *state,
 				       struct patch *patch)
 {
 	int stage, namelen;
-	unsigned ce_size, mode;
+	unsigned mode;
 	struct cache_entry *ce;
 
 	if (!state->update_index)
 		return 0;
 	namelen = strlen(patch->new_name);
-	ce_size = cache_entry_size(namelen);
 	mode = patch->new_mode ? patch->new_mode : (S_IFREG | 0644);
 
-	remove_file_from_cache(patch->new_name);
+	remove_file_from_index(&the_index, patch->new_name);
 	for (stage = 1; stage < 4; stage++) {
 		if (is_null_oid(&patch->threeway_stage[stage - 1]))
 			continue;
-		ce = xcalloc(1, ce_size);
+		ce = make_empty_cache_entry(&the_index, namelen);
 		memcpy(ce->name, patch->new_name, namelen);
 		ce->ce_mode = create_ce_mode(mode);
 		ce->ce_flags = create_ce_flags(stage);
 		ce->ce_namelen = namelen;
 		oidcpy(&ce->oid, &patch->threeway_stage[stage - 1]);
-		if (add_cache_entry(ce, ADD_CACHE_OK_TO_ADD) < 0) {
-			free(ce);
+		if (add_index_entry(&the_index, ce, ADD_CACHE_OK_TO_ADD) < 0) {
+			discard_cache_entry(ce);
 			return error(_("unable to add cache entry for %s"),
 				     patch->new_name);
 		}
@@ -4465,8 +4470,9 @@ static int create_file(struct apply_state *state, struct patch *patch)
 
 	if (patch->conflicted_threeway)
 		return add_conflicted_stages_file(state, patch);
-	else
+	else if (state->update_index)
 		return add_index_file(state, path, mode, buf, size);
+	return 0;
 }
 
 /* phase zero is to remove, phase one is to create */
@@ -4686,7 +4692,7 @@ static int apply_patch(struct apply_state *state,
 	if (state->whitespace_error && (state->ws_error_action == die_on_ws_error))
 		state->apply = 0;
 
-	state->update_index = state->check_index && state->apply;
+	state->update_index = (state->check_index || state->ita_only) && state->apply;
 	if (state->update_index && !is_lock_file_locked(&state->lock_file)) {
 		if (state->index_file)
 			hold_lock_file_for_update(&state->lock_file,
@@ -4941,6 +4947,8 @@ int apply_parse_options(int argc, const char **argv,
 			N_("instead of applying the patch, see if the patch is applicable")),
 		OPT_BOOL(0, "index", &state->check_index,
 			N_("make sure the patch is applicable to the current index")),
+		OPT_BOOL('N', "intent-to-add", &state->ita_only,
+			N_("mark new files with `git add --intent-to-add`")),
 		OPT_BOOL(0, "cached", &state->cached,
 			N_("apply a patch without touching the working tree")),
 		OPT_BOOL_F(0, "unsafe-paths", &state->unsafe_paths,

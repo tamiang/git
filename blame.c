@@ -1,11 +1,31 @@
 #include "cache.h"
 #include "refs.h"
+#include "object-store.h"
 #include "cache-tree.h"
 #include "mergesort.h"
 #include "diff.h"
 #include "diffcore.h"
 #include "tag.h"
 #include "blame.h"
+#include "alloc.h"
+#include "commit-slab.h"
+
+define_commit_slab(blame_suspects, struct blame_origin *);
+static struct blame_suspects blame_suspects;
+
+struct blame_origin *get_blame_suspects(struct commit *commit)
+{
+	struct blame_origin **result;
+
+	result = blame_suspects_peek(&blame_suspects, commit);
+
+	return result ? *result : NULL;
+}
+
+static void set_blame_suspects(struct commit *commit, struct blame_origin *origin)
+{
+	*blame_suspects_at(&blame_suspects, commit) = origin;
+}
 
 void blame_origin_decref(struct blame_origin *o)
 {
@@ -15,12 +35,12 @@ void blame_origin_decref(struct blame_origin *o)
 			blame_origin_decref(o->previous);
 		free(o->file.ptr);
 		/* Should be present exactly once in commit chain */
-		for (p = o->commit->util; p; l = p, p = p->next) {
+		for (p = get_blame_suspects(o->commit); p; l = p, p = p->next) {
 			if (p == o) {
 				if (l)
 					l->next = p->next;
 				else
-					o->commit->util = p->next;
+					set_blame_suspects(o->commit, p->next);
 				free(o);
 				return;
 			}
@@ -41,8 +61,8 @@ static struct blame_origin *make_origin(struct commit *commit, const char *path)
 	FLEX_ALLOC_STR(o, path, path);
 	o->commit = commit;
 	o->refcnt = 1;
-	o->next = commit->util;
-	commit->util = o;
+	o->next = get_blame_suspects(commit);
+	set_blame_suspects(commit, o);
 	return o;
 }
 
@@ -54,13 +74,13 @@ static struct blame_origin *get_origin(struct commit *commit, const char *path)
 {
 	struct blame_origin *o, *l;
 
-	for (o = commit->util, l = NULL; o; l = o, o = o->next) {
+	for (o = get_blame_suspects(commit), l = NULL; o; l = o, o = o->next) {
 		if (!strcmp(o->path, path)) {
 			/* bump to front */
 			if (l) {
 				l->next = o->next;
-				o->next = commit->util;
-				commit->util = o;
+				o->next = get_blame_suspects(commit);
+				set_blame_suspects(commit, o);
 			}
 			return blame_origin_incref(o);
 		}
@@ -85,11 +105,11 @@ static void verify_working_tree_path(struct commit *work_tree, const char *path)
 			return;
 	}
 
-	pos = cache_name_pos(path, strlen(path));
+	pos = index_name_pos(&the_index, path, strlen(path));
 	if (pos >= 0)
 		; /* path is in the index */
-	else if (-1 - pos < active_nr &&
-		 !strcmp(active_cache[-1 - pos]->name, path))
+	else if (-1 - pos < the_index.cache_nr &&
+		 !strcmp(the_index.cache[-1 - pos]->name, path))
 		; /* path is in the index, unmerged */
 	else
 		die("no such path '%s' in HEAD", path);
@@ -99,7 +119,7 @@ static struct commit_list **append_parent(struct commit_list **tail, const struc
 {
 	struct commit *parent;
 
-	parent = lookup_commit_reference(oid);
+	parent = lookup_commit_reference(the_repository, oid);
 	if (!parent)
 		die("no such commit %s", oid_to_hex(oid));
 	return &commit_list_insert(parent, tail)->next;
@@ -110,17 +130,19 @@ static void append_merge_parents(struct commit_list **tail)
 	int merge_head;
 	struct strbuf line = STRBUF_INIT;
 
-	merge_head = open(git_path_merge_head(), O_RDONLY);
+	merge_head = open(git_path_merge_head(the_repository), O_RDONLY);
 	if (merge_head < 0) {
 		if (errno == ENOENT)
 			return;
-		die("cannot open '%s' for reading", git_path_merge_head());
+		die("cannot open '%s' for reading",
+		    git_path_merge_head(the_repository));
 	}
 
 	while (!strbuf_getwholeline_fd(&line, merge_head, '\n')) {
 		struct object_id oid;
 		if (line.len < GIT_SHA1_HEXSZ || get_oid_hex(line.buf, &oid))
-			die("unknown line in '%s': %s", git_path_merge_head(), line.buf);
+			die("unknown line in '%s': %s",
+			    git_path_merge_head(the_repository), line.buf);
 		tail = append_parent(tail, &oid);
 	}
 	close(merge_head);
@@ -136,7 +158,7 @@ static void set_commit_buffer_from_strbuf(struct commit *c, struct strbuf *sb)
 {
 	size_t len;
 	void *buf = strbuf_detach(sb, &len);
-	set_commit_buffer(c, buf, len);
+	set_commit_buffer(the_repository, c, buf, len);
 }
 
 /*
@@ -154,14 +176,14 @@ static struct commit *fake_working_tree_commit(struct diff_options *opt,
 	struct strbuf buf = STRBUF_INIT;
 	const char *ident;
 	time_t now;
-	int size, len;
+	int len;
 	struct cache_entry *ce;
 	unsigned mode;
 	struct strbuf msg = STRBUF_INIT;
 
-	read_cache();
+	read_index(&the_index);
 	time(&now);
-	commit = alloc_commit_node();
+	commit = alloc_commit_node(the_repository);
 	commit->object.parsed = 1;
 	commit->date = now;
 	parent_tail = &commit->parents;
@@ -240,26 +262,26 @@ static struct commit *fake_working_tree_commit(struct diff_options *opt,
 	 * bits; we are not going to write this index out -- we just
 	 * want to run "diff-index --cached".
 	 */
-	discard_cache();
-	read_cache();
+	discard_index(&the_index);
+	read_index(&the_index);
 
 	len = strlen(path);
 	if (!mode) {
-		int pos = cache_name_pos(path, len);
+		int pos = index_name_pos(&the_index, path, len);
 		if (0 <= pos)
-			mode = active_cache[pos]->ce_mode;
+			mode = the_index.cache[pos]->ce_mode;
 		else
 			/* Let's not bother reading from HEAD tree */
 			mode = S_IFREG | 0644;
 	}
-	size = cache_entry_size(len);
-	ce = xcalloc(1, size);
+	ce = make_empty_cache_entry(&the_index, len);
 	oidcpy(&ce->oid, &origin->blob_oid);
 	memcpy(ce->name, path, len);
 	ce->ce_flags = create_ce_flags(0);
 	ce->ce_namelen = len;
 	ce->ce_mode = create_ce_mode(mode);
-	add_cache_entry(ce, ADD_CACHE_OK_TO_ADD|ADD_CACHE_OK_TO_REPLACE);
+	add_index_entry(&the_index, ce,
+			ADD_CACHE_OK_TO_ADD | ADD_CACHE_OK_TO_REPLACE);
 
 	cache_tree_invalidate_path(&the_index, path);
 
@@ -478,7 +500,7 @@ static void queue_blames(struct blame_scoreboard *sb, struct blame_origin *porig
 		porigin->suspects = blame_merge(porigin->suspects, sorted);
 	else {
 		struct blame_origin *o;
-		for (o = porigin->commit->util; o; o = o->next) {
+		for (o = get_blame_suspects(porigin->commit); o; o = o->next) {
 			if (o->suspects) {
 				porigin->suspects = sorted;
 				return;
@@ -525,7 +547,7 @@ static struct blame_origin *find_origin(struct commit *parent,
 	const char *paths[2];
 
 	/* First check any existing origins */
-	for (porigin = parent->util; porigin; porigin = porigin->next)
+	for (porigin = get_blame_suspects(parent); porigin; porigin = porigin->next)
 		if (!strcmp(porigin->path, origin->path)) {
 			/*
 			 * The same path between origin and its parent
@@ -1550,7 +1572,7 @@ void assign_blame(struct blame_scoreboard *sb, int opt)
 
 	while (commit) {
 		struct blame_entry *ent;
-		struct blame_origin *suspect = commit->util;
+		struct blame_origin *suspect = get_blame_suspects(commit);
 
 		/* find one suspect to break down */
 		while (suspect && !suspect->suspects)
@@ -1652,7 +1674,7 @@ static struct commit *find_single_final(struct rev_info *revs,
 		struct object *obj = revs->pending.objects[i].item;
 		if (obj->flags & UNINTERESTING)
 			continue;
-		obj = deref_tag(obj, NULL, 0);
+		obj = deref_tag(the_repository, obj, NULL, 0);
 		if (obj->type != OBJ_COMMIT)
 			die("Non commit %s?", revs->pending.objects[i].name);
 		if (found)
@@ -1683,14 +1705,15 @@ static struct commit *dwim_reverse_initial(struct rev_info *revs,
 
 	/* Is that sole rev a committish? */
 	obj = revs->pending.objects[0].item;
-	obj = deref_tag(obj, NULL, 0);
+	obj = deref_tag(the_repository, obj, NULL, 0);
 	if (obj->type != OBJ_COMMIT)
 		return NULL;
 
 	/* Do we have HEAD? */
 	if (!resolve_ref_unsafe("HEAD", RESOLVE_REF_READING, &head_oid, NULL))
 		return NULL;
-	head_commit = lookup_commit_reference_gently(&head_oid, 1);
+	head_commit = lookup_commit_reference_gently(the_repository,
+						     &head_oid, 1);
 	if (!head_commit)
 		return NULL;
 
@@ -1718,7 +1741,7 @@ static struct commit *find_single_initial(struct rev_info *revs,
 		struct object *obj = revs->pending.objects[i].item;
 		if (!(obj->flags & UNINTERESTING))
 			continue;
-		obj = deref_tag(obj, NULL, 0);
+		obj = deref_tag(the_repository, obj, NULL, 0);
 		if (obj->type != OBJ_COMMIT)
 			die("Non commit %s?", revs->pending.objects[i].name);
 		if (found)
@@ -1751,6 +1774,8 @@ void setup_scoreboard(struct blame_scoreboard *sb, const char *path, struct blam
 	struct blame_origin *o;
 	struct commit *final_commit = NULL;
 	enum object_type type;
+
+	init_blame_suspects(&blame_suspects);
 
 	if (sb->reverse && sb->contents_from)
 		die(_("--contents and --reverse do not blend well."));
@@ -1815,7 +1840,7 @@ void setup_scoreboard(struct blame_scoreboard *sb, const char *path, struct blam
 	}
 
 	if (is_null_oid(&sb->final->object.oid)) {
-		o = sb->final->util;
+		o = get_blame_suspects(sb->final);
 		sb->final_buf = xmemdupz(o->file.ptr, o->file.size);
 		sb->final_buf_size = o->file.size;
 	}
