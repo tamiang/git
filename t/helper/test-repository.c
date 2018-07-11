@@ -25,7 +25,7 @@ static void test_parse_commit_in_graph(const char *gitdir, const char *worktree,
 	if (!parse_commit_in_graph(&r, c))
 		die("Couldn't parse commit");
 
-	printf("%lu", c->date);
+	printf("%"PRItime, c->date);
 	for (parent = c->parents; parent; parent = parent->next)
 		printf(" %s", oid_to_hex(&parent->item->object.oid));
 	printf("\n");
