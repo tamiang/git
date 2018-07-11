@@ -910,7 +910,7 @@ core.commitGraph::
 
 core.multiPackIndex::
 	Use the multi-pack-index file to track multiple packfiles using a
-	single index. See linkgit:technical/multi-pack-index[1].
+	single index. See link:technical/multi-pack-index[1].
 
 core.sparseCheckout::
 	Enable "sparse checkout" feature. See section "Sparse checkout" in
