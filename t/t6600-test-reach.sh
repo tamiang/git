@@ -123,4 +123,19 @@ test_expect_success 'is_descendant_of:miss' '
 	test_three_modes is_descendant_of
 '
 
+test_expect_success 'get_merge_bases_many' '
+	cat >input <<-\EOF &&
+		A:commit-5-7
+		X:commit-4-8
+		X:commit-6-6
+		X:commit-8-3
+	EOF
+	{
+		printf "get_merge_bases_many(A,X):\n" &&
+		git rev-parse commit-5-6 &&
+		git rev-parse commit-4-7
+	} >expect &&
+	test_three_modes get_merge_bases_many
+'
+
 test_done

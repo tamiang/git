@@ -10,6 +10,8 @@ int cmd__reach(int ac, const char **av)
 	struct object_id oid_A, oid_B;
 	struct commit *A, *B;
 	struct commit_list *X;
+	struct commit **X_array;
+	int X_nr, X_alloc;
 	struct strbuf buf = STRBUF_INIT;
 	struct repository *r = the_repository;
 
@@ -20,6 +22,9 @@ int cmd__reach(int ac, const char **av)
 
 	A = B = NULL;
 	X = NULL;
+	X_nr = 0;
+	X_alloc = 16;
+	ALLOC_ARRAY(X_array, X_alloc);
 
 	while (strbuf_getline(&buf, stdin) != EOF) {
 		struct object_id oid;
@@ -57,6 +62,8 @@ int cmd__reach(int ac, const char **av)
 
 			case 'X':
 				commit_list_insert(c, &X);
+				ALLOC_GROW(X_array, X_nr + 1, X_alloc);
+				X_array[X_nr++] = c;
 				break;
 
 			default:
@@ -71,6 +78,14 @@ int cmd__reach(int ac, const char **av)
 		printf("%s(A,B):%d\n", av[1], in_merge_bases(A, B));
 	else if (!strcmp(av[1], "is_descendant_of"))
 		printf("%s(A,X):%d\n", av[1], is_descendant_of(A, X));
+	else if (!strcmp(av[1], "get_merge_bases_many")) {
+		struct commit_list *list = get_merge_bases_many(A, X_nr, X_array);
+		printf("%s(A,X):\n", av[1]);
+		while (list) {
+			printf("%s\n", oid_to_hex(&list->item->object.oid));
+			list = list->next;
+		}
+	}
 
 	exit(0);
 }
