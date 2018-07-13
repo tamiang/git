@@ -9,19 +9,19 @@ test_description='basic commit reachability tests'
 # parents (x-1, y) and (x, y-1), keeping in mind that
 # we drop a parent if a coordinate is nonpositive.
 #
-#             (10,10)
-#            /       \
-#         (10,9)    (9,10)
-#        /     \   /      \
+#	      (10,10)
+#	     /       \
+#	  (10,9)    (9,10)
+#	 /     \   /      \
 #    (10,8)    (9,9)      (8,10)
 #   /     \    /   \      /    \
-#         ( continued...)
+#	  ( continued...)
 #   \     /    \   /      \    /
 #    (3,1)     (2,2)      (1,3)
-#        \     /    \     /
-#         (2,1)      (2,1)
-#              \    /
-#              (1,1)
+#	 \     /    \     /
+#	  (2,1)      (2,1)
+#	       \    /
+#	       (1,1)
 #
 # We use branch 'comit-x-y' to refer to (x,y).
 # This grid allows interesting reachability and
@@ -81,6 +81,24 @@ test_expect_success 'ref_newer:hit' '
 	EOF
 	printf "ref_newer:1\n" >expect &&
 	test_three_modes ref_newer
+'
+
+test_expect_success 'in_merge_bases:hit' '
+	cat >input <<- EOF &&
+		A:commit-5-7
+		B:commit-8-8
+	EOF
+	printf "in_merge_bases(A,B):1\n" >expect &&
+	test_three_modes in_merge_bases
+'
+
+test_expect_success 'in_merge_bases:miss' '
+	cat >input <<- EOF &&
+		A:commit-6-8
+		B:commit-5-9
+	EOF
+	printf "in_merge_bases(A,B):0\n" >expect &&
+	test_three_modes in_merge_bases
 '
 
 test_done
