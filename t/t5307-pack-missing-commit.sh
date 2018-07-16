@@ -24,10 +24,12 @@ test_expect_success 'check corruption' '
 '
 
 test_expect_success 'rev-list notices corruption (1)' '
+	rm -rf .git/objects/info/commit-graph &&
 	test_must_fail git rev-list HEAD
 '
 
 test_expect_success 'rev-list notices corruption (2)' '
+	rm -rf .git/objects/info/commit-graph &&
 	test_must_fail git rev-list --objects HEAD
 '
 

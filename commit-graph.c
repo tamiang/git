@@ -207,20 +207,12 @@ static int prepare_commit_graph(struct repository *r)
 {
 	struct alternate_object_database *alt;
 	char *obj_dir;
-	int config_value;
 
 	if (r->objects->commit_graph_attempted)
 		return !!r->objects->commit_graph;
 	r->objects->commit_graph_attempted = 1;
 
-	if (repo_config_get_bool(r, "core.commitgraph", &config_value) ||
-	    !config_value)
-		/*
-		 * This repository is not configured to use commit graphs, so
-		 * do not load one. (But report commit_graph_attempted anyway
-		 * so that commit graph loading is not attempted again for this
-		 * repository.)
-		 */
+	if (!commit_graph_compatible(r))
 		return 0;
 
 	obj_dir = r->objects->objectdir;

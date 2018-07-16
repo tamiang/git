@@ -181,6 +181,7 @@ test_expect_success 'rev-list stops traversal at missing and promised commit' '
 
 	git -C repo config core.repositoryformatversion 1 &&
 	git -C repo config extensions.partialclone "arbitrary string" &&
+	rm -rf repo/.git/objects/info/commit-graph &&
 	git -C repo rev-list --exclude-promisor-objects --objects bar >out &&
 	grep $(git -C repo rev-parse bar) out &&
 	! grep $FOO out

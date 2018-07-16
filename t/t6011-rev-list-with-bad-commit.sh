@@ -43,6 +43,7 @@ test_expect_success 'corrupt second commit object' \
 
 test_expect_success 'rev-list should fail' \
    '
+   rm -rf .git/objects/info/commit-graph &&
    test_must_fail git rev-list --all > /dev/null
    '
 

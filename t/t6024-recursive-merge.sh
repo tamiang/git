@@ -61,6 +61,7 @@ GIT_AUTHOR_DATE="2006-12-12 23:00:08" git commit -m F
 '
 
 test_expect_success "combined merge conflicts" "
+	rm -rf .git/objects/info/commit-graph &&
 	test_must_fail git merge -m final G
 "
 
