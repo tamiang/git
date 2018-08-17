@@ -2784,7 +2784,7 @@ static void add_objects_in_unpacked_packs(struct rev_info *revs)
 
 	memset(&in_pack, 0, sizeof(in_pack));
 
-	for (p = get_packed_git(the_repository); p; p = p->next) {
+	for (p = get_all_packs(the_repository); p; p = p->next) {
 		struct object_id oid;
 		struct object *o;
 
@@ -2848,7 +2848,7 @@ static int has_sha1_pack_kept_or_nonlocal(const struct object_id *oid)
 	struct packed_git *p;
 
 	p = (last_found != (void *)1) ? last_found :
-					get_packed_git(the_repository);
+					get_all_packs(the_repository);
 
 	while (p) {
 		if ((!p->pack_local || p->pack_keep ||
@@ -2858,7 +2858,7 @@ static int has_sha1_pack_kept_or_nonlocal(const struct object_id *oid)
 			return 1;
 		}
 		if (p == last_found)
-			p = get_packed_git(the_repository);
+			p = get_all_packs(the_repository);
 		else
 			p = p->next;
 		if (p == last_found)
@@ -2894,7 +2894,7 @@ static void loosen_unused_packed_objects(struct rev_info *revs)
 	uint32_t i;
 	struct object_id oid;
 
-	for (p = get_packed_git(the_repository); p; p = p->next) {
+	for (p = get_all_packs(the_repository); p; p = p->next) {
 		if (!p->pack_local || p->pack_keep || p->pack_keep_in_core)
 			continue;
 
@@ -3041,7 +3041,7 @@ static void add_extra_kept_packs(const struct string_list *names)
 	if (!names->nr)
 		return;
 
-	for (p = get_packed_git(the_repository); p; p = p->next) {
+	for (p = get_all_packs(the_repository); p; p = p->next) {
 		const char *name = basename(p->pack_name);
 		int i;
 
@@ -3314,7 +3314,7 @@ int cmd_pack_objects(int argc, const char **argv, const char *prefix)
 	add_extra_kept_packs(&keep_pack_list);
 	if (ignore_packed_keep_on_disk) {
 		struct packed_git *p;
-		for (p = get_packed_git(the_repository); p; p = p->next)
+		for (p = get_all_packs(the_repository); p; p = p->next)
 			if (p->pack_local && p->pack_keep)
 				break;
 		if (!p) /* no keep-able packs found */
@@ -3327,7 +3327,7 @@ int cmd_pack_objects(int argc, const char **argv, const char *prefix)
 		 * it also covers non-local objects
 		 */
 		struct packed_git *p;
-		for (p = get_packed_git(the_repository); p; p = p->next) {
+		for (p = get_all_packs(the_repository); p; p = p->next) {
 			if (!p->pack_local) {
 				have_non_local_packs = 1;
 				break;
