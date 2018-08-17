@@ -333,11 +333,6 @@ int prepare_multi_pack_index_one(struct repository *r, const char *object_dir, i
 {
 	struct multi_pack_index *m;
 	struct multi_pack_index *m_search;
-	int config_value;
-
-	if (repo_config_get_bool(r, "core.multipackindex", &config_value) ||
-	    !config_value)
-		return 0;
 
 	for (m_search = r->objects->multi_pack_index; m_search; m_search = m_search->next)
 		if (!strcmp(object_dir, m_search->object_dir))
