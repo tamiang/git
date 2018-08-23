@@ -24,6 +24,7 @@
 #include "packfile.h"
 #include "worktree.h"
 #include "argv-array.h"
+#include "commit-graph.h"
 
 volatile show_early_output_fn_t show_early_output;
 
@@ -2454,9 +2455,6 @@ int setup_revisions(int argc, const char **argv, struct rev_info *revs, struct s
 	if (revs->diffopt.objfind)
 		revs->simplify_history = 0;
 
-	if (revs->topo_order)
-		revs->limited = 1;
-
 	if (revs->prune_data.nr) {
 		copy_pathspec(&revs->pruning.pathspec, &revs->prune_data);
 		/* Can't prune commits with rename following: the paths change.. */
@@ -2892,6 +2890,11 @@ static int mark_uninteresting(const struct object_id *oid,
 	return 0;
 }
 
+static void init_topo_order(struct rev_info *revs)
+{
+	fprintf(stderr, "initializing the topo order...\n");
+}
+
 int prepare_revision_walk(struct rev_info *revs)
 {
 	int i;
@@ -2914,6 +2917,9 @@ int prepare_revision_walk(struct rev_info *revs)
 	}
 	object_array_clear(&old_pending);
 
+	if (revs->topo_order && !generation_numbers_available(the_repository))
+		revs->limited = 1;
+
 	/* Signal whether we need per-parent treesame decoration */
 	if (revs->simplify_merges ||
 	    (revs->limited && limiting_can_increase_treesame(revs)))
@@ -2928,11 +2934,15 @@ int prepare_revision_walk(struct rev_info *revs)
 		commit_list_sort_by_date(&revs->commits);
 	if (revs->no_walk)
 		return 0;
-	if (revs->limited)
+
+	if (revs->limited) {
 		if (limit_list(revs) < 0)
 			return -1;
-	if (revs->topo_order)
-		sort_in_topological_order(&revs->commits, revs->sort_order);
+		if (revs->topo_order)
+			sort_in_topological_order(&revs->commits, revs->sort_order);
+	} else if (revs->topo_order) {
+		init_topo_order(revs);
+	}
 	if (revs->line_level_traverse)
 		line_log_filter(revs);
 	if (revs->simplify_merges)

@@ -8,6 +8,8 @@
 
 struct commit;
 
+int generation_numbers_available(struct repository *r);
+
 char *get_commit_graph_filename(const char *obj_dir);
 
 /*
