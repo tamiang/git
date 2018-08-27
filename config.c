@@ -32,7 +32,7 @@ struct config_source {
 	enum config_origin_type origin_type;
 	const char *name;
 	const char *path;
-	int die_on_error;
+	enum config_error_action default_error_action;
 	int linenr;
 	int eof;
 	struct strbuf value;
@@ -810,10 +810,21 @@ static int git_parse_source(config_fn_t fn, void *data,
 				      cf->linenr, cf->name);
 	}
 
-	if (cf->die_on_error)
+	switch (opts && opts->error_action ?
+		opts->error_action :
+		cf->default_error_action) {
+	case CONFIG_ERROR_DIE:
 		die("%s", error_msg);
-	else
+		break;
+	case CONFIG_ERROR_ERROR:
 		error_return = error("%s", error_msg);
+		break;
+	case CONFIG_ERROR_SILENT:
+		error_return = -1;
+		break;
+	case CONFIG_ERROR_UNSET:
+		BUG("config error action unset");
+	}
 
 	free(error_msg);
 	return error_return;
@@ -1342,6 +1353,11 @@ static int git_default_core_config(const char *var, const char *value)
 					 var, value);
 	}
 
+	if (!strcmp(var, "core.usereplacerefs")) {
+		read_replace_refs = git_config_bool(var, value);
+		return 0;
+	}
+
 	/* Add other config variables here and to Documentation/config.txt. */
 	return 0;
 }
@@ -1516,7 +1532,7 @@ static int do_config_from_file(config_fn_t fn,
 	top.origin_type = origin_type;
 	top.name = name;
 	top.path = path;
-	top.die_on_error = 1;
+	top.default_error_action = CONFIG_ERROR_DIE;
 	top.do_fgetc = config_file_fgetc;
 	top.do_ungetc = config_file_ungetc;
 	top.do_ftell = config_file_ftell;
@@ -1554,8 +1570,10 @@ int git_config_from_file(config_fn_t fn, const char *filename, void *data)
 	return git_config_from_file_with_options(fn, filename, data, NULL);
 }
 
-int git_config_from_mem(config_fn_t fn, const enum config_origin_type origin_type,
-			const char *name, const char *buf, size_t len, void *data)
+int git_config_from_mem(config_fn_t fn,
+			const enum config_origin_type origin_type,
+			const char *name, const char *buf, size_t len,
+			void *data, const struct config_options *opts)
 {
 	struct config_source top;
 
@@ -1565,12 +1583,12 @@ int git_config_from_mem(config_fn_t fn, const enum config_origin_type origin_typ
 	top.origin_type = origin_type;
 	top.name = name;
 	top.path = NULL;
-	top.die_on_error = 0;
+	top.default_error_action = CONFIG_ERROR_ERROR;
 	top.do_fgetc = config_buf_fgetc;
 	top.do_ungetc = config_buf_ungetc;
 	top.do_ftell = config_buf_ftell;
 
-	return do_config_from(&top, fn, data, NULL);
+	return do_config_from(&top, fn, data, opts);
 }
 
 int git_config_from_blob_oid(config_fn_t fn,
@@ -1591,7 +1609,8 @@ int git_config_from_blob_oid(config_fn_t fn,
 		return error("reference '%s' does not point to a blob", name);
 	}
 
-	ret = git_config_from_mem(fn, CONFIG_ORIGIN_BLOB, name, buf, size, data);
+	ret = git_config_from_mem(fn, CONFIG_ORIGIN_BLOB, name, buf, size,
+				  data, NULL);
 	free(buf);
 
 	return ret;
@@ -2166,23 +2185,6 @@ int git_config_get_maybe_bool(const char *key, int *dest)
 int git_config_get_pathname(const char *key, const char **dest)
 {
 	return repo_config_get_pathname(the_repository, key, dest);
-}
-
-/*
- * Note: This function exists solely to maintain backward compatibility with
- * 'fetch' and 'update_clone' storing configuration in '.gitmodules' and should
- * NOT be used anywhere else.
- *
- * Runs the provided config function on the '.gitmodules' file found in the
- * working directory.
- */
-void config_from_gitmodules(config_fn_t fn, void *data)
-{
-	if (the_repository->worktree) {
-		char *file = repo_worktree_path(the_repository, GITMODULES_FILE);
-		git_config_from_file(fn, file, data);
-		free(file);
-	}
 }
 
 int git_config_get_expiry(const char *key, const char **output)

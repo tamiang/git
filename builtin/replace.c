@@ -39,7 +39,8 @@ struct show_data {
 	enum replace_format format;
 };
 
-static int show_reference(const char *refname, const struct object_id *oid,
+static int show_reference(struct repository *r, const char *refname,
+			  const struct object_id *oid,
 			  int flag, void *cb_data)
 {
 	struct show_data *data = cb_data;
@@ -56,9 +57,8 @@ static int show_reference(const char *refname, const struct object_id *oid,
 			if (get_oid(refname, &object))
 				return error("Failed to resolve '%s' as a valid ref.", refname);
 
-			obj_type = oid_object_info(the_repository, &object,
-						   NULL);
-			repl_type = oid_object_info(the_repository, oid, NULL);
+			obj_type = oid_object_info(r, &object, NULL);
+			repl_type = oid_object_info(r, oid, NULL);
 
 			printf("%s (%s) -> %s (%s)\n", refname, type_name(obj_type),
 			       oid_to_hex(oid), type_name(repl_type));
@@ -544,7 +544,7 @@ int cmd_replace(int argc, const char **argv, const char *prefix)
 		OPT_END()
 	};
 
-	check_replace_refs = 0;
+	read_replace_refs = 0;
 	git_config(git_default_config, NULL);
 
 	argc = parse_options(argc, argv, prefix, options, git_replace_usage, 0);

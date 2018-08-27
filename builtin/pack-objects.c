@@ -2929,11 +2929,13 @@ static int pack_options_allow_reuse(void)
 
 static int get_object_list_from_bitmap(struct rev_info *revs)
 {
-	if (prepare_bitmap_walk(revs) < 0)
+	struct bitmap_index *bitmap_git;
+	if (!(bitmap_git = prepare_bitmap_walk(revs)))
 		return -1;
 
 	if (pack_options_allow_reuse() &&
 	    !reuse_partial_packfile_from_bitmap(
+			bitmap_git,
 			&reuse_packfile,
 			&reuse_packfile_objects,
 			&reuse_packfile_offset)) {
@@ -2942,7 +2944,8 @@ static int get_object_list_from_bitmap(struct rev_info *revs)
 		display_progress(progress_state, nr_result);
 	}
 
-	traverse_bitmap_commit_list(&add_object_entry_from_bitmap);
+	traverse_bitmap_commit_list(bitmap_git, &add_object_entry_from_bitmap);
+	free_bitmap_index(bitmap_git);
 	return 0;
 }
 
@@ -3185,7 +3188,7 @@ int cmd_pack_objects(int argc, const char **argv, const char *prefix)
 	if (DFS_NUM_STATES > (1 << OE_DFS_STATE_BITS))
 		BUG("too many dfs states, increase OE_DFS_STATE_BITS");
 
-	check_replace_refs = 0;
+	read_replace_refs = 0;
 
 	reset_pack_idx_option(&pack_idx_opts);
 	git_config(git_pack_config, NULL);

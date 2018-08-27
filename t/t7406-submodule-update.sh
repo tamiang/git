@@ -115,17 +115,17 @@ Submodule path '../super/submodule': checked out '$submodulesha1'
 EOF
 
 cat <<EOF >expect2
+Cloning into '$pwd/recursivesuper/super/merging'...
+Cloning into '$pwd/recursivesuper/super/none'...
+Cloning into '$pwd/recursivesuper/super/rebasing'...
+Cloning into '$pwd/recursivesuper/super/submodule'...
 Submodule 'merging' ($pwd/merging) registered for path '../super/merging'
 Submodule 'none' ($pwd/none) registered for path '../super/none'
 Submodule 'rebasing' ($pwd/rebasing) registered for path '../super/rebasing'
 Submodule 'submodule' ($pwd/submodule) registered for path '../super/submodule'
-Cloning into '$pwd/recursivesuper/super/merging'...
 done.
-Cloning into '$pwd/recursivesuper/super/none'...
 done.
-Cloning into '$pwd/recursivesuper/super/rebasing'...
 done.
-Cloning into '$pwd/recursivesuper/super/submodule'...
 done.
 EOF
 
@@ -137,7 +137,8 @@ test_expect_success 'submodule update --init --recursive from subdirectory' '
 	 git submodule update --init --recursive ../super >../../actual 2>../../actual2
 	) &&
 	test_i18ncmp expect actual &&
-	test_i18ncmp expect2 actual2
+	sort actual2 >actual2.sorted &&
+	test_i18ncmp expect2 actual2.sorted
 '
 
 cat <<EOF >expect2
@@ -865,9 +866,9 @@ test_expect_success 'submodule update places git-dir in superprojects git-dir re
 	 (cd submodule/subsubmodule &&
 	  git log > ../../expected
 	 ) &&
-	 (cd .git/modules/submodule/modules/subsubmodule
+	 (cd .git/modules/submodule/modules/subsubmodule &&
 	  git log > ../../../../../actual
-	 )
+	 ) &&
 	 test_cmp actual expected
 	)
 '
@@ -886,7 +887,7 @@ test_expect_success 'submodule update properly revives a moved submodule' '
 	 git commit -am "pre move" &&
 	 H2=$(git rev-parse --short HEAD) &&
 	 git status | sed "s/$H/XXX/" >expect &&
-	 H=$(cd submodule2; git rev-parse HEAD) &&
+	 H=$(cd submodule2 && git rev-parse HEAD) &&
 	 git rm --cached submodule2 &&
 	 rm -rf submodule2 &&
 	 mkdir -p "moved/sub module" &&

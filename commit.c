@@ -209,7 +209,7 @@ static int read_graft_file(struct repository *r, const char *graft_file)
 	return 0;
 }
 
-static void prepare_commit_graft(struct repository *r)
+void prepare_commit_graft(struct repository *r)
 {
 	char *graft_file;
 
@@ -388,8 +388,8 @@ int parse_commit_buffer(struct repository *r, struct commit *item, const void *b
 	struct object_id parent;
 	struct commit_list **pptr;
 	struct commit_graft *graft;
-	const int tree_entry_len = GIT_SHA1_HEXSZ + 5;
-	const int parent_entry_len = GIT_SHA1_HEXSZ + 7;
+	const int tree_entry_len = the_hash_algo->hexsz + 5;
+	const int parent_entry_len = the_hash_algo->hexsz + 7;
 
 	if (item->object.parsed)
 		return 0;
