@@ -563,6 +563,7 @@ int can_all_from_reach_with_flag(struct object_array *from,
 	struct commit **list = NULL;
 	int i;
 	int result = 1;
+	uint32_t num_walked = 0;
 
 	ALLOC_ARRAY(list, from->nr);
 	for (i = 0; i < from->nr; i++) {
@@ -572,6 +573,8 @@ int can_all_from_reach_with_flag(struct object_array *from,
 		    list[i]->generation < min_generation)
 			return 0;
 	}
+
+	trace2_region_enter("can_all_from_reach_with_flag");
 
 	QSORT(list, from->nr, compare_commits_by_gen);
 
@@ -589,6 +592,8 @@ int can_all_from_reach_with_flag(struct object_array *from,
 				pop_commit(&stack);
 				continue;
 			}
+
+			num_walked++;
 
 			for (parent = stack->item->parents; parent; parent = parent->next) {
 				if (parent->item->object.flags & (with_flag | RESULT))
@@ -622,6 +627,9 @@ cleanup:
 		clear_commit_marks(list[i], RESULT);
 		clear_commit_marks(list[i], assign_flag);
 	}
+
+	trace2_data_intmax("can_all_from_reach_with_flag", "num_walked", num_walked);
+	trace2_region_leave("can_all_from_reach_with_flag");
 	return result;
 }
 
