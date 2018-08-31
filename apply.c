@@ -76,10 +76,12 @@ static int parse_ignorewhitespace_option(struct apply_state *state,
 }
 
 int init_apply_state(struct apply_state *state,
+		     struct repository *repo,
 		     const char *prefix)
 {
 	memset(state, 0, sizeof(*state));
 	state->prefix = prefix;
+	state->repo = repo;
 	state->apply = 1;
 	state->line_termination = '\n';
 	state->p_value = 1;
@@ -3374,14 +3376,17 @@ static struct patch *previous_patch(struct apply_state *state,
 	return previous;
 }
 
-static int verify_index_match(const struct cache_entry *ce, struct stat *st)
+static int verify_index_match(struct apply_state *state,
+			      const struct cache_entry *ce,
+			      struct stat *st)
 {
 	if (S_ISGITLINK(ce->ce_mode)) {
 		if (!S_ISDIR(st->st_mode))
 			return -1;
 		return 0;
 	}
-	return ce_match_stat(ce, st, CE_MATCH_IGNORE_VALID|CE_MATCH_IGNORE_SKIP_WORKTREE);
+	return ie_match_stat(state->repo->index, ce, st,
+			     CE_MATCH_IGNORE_VALID | CE_MATCH_IGNORE_SKIP_WORKTREE);
 }
 
 #define SUBMODULE_PATCH_WITHOUT_INDEX 1
@@ -3514,17 +3519,17 @@ static int load_current(struct apply_state *state,
 	if (!patch->is_new)
 		BUG("patch to %s is not a creation", patch->old_name);
 
-	pos = cache_name_pos(name, strlen(name));
+	pos = index_name_pos(state->repo->index, name, strlen(name));
 	if (pos < 0)
 		return error(_("%s: does not exist in index"), name);
-	ce = active_cache[pos];
+	ce = state->repo->index->cache[pos];
 	if (lstat(name, &st)) {
 		if (errno != ENOENT)
 			return error_errno("%s", name);
-		if (checkout_target(&the_index, ce, &st))
+		if (checkout_target(state->repo->index, ce, &st))
 			return -1;
 	}
-	if (verify_index_match(ce, &st))
+	if (verify_index_match(state, ce, &st))
 		return error(_("%s: does not match index"), name);
 
 	status = load_patch_target(state, &buf, ce, &st, patch, name, mode);
@@ -3683,18 +3688,19 @@ static int check_preimage(struct apply_state *state,
 	}
 
 	if (state->check_index && !previous) {
-		int pos = cache_name_pos(old_name, strlen(old_name));
+		int pos = index_name_pos(state->repo->index, old_name,
+					 strlen(old_name));
 		if (pos < 0) {
 			if (patch->is_new < 0)
 				goto is_new;
 			return error(_("%s: does not exist in index"), old_name);
 		}
-		*ce = active_cache[pos];
+		*ce = state->repo->index->cache[pos];
 		if (stat_ret < 0) {
-			if (checkout_target(&the_index, *ce, st))
+			if (checkout_target(state->repo->index, *ce, st))
 				return -1;
 		}
-		if (!state->cached && verify_index_match(*ce, st))
+		if (!state->cached && verify_index_match(state, *ce, st))
 			return error(_("%s: does not match index"), old_name);
 		if (state->cached)
 			st_mode = (*ce)->ce_mode;
@@ -3738,7 +3744,7 @@ static int check_to_create(struct apply_state *state,
 	struct stat nst;
 
 	if (state->check_index &&
-	    cache_name_pos(new_name, strlen(new_name)) >= 0 &&
+	    index_name_pos(state->repo->index, new_name, strlen(new_name)) >= 0 &&
 	    !ok_if_exists)
 		return EXISTS_IN_INDEX;
 	if (state->cached)
@@ -3827,7 +3833,8 @@ static int path_is_beyond_symlink_1(struct apply_state *state, struct strbuf *na
 		if (state->check_index) {
 			struct cache_entry *ce;
 
-			ce = cache_file_exists(name->buf, name->len, ignore_case);
+			ce = index_file_exists(state->repo->index, name->buf,
+					       name->len, ignore_case);
 			if (ce && S_ISLNK(ce->ce_mode))
 				return 1;
 		} else {
@@ -4002,9 +4009,10 @@ static int check_patch_list(struct apply_state *state, struct patch *patch)
 static int read_apply_cache(struct apply_state *state)
 {
 	if (state->index_file)
-		return read_cache_from(state->index_file);
+		return read_index_from(state->repo->index, state->index_file,
+				       get_git_dir());
 	else
-		return read_cache();
+		return read_index(state->repo->index);
 }
 
 /* This function tries to read the object name from the current index */
@@ -4015,10 +4023,10 @@ static int get_current_oid(struct apply_state *state, const char *path,
 
 	if (read_apply_cache(state) < 0)
 		return -1;
-	pos = cache_name_pos(path, strlen(path));
+	pos = index_name_pos(state->repo->index, path, strlen(path));
 	if (pos < 0)
 		return -1;
-	oidcpy(oid, &active_cache[pos]->oid);
+	oidcpy(oid, &state->repo->index->cache[pos]->oid);
 	return 0;
 }
 
@@ -4056,7 +4064,7 @@ static int preimage_oid_in_gitlink_patch(struct patch *p, struct object_id *oid)
 	return get_oid_hex(p->old_sha1_prefix, oid);
 }
 
-/* Build an index that contains the just the files needed for a 3way merge */
+/* Build an index that contains just the files needed for a 3way merge */
 static int build_fake_ancestor(struct apply_state *state, struct patch *list)
 {
 	struct patch *patch;
@@ -4093,12 +4101,12 @@ static int build_fake_ancestor(struct apply_state *state, struct patch *list)
 			return error(_("sha1 information is lacking or useless "
 				       "(%s)."), name);
 
-		ce = make_cache_entry(patch->old_mode, oid.hash, name, 0, 0);
+		ce = make_cache_entry(&result, patch->old_mode, &oid, name, 0, 0);
 		if (!ce)
 			return error(_("make_cache_entry failed for path '%s'"),
 				     name);
 		if (add_index_entry(&result, ce, ADD_CACHE_OK_TO_ADD)) {
-			free(ce);
+			discard_cache_entry(ce);
 			return error(_("could not add %s to temporary index"),
 				     name);
 		}
@@ -4246,7 +4254,7 @@ static void patch_stats(struct apply_state *state, struct patch *patch)
 static int remove_file(struct apply_state *state, struct patch *patch, int rmdir_empty)
 {
 	if (state->update_index && !state->ita_only) {
-		if (remove_file_from_cache(patch->old_name) < 0)
+		if (remove_file_from_index(state->repo->index, patch->old_name) < 0)
 			return error(_("unable to remove %s from index"), patch->old_name);
 	}
 	if (!state->cached) {
@@ -4266,9 +4274,8 @@ static int add_index_file(struct apply_state *state,
 	struct stat st;
 	struct cache_entry *ce;
 	int namelen = strlen(path);
-	unsigned ce_size = cache_entry_size(namelen);
 
-	ce = xcalloc(1, ce_size);
+	ce = make_empty_cache_entry(state->repo->index, namelen);
 	memcpy(ce->name, path, namelen);
 	ce->ce_mode = create_ce_mode(mode);
 	ce->ce_flags = create_ce_flags(0);
@@ -4281,13 +4288,13 @@ static int add_index_file(struct apply_state *state,
 
 		if (!skip_prefix(buf, "Subproject commit ", &s) ||
 		    get_oid_hex(s, &ce->oid)) {
-			free(ce);
-		       return error(_("corrupt patch for submodule %s"), path);
+			discard_cache_entry(ce);
+			return error(_("corrupt patch for submodule %s"), path);
 		}
 	} else {
 		if (!state->cached) {
 			if (lstat(path, &st) < 0) {
-				free(ce);
+				discard_cache_entry(ce);
 				return error_errno(_("unable to stat newly "
 						     "created file '%s'"),
 						   path);
@@ -4295,13 +4302,13 @@ static int add_index_file(struct apply_state *state,
 			fill_stat_cache_info(ce, &st);
 		}
 		if (write_object_file(buf, size, blob_type, &ce->oid) < 0) {
-			free(ce);
+			discard_cache_entry(ce);
 			return error(_("unable to create backing store "
 				       "for newly created file %s"), path);
 		}
 	}
-	if (add_cache_entry(ce, ADD_CACHE_OK_TO_ADD) < 0) {
-		free(ce);
+	if (add_index_entry(state->repo->index, ce, ADD_CACHE_OK_TO_ADD) < 0) {
+		discard_cache_entry(ce);
 		return error(_("unable to add cache entry for %s"), path);
 	}
 
@@ -4314,7 +4321,9 @@ static int add_index_file(struct apply_state *state,
  *   0 if everything went well
  *   1 if a recoverable error happened
  */
-static int try_create_file(const char *path, unsigned int mode, const char *buf, unsigned long size)
+static int try_create_file(struct apply_state *state, const char *path,
+			   unsigned int mode, const char *buf,
+			   unsigned long size)
 {
 	int fd, res;
 	struct strbuf nbuf = STRBUF_INIT;
@@ -4336,7 +4345,7 @@ static int try_create_file(const char *path, unsigned int mode, const char *buf,
 	if (fd < 0)
 		return 1;
 
-	if (convert_to_working_tree(path, buf, size, &nbuf)) {
+	if (convert_to_working_tree(state->repo->index, path, buf, size, &nbuf)) {
 		size = nbuf.len;
 		buf  = nbuf.buf;
 	}
@@ -4372,7 +4381,7 @@ static int create_one_file(struct apply_state *state,
 	if (state->cached)
 		return 0;
 
-	res = try_create_file(path, mode, buf, size);
+	res = try_create_file(state, path, mode, buf, size);
 	if (res < 0)
 		return -1;
 	if (!res)
@@ -4381,7 +4390,7 @@ static int create_one_file(struct apply_state *state,
 	if (errno == ENOENT) {
 		if (safe_create_leading_directories(path))
 			return 0;
-		res = try_create_file(path, mode, buf, size);
+		res = try_create_file(state, path, mode, buf, size);
 		if (res < 0)
 			return -1;
 		if (!res)
@@ -4403,7 +4412,7 @@ static int create_one_file(struct apply_state *state,
 		for (;;) {
 			char newpath[PATH_MAX];
 			mksnpath(newpath, sizeof(newpath), "%s~%u", path, nr);
-			res = try_create_file(newpath, mode, buf, size);
+			res = try_create_file(state, newpath, mode, buf, size);
 			if (res < 0)
 				return -1;
 			if (!res) {
@@ -4425,27 +4434,26 @@ static int add_conflicted_stages_file(struct apply_state *state,
 				       struct patch *patch)
 {
 	int stage, namelen;
-	unsigned ce_size, mode;
+	unsigned mode;
 	struct cache_entry *ce;
 
 	if (!state->update_index)
 		return 0;
 	namelen = strlen(patch->new_name);
-	ce_size = cache_entry_size(namelen);
 	mode = patch->new_mode ? patch->new_mode : (S_IFREG | 0644);
 
-	remove_file_from_cache(patch->new_name);
+	remove_file_from_index(state->repo->index, patch->new_name);
 	for (stage = 1; stage < 4; stage++) {
 		if (is_null_oid(&patch->threeway_stage[stage - 1]))
 			continue;
-		ce = xcalloc(1, ce_size);
+		ce = make_empty_cache_entry(state->repo->index, namelen);
 		memcpy(ce->name, patch->new_name, namelen);
 		ce->ce_mode = create_ce_mode(mode);
 		ce->ce_flags = create_ce_flags(stage);
 		ce->ce_namelen = namelen;
 		oidcpy(&ce->oid, &patch->threeway_stage[stage - 1]);
-		if (add_cache_entry(ce, ADD_CACHE_OK_TO_ADD) < 0) {
-			free(ce);
+		if (add_index_entry(state->repo->index, ce, ADD_CACHE_OK_TO_ADD) < 0) {
+			discard_cache_entry(ce);
 			return error(_("unable to add cache entry for %s"),
 				     patch->new_name);
 		}
@@ -4893,7 +4901,7 @@ int apply_all_patches(struct apply_state *state,
 	}
 
 	if (state->update_index) {
-		res = write_locked_index(&the_index, &state->lock_file, COMMIT_LOCK);
+		res = write_locked_index(state->repo->index, &state->lock_file, COMMIT_LOCK);
 		if (res) {
 			error(_("Unable to write new index file"));
 			res = -128;

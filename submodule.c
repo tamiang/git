@@ -94,7 +94,7 @@ int update_path_in_gitmodules(const char *oldpath, const char *newpath)
 	if (!file_exists(GITMODULES_FILE)) /* Do nothing without .gitmodules */
 		return -1;
 
-	if (is_gitmodules_unmerged(&the_index))
+	if (is_gitmodules_unmerged(the_repository->index))
 		die(_("Cannot change unmerged .gitmodules, resolve merge conflicts first"));
 
 	submodule = submodule_from_path(the_repository, &null_oid, oldpath);
@@ -128,7 +128,7 @@ int remove_path_from_gitmodules(const char *path)
 	if (!file_exists(GITMODULES_FILE)) /* Do nothing without .gitmodules */
 		return -1;
 
-	if (is_gitmodules_unmerged(&the_index))
+	if (is_gitmodules_unmerged(the_repository->index))
 		die(_("Cannot change unmerged .gitmodules, resolve merge conflicts first"));
 
 	submodule = submodule_from_path(the_repository, &null_oid, path);
@@ -189,7 +189,7 @@ void set_diffopt_flags_from_submodule_config(struct diff_options *diffopt,
 
 		if (ignore)
 			handle_ignore_submodules_arg(diffopt, ignore);
-		else if (is_gitmodules_unmerged(&the_index))
+		else if (is_gitmodules_unmerged(the_repository->index))
 			diffopt->flags.ignore_submodules = 1;
 	}
 }
@@ -259,7 +259,7 @@ int is_submodule_active(struct repository *repo, const char *path)
 		}
 
 		parse_pathspec(&ps, 0, 0, NULL, args.argv);
-		ret = match_pathspec(&ps, path, strlen(path), 0, NULL, 1);
+		ret = match_pathspec(repo->index, &ps, path, strlen(path), 0, NULL, 1);
 
 		argv_array_clear(&args);
 		clear_pathspec(&ps);
@@ -1535,6 +1535,18 @@ out:
 	return ret;
 }
 
+void submodule_unset_core_worktree(const struct submodule *sub)
+{
+	char *config_path = xstrfmt("%s/modules/%s/config",
+				    get_git_common_dir(), sub->name);
+
+	if (git_config_set_in_file_gently(config_path, "core.worktree", NULL))
+		warning(_("Could not unset core.worktree setting in submodule '%s'"),
+			  sub->path);
+
+	free(config_path);
+}
+
 static const char *get_super_prefix_or_empty(void)
 {
 	const char *s = get_super_prefix();
@@ -1671,7 +1683,7 @@ int submodule_move_head(const char *path,
 	argv_array_push(&cp.args, new_head ? new_head : empty_tree_oid_hex());
 
 	if (run_command(&cp)) {
-		ret = -1;
+		ret = error(_("Submodule '%s' could not be updated."), path);
 		goto out;
 	}
 
@@ -1700,6 +1712,8 @@ int submodule_move_head(const char *path,
 
 			if (is_empty_dir(path))
 				rmdir_or_warn(path);
+
+			submodule_unset_core_worktree(sub);
 		}
 	}
 out:

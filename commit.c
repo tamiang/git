@@ -388,8 +388,8 @@ int parse_commit_buffer(struct repository *r, struct commit *item, const void *b
 	struct object_id parent;
 	struct commit_list **pptr;
 	struct commit_graft *graft;
-	const int tree_entry_len = GIT_SHA1_HEXSZ + 5;
-	const int parent_entry_len = GIT_SHA1_HEXSZ + 7;
+	const int tree_entry_len = the_hash_algo->hexsz + 5;
+	const int parent_entry_len = the_hash_algo->hexsz + 7;
 
 	if (item->object.parsed)
 		return 0;
@@ -656,7 +656,7 @@ struct commit *pop_commit(struct commit_list **stack)
 define_commit_slab(indegree_slab, int);
 
 /* record author-date for each commit object */
-define_commit_slab(author_date_slab, unsigned long);
+define_commit_slab(author_date_slab, timestamp_t);
 
 static void record_author_date(struct author_date_slab *author_date,
 			       struct commit *commit)

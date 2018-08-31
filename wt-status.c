@@ -647,7 +647,7 @@ static void wt_status_collect_changes_initial(struct wt_status *s)
 		struct wt_status_change_data *d;
 		const struct cache_entry *ce = active_cache[i];
 
-		if (!ce_path_match(ce, &s->pathspec, NULL))
+		if (!ce_path_match(&the_index, ce, &s->pathspec, NULL))
 			continue;
 		if (ce_intent_to_add(ce))
 			continue;
@@ -703,7 +703,7 @@ static void wt_status_collect_untracked(struct wt_status *s)
 	for (i = 0; i < dir.nr; i++) {
 		struct dir_entry *ent = dir.entries[i];
 		if (cache_name_is_other(ent->name, ent->len) &&
-		    dir_path_match(ent, &s->pathspec, 0, NULL))
+		    dir_path_match(&the_index, ent, &s->pathspec, 0, NULL))
 			string_list_insert(&s->untracked, ent->name);
 		free(ent);
 	}
@@ -711,7 +711,7 @@ static void wt_status_collect_untracked(struct wt_status *s)
 	for (i = 0; i < dir.ignored_nr; i++) {
 		struct dir_entry *ent = dir.ignored[i];
 		if (cache_name_is_other(ent->name, ent->len) &&
-		    dir_path_match(ent, &s->pathspec, 0, NULL))
+		    dir_path_match(&the_index, ent, &s->pathspec, 0, NULL))
 			string_list_insert(&s->ignored, ent->name);
 		free(ent);
 	}
@@ -726,13 +726,23 @@ static void wt_status_collect_untracked(struct wt_status *s)
 
 void wt_status_collect(struct wt_status *s)
 {
+	trace2_region_enter("status_worktrees");
 	wt_status_collect_changes_worktree(s);
+	trace2_region_leave("status_worktrees");
 
-	if (s->is_initial)
+	if (s->is_initial) {
+		trace2_region_enter("status_initial");
 		wt_status_collect_changes_initial(s);
-	else
+		trace2_region_leave("status_initial");
+	} else {
+		trace2_region_enter("status_index");
 		wt_status_collect_changes_index(s);
+		trace2_region_leave("status_index");
+	}
+
+	trace2_region_enter("status_untracked");
 	wt_status_collect_untracked(s);
+	trace2_region_leave("status_untracked");
 }
 
 static void wt_longstatus_print_unmerged(struct wt_status *s)
@@ -2340,7 +2350,17 @@ int has_uncommitted_changes(int ignore_submodules)
 	if (ignore_submodules)
 		rev_info.diffopt.flags.ignore_submodules = 1;
 	rev_info.diffopt.flags.quick = 1;
+
 	add_head_to_pending(&rev_info);
+	if (!rev_info.pending.nr) {
+		/*
+		 * We have no head (or it's corrupt); use the empty tree,
+		 * which will complain if the index is non-empty.
+		 */
+		struct tree *tree = lookup_tree(the_repository, the_hash_algo->empty_tree);
+		add_pending_object(&rev_info, &tree->object, "");
+	}
+
 	diff_setup_done(&rev_info.diffopt);
 	result = run_diff_index(&rev_info, 1);
 	return diff_result_code(&rev_info.diffopt, result);

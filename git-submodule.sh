@@ -438,6 +438,9 @@ cmd_update()
 		-q|--quiet)
 			GIT_QUIET=1
 			;;
+		-v)
+			GIT_QUIET=0
+			;;
 		--progress)
 			progress=1
 			;;
@@ -575,6 +578,11 @@ cmd_update()
 			sha1=$(sanitize_submodule_env; cd "$sm_path" &&
 				git rev-parse --verify "${remote_name}/${branch}") ||
 			die "$(eval_gettext "Unable to find current \${remote_name}/\${branch} revision in submodule path '\$sm_path'")"
+		fi
+
+		if ! $(git config -f "$(git rev-parse --git-common-dir)/modules/$name/config" core.worktree) 2>/dev/null
+		then
+			git submodule--helper connect-gitdir-workingtree "$name" "$sm_path"
 		fi
 
 		if test "$subsha1" != "$sha1" || test -n "$force"

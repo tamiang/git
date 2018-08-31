@@ -176,6 +176,7 @@ static void add_pending_object_with_path(struct rev_info *revs,
 		strbuf_release(&buf);
 		return; /* do not add the commit itself */
 	}
+	obj->flags |= USER_GIVEN;
 	add_object_array_with_path(obj, name, &revs->pending, mode, path);
 }
 
@@ -250,6 +251,9 @@ static struct commit *handle_commit(struct rev_info *revs,
 		object = parse_object(the_repository, &tag->tagged->oid);
 		if (!object) {
 			if (revs->ignore_missing_links || (flags & UNINTERESTING))
+				return NULL;
+			if (revs->exclude_promisor_objects &&
+			    is_promisor_object(&tag->tagged->oid))
 				return NULL;
 			die("bad object %s", oid_to_hex(&tag->tagged->oid));
 		}
@@ -1514,7 +1518,7 @@ static void prepare_show_merge(struct rev_info *revs)
 		const struct cache_entry *ce = active_cache[i];
 		if (!ce_stage(ce))
 			continue;
-		if (ce_path_match(ce, &revs->prune_data, NULL)) {
+		if (ce_path_match(&the_index, ce, &revs->prune_data, NULL)) {
 			prune_num++;
 			REALLOC_ARRAY(prune, prune_num);
 			prune[prune_num-2] = ce->name;

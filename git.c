@@ -164,7 +164,7 @@ static int handle_options(const char ***argv, int *argc, int *envchanged)
 			if (envchanged)
 				*envchanged = 1;
 		} else if (!strcmp(cmd, "--no-replace-objects")) {
-			check_replace_refs = 0;
+			read_replace_refs = 0;
 			setenv(NO_REPLACE_OBJECTS_ENVIRONMENT, "1", 1);
 			if (envchanged)
 				*envchanged = 1;
@@ -331,6 +331,8 @@ static int handle_alias(int *argcp, const char ***argv)
 			argv_array_push(&child.args, alias_string + 1);
 			argv_array_pushv(&child.args, (*argv) + 1);
 
+			trace2_alias(alias_command, child.args.argv);
+
 			ret = run_command(&child);
 			if (ret >= 0)   /* normal exit */
 				exit(ret);
@@ -364,6 +366,8 @@ static int handle_alias(int *argcp, const char ***argv)
 		REALLOC_ARRAY(new_argv, count + *argcp);
 		/* insert after command name */
 		memcpy(new_argv + count, *argv + 1, sizeof(char *) * *argcp);
+
+		trace2_alias(alias_command, new_argv);
 
 		*argv = new_argv;
 		*argcp += count - 1;
@@ -413,8 +417,12 @@ static int run_builtin(struct cmd_struct *p, int argc, const char **argv)
 		setup_work_tree();
 
 	trace_argv_printf(argv, "trace: built-in: git");
+	trace2_command(p->cmd);
 
+	validate_cache_entries(&the_index);
 	status = p->fn(argc, argv, prefix);
+	validate_cache_entries(&the_index);
+
 	if (status)
 		return status;
 
@@ -517,6 +525,7 @@ static struct cmd_struct commands[] = {
 	{ "prune-packed", cmd_prune_packed, RUN_SETUP },
 	{ "pull", cmd_pull, RUN_SETUP | NEED_WORK_TREE },
 	{ "push", cmd_push, RUN_SETUP },
+	{ "range-diff", cmd_range_diff, RUN_SETUP | USE_PAGER },
 	{ "read-tree", cmd_read_tree, RUN_SETUP | SUPPORT_SUPER_PREFIX},
 	{ "rebase--helper", cmd_rebase__helper, RUN_SETUP | NEED_WORK_TREE },
 	{ "receive-pack", cmd_receive_pack },
@@ -715,6 +724,8 @@ int cmd_main(int argc, const char **argv)
 			cmd = slash + 1;
 	}
 
+	trace2_start(argv);
+
 	trace_command_performance(argv);
 
 	/*
@@ -778,5 +789,5 @@ int cmd_main(int argc, const char **argv)
 	fprintf(stderr, _("failed to run command '%s': %s\n"),
 		cmd, strerror(errno));
 
-	return 1;
+	return trace2_exit(1);
 }

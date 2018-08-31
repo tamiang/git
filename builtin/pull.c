@@ -49,11 +49,11 @@ static enum rebase_type parse_config_rebase(const char *key, const char *value,
 		return REBASE_FALSE;
 	else if (v > 0)
 		return REBASE_TRUE;
-	else if (!strcmp(value, "preserve"))
+	else if (!strcmp(value, "preserve") || !strcmp(value, "p"))
 		return REBASE_PRESERVE;
-	else if (!strcmp(value, "merges"))
+	else if (!strcmp(value, "merges") || !strcmp(value, "m"))
 		return REBASE_MERGES;
-	else if (!strcmp(value, "interactive"))
+	else if (!strcmp(value, "interactive") || !strcmp(value, "i"))
 		return REBASE_INTERACTIVE;
 
 	if (fatal)
@@ -136,7 +136,7 @@ static struct option pull_options[] = {
 	/* Options passed to git-merge or git-rebase */
 	OPT_GROUP(N_("Options related to merging")),
 	{ OPTION_CALLBACK, 'r', "rebase", &opt_rebase,
-	  "false|true|merges|preserve|interactive",
+	  "(false|true|merges|preserve|interactive)",
 	  N_("incorporate changes by rebasing rather than merging"),
 	  PARSE_OPT_OPTARG, parse_opt_rebase },
 	OPT_PASSTHRU('n', NULL, &opt_diffstat, NULL,

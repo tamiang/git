@@ -1690,11 +1690,18 @@ static struct ref *get_expanded_map(const struct ref *remote_refs,
 static const struct ref *find_ref_by_name_abbrev(const struct ref *refs, const char *name)
 {
 	const struct ref *ref;
+	const struct ref *best_match = NULL;
+	int best_score = 0;
+
 	for (ref = refs; ref; ref = ref->next) {
-		if (refname_match(name, ref->name))
-			return ref;
+		int score = refname_match(name, ref->name);
+
+		if (best_score < score) {
+			best_match = ref;
+			best_score = score;
+		}
 	}
-	return NULL;
+	return best_match;
 }
 
 struct ref *get_remote_ref(const struct ref *remote_refs, const char *name)
@@ -1738,6 +1745,7 @@ int get_fetch_map(const struct ref *remote_refs,
 		if (refspec->exact_sha1) {
 			ref_map = alloc_ref(name);
 			get_oid_hex(name, &ref_map->old_oid);
+			ref_map->exact_oid = 1;
 		} else {
 			ref_map = get_remote_ref(remote_refs, name);
 		}

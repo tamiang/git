@@ -109,7 +109,7 @@ int run_diff_files(struct rev_info *revs, unsigned int option)
 		if (diff_can_quit_early(&revs->diffopt))
 			break;
 
-		if (!ce_path_match(ce, &revs->prune_data, NULL))
+		if (!ce_path_match(&the_index, ce, &revs->prune_data, NULL))
 			continue;
 
 		if (ce_stage(ce)) {
@@ -474,7 +474,7 @@ static int oneway_diff(const struct cache_entry * const *src,
 	if (tree == o->df_conflict_entry)
 		tree = NULL;
 
-	if (ce_path_match(idx ? idx : tree, &revs->prune_data, NULL)) {
+	if (ce_path_match(&the_index, idx ? idx : tree, &revs->prune_data, NULL)) {
 		do_oneway_diff(o, idx, tree);
 		if (diff_can_quit_early(&revs->diffopt)) {
 			o->exiting_early = 1;
@@ -519,6 +519,9 @@ int run_diff_index(struct rev_info *revs, int cached)
 {
 	struct object_array_entry *ent;
 	uint64_t start = getnanotime();
+
+	if (revs->pending.nr != 1)
+		BUG("run_diff_index must be passed exactly one tree");
 
 	ent = revs->pending.objects;
 	if (diff_cache(revs, &ent->item->oid, ent->name, cached))
