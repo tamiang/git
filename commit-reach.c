@@ -481,6 +481,7 @@ static enum contains_result contains_tag_algo(struct commit *candidate,
 	enum contains_result result;
 	uint32_t cutoff = GENERATION_NUMBER_INFINITY;
 	const struct commit_list *p;
+	uint32_t num_walked = 0;
 
 	for (p = want; p; p = p->next) {
 		struct commit *c = p->item;
@@ -493,11 +494,14 @@ static enum contains_result contains_tag_algo(struct commit *candidate,
 	if (result != CONTAINS_UNKNOWN)
 		return result;
 
+	trace2_region_enter("contains_tag_algo");
 	push_to_contains_stack(candidate, &contains_stack);
 	while (contains_stack.nr) {
 		struct contains_stack_entry *entry = &contains_stack.contains_stack[contains_stack.nr - 1];
 		struct commit *commit = entry->commit;
 		struct commit_list *parents = entry->parents;
+
+		num_walked++;
 
 		if (!parents) {
 			*contains_cache_at(cache, commit) = CONTAINS_NO;
@@ -521,7 +525,13 @@ static enum contains_result contains_tag_algo(struct commit *candidate,
 		}
 	}
 	free(contains_stack.contains_stack);
-	return contains_test(candidate, want, cache, cutoff);
+
+	result = contains_test(candidate, want, cache, cutoff);
+
+	trace2_data_intmax("contains_tag_algo", "num_walked", num_walked);
+	trace2_region_leave("contains_tag_algo");
+
+	return result;
 }
 
 int commit_contains(struct ref_filter *filter, struct commit *commit,
