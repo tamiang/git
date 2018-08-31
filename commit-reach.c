@@ -38,6 +38,9 @@ static struct commit_list *paint_down_to_common(struct commit *one, int n,
 	struct commit_list *result = NULL;
 	int i;
 	uint32_t last_gen = GENERATION_NUMBER_INFINITY;
+	uint32_t num_walked = 0;
+
+	trace2_region_enter("paint_down_to_common");
 
 	one->object.flags |= PARENT1;
 	if (!n) {
@@ -55,6 +58,7 @@ static struct commit_list *paint_down_to_common(struct commit *one, int n,
 		struct commit *commit = prio_queue_get(&queue);
 		struct commit_list *parents;
 		int flags;
+		num_walked++;
 
 		if (commit->generation > last_gen)
 			BUG("bad generation skip %8x > %8x at %s",
@@ -88,6 +92,10 @@ static struct commit_list *paint_down_to_common(struct commit *one, int n,
 	}
 
 	clear_prio_queue(&queue);
+
+	trace2_data_intmax("paint_down_to_common", "num_walked", num_walked);
+	trace2_region_leave("paint_down_to_common");
+
 	return result;
 }
 
