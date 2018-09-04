@@ -630,14 +630,51 @@ static void close_reachable(struct packed_oid_list *oids)
 	}
 }
 
+static int commit_has_v2_generation_number(struct commit *c)
+{
+	struct commit_list *p = NULL;
+	int all_parents_skewed = 1;
+	int max_generation = 0;
+
+	parse_commit(c);
+
+	/* is the generation number not computed? */
+	if (c->generation == GENERATION_NUMBER_INFINITY ||
+	    c->generation == GENERATION_NUMBER_ZERO)
+		return 0;
+
+	if (!c->parents)
+		return c->generation == 1;
+
+	for (p = c->parents; p; p = p->next) {
+		/* is this a v2 generation number? */
+		if (p->item->date <= c->date) {
+			all_parents_skewed = 0;
+
+			if (p->item->generation > max_generation)
+				max_generation = p->item->generation;
+
+			/* (a v1 generation number would not have equality */
+			if (p->item->generation == c->generation)
+				return 1;
+		} else if (p->item->generation >= max_generation) {
+				max_generation = p->item->generation + 1;
+		}
+	}
+
+	if (all_parents_skewed)
+		return 1;
+
+	return c->generation == max_generation;
+}
+
 static void compute_generation_numbers(struct packed_commit_list* commits)
 {
 	int i;
 	struct commit_list *list = NULL;
 
 	for (i = 0; i < commits->nr; i++) {
-		if (commits->list[i]->generation != GENERATION_NUMBER_INFINITY &&
-		    commits->list[i]->generation != GENERATION_NUMBER_ZERO)
+		if (commit_has_v2_generation_number(commits->list[i]))
 			continue;
 
 		commit_list_insert(commits->list[i], &list);
@@ -645,21 +682,23 @@ static void compute_generation_numbers(struct packed_commit_list* commits)
 			struct commit *current = list->item;
 			struct commit_list *parent;
 			int all_parents_computed = 1;
-			uint32_t max_generation = 0;
+			uint32_t max_generation = 1;
 
 			for (parent = current->parents; parent; parent = parent->next) {
-				if (parent->item->generation == GENERATION_NUMBER_INFINITY ||
-				    parent->item->generation == GENERATION_NUMBER_ZERO) {
+				if (!commit_has_v2_generation_number(parent->item)) {
 					all_parents_computed = 0;
 					commit_list_insert(parent->item, &list);
 					break;
+				} else if (parent->item->date > current->date &&
+					   parent->item->generation >= max_generation) {
+					max_generation = parent->item->generation + 1;
 				} else if (parent->item->generation > max_generation) {
 					max_generation = parent->item->generation;
 				}
 			}
 
 			if (all_parents_computed) {
-				current->generation = max_generation + 1;
+				current->generation = max_generation;
 				pop_commit(&list);
 
 				if (current->generation > GENERATION_NUMBER_MAX)
