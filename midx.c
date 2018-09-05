@@ -81,18 +81,18 @@ struct pack_midx_details_internal {
 	uint32_t internal_offset;
 };
 
-static struct midxed_git *alloc_midxed_git(int extra)
+static struct midxed_git *alloc_midxed_git(const char *pack_dir)
 {
-	struct midxed_git *m = xmalloc(st_add(sizeof(*m), extra));
-	memset(m, 0, sizeof(*m));
-	m->midx_fd = -1;
+	struct midxed_git *m = NULL;
+
+	FLEX_ALLOC_MEM(m, pack_dir, pack_dir, strlen(pack_dir));
 
 	return m;
 }
 
 static struct midxed_git *load_empty_midxed_git(void)
 {
-	struct midxed_git *midx = alloc_midxed_git(1);
+	struct midxed_git *midx = alloc_midxed_git("");
 
 	midx->midx_fd = -1;
 	midx->data = NULL;
@@ -151,7 +151,7 @@ static struct midxed_git *load_midxed_git_one(const char *midx_file, const char 
 	}
 
 	/* Time to fill a midx struct */
-	midx = alloc_midxed_git(strlen(pack_dir) + 1);
+	midx = alloc_midxed_git(pack_dir);
 
 	midx->hdr = hdr;
 	midx->midx_fd = fd;
@@ -229,7 +229,6 @@ static struct midxed_git *load_midxed_git_one(const char *midx_file, const char 
 		}
 	}
 
-	strlcpy(midx->pack_dir, pack_dir, strlen(pack_dir));
 	return midx;
 }
 
