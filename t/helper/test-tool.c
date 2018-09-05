@@ -1,5 +1,6 @@
 #include "git-compat-util.h"
 #include "test-tool.h"
+#include "trace2.h"
 
 struct test_cmd {
 	const char *name;
@@ -54,6 +55,8 @@ int cmd_main(int argc, const char **argv)
 	BUG_exit_code = 99;
 	if (argc < 2)
 		die("I need a test name!");
+
+	trace2_start(argv);
 
 	for (i = 0; i < ARRAY_SIZE(cmds); i++) {
 		if (!strcmp(cmds[i].name, argv[1])) {
