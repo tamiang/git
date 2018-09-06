@@ -183,6 +183,12 @@ test_expect_success 'can_all_from_reach:hit' '
 	test_three_modes can_all_from_reach
 '
 
+test_expect_success 'can_all_from_reach:perf' '
+	cp commit-graph-full .git/objects/info/commit-graph &&
+	run_and_check_trace2 can_all_from_reach_with_flag num_walked 40 input \
+		"test-tool reach can_all_from_reach"
+'
+
 test_expect_success 'can_all_from_reach:miss' '
 	cat >input <<-\EOF &&
 	X:commit-2-10

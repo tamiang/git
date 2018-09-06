@@ -1231,3 +1231,17 @@ test_lazy_prereq CURL '
 test_lazy_prereq SHA1 '
 	test $(git hash-object /dev/null) = e69de29bb2d1d6434b8b29ae775ad8c2e48c5391
 '
+
+# Useage: run_and_check_trace2 <category> <key> <value> <file> <command>
+# Run "command <file" with GIT_TR2_PERFORMANCE logging to a file and
+# check that file for a data output matching category.key = value.
+run_and_check_trace2 () {
+	CATEGORY=$1
+	KEY=$2
+	VALUE=$3
+	INPUT=$4
+	COMMAND=$5
+	# GIT_TR2_PERFORMANCE="$(pwd)/perf-log.txt"
+	GIT_TR2_PERFORMANCE="$(pwd)/perf-log.txt" $COMMAND <$INPUT &&
+	cat perf-log.txt | grep "category:$CATEGORY key:$KEY value:$VALUE"
+}
