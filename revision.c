@@ -625,12 +625,32 @@ static void file_change(struct diff_options *options,
 	options->flags.has_changes = 1;
 }
 
+static struct trace_key trace_bloom_filter = TRACE_KEY_INIT(BLOOM_FILTER);
+static int trace_bloom_filter_atexit_registered;
+static unsigned int bloom_filter_count_maybe;
+static unsigned int bloom_filter_count_definitely_not;
+static unsigned int bloom_filter_count_false_positive;
+
+static void print_bloom_filter_stats_atexit(void)
+{
+	unsigned int total = bloom_filter_count_maybe +
+			     bloom_filter_count_definitely_not;
+	trace_printf_key(&trace_bloom_filter,
+			 "bloom filter total queries: %d definitely not: %d maybe: %d false positives: %d fp ratio: %f\n",
+			 total,
+			 bloom_filter_count_definitely_not,
+			 bloom_filter_count_maybe,
+			 bloom_filter_count_false_positive,
+			 (1.0 * bloom_filter_count_false_positive) / total);
+}
+
 static int check_maybe_different_in_bloom_filter(struct rev_info *revs,
 						 struct commit *commit,
 						 struct bloom_key *key,
 						 struct bloom_filter_settings *settings)
 {
 	struct bloom_filter *filter;
+	int result;
 
 	if (!the_repository->objects->commit_graph)
 		return -1;
@@ -645,7 +665,14 @@ static int check_maybe_different_in_bloom_filter(struct rev_info *revs,
 	if (!filter || !filter->len)
 		return -1;
 
-	return bloom_filter_contains(filter, key, settings);
+	result = bloom_filter_contains(filter, key, settings);
+
+	if (result)
+		bloom_filter_count_maybe++;
+	else
+		bloom_filter_count_definitely_not++;
+
+	return result;
 }
 
 static int rev_compare_tree(struct rev_info *revs,
@@ -3385,7 +3412,6 @@ static void prepare_to_use_bloom_filter(struct rev_info *revs)
 	for (i = 0; i < revs->pruning.pathspec.nr; i++) {
 		struct pathspec_item *pi = &revs->pruning.pathspec.items[i];
 		const char *path = pi->match;
-		git_hash_ctx ctx;
 		size_t len = strlen(path);
 
 		revs->bloom_key = xmalloc(sizeof(struct bloom_key));
@@ -3393,6 +3419,13 @@ static void prepare_to_use_bloom_filter(struct rev_info *revs)
 
 		/* TODO: handle multiple pathspecs */
 		break;
+	}
+
+	if (trace_want(&trace_bloom_filter)) {
+		if (!trace_bloom_filter_atexit_registered) {
+			atexit(print_bloom_filter_stats_atexit);
+			trace_bloom_filter_atexit_registered = 1;
+		}
 	}
 }
 
