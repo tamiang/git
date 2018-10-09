@@ -29,6 +29,7 @@
 #include "prio-queue.h"
 #include "hashmap.h"
 #include "utf8.h"
+#include "bloom.h"
 
 volatile show_early_output_fn_t show_early_output;
 
@@ -624,11 +625,36 @@ static void file_change(struct diff_options *options,
 	options->flags.has_changes = 1;
 }
 
+static int check_maybe_different_in_bloom_filter(struct rev_info *revs,
+						 struct commit *commit,
+						 struct bloom_key *key,
+						 struct bloom_filter_settings *settings)
+{
+	struct bloom_filter *filter;
+
+	if (!the_repository->objects->commit_graph)
+		return -1;
+	if (commit->generation == GENERATION_NUMBER_INFINITY)
+		return -1;
+
+	if (!key || !settings)
+		return -1;
+
+	filter = get_bloom_filter(the_repository, commit, 0);
+
+	if (!filter || !filter->len)
+		return -1;
+
+	return bloom_filter_contains(filter, key, settings);
+}
+
 static int rev_compare_tree(struct rev_info *revs,
-			    struct commit *parent, struct commit *commit)
+			    struct commit *parent, struct commit *commit, int nth_parent)
 {
 	struct tree *t1 = get_commit_tree(parent);
 	struct tree *t2 = get_commit_tree(commit);
+
+	int bloom_ret = 1;
 
 	if (!t1)
 		return REV_TREE_NEW;
@@ -653,11 +679,24 @@ static int rev_compare_tree(struct rev_info *revs,
 			return REV_TREE_SAME;
 	}
 
+	if (!nth_parent) {
+		bloom_ret = check_maybe_different_in_bloom_filter(revs,
+								  commit,
+								  revs->bloom_key,
+								  revs->bloom_settings);
+		if (bloom_ret == 0)
+			return REV_TREE_SAME;
+	}
+
 	tree_difference = REV_TREE_SAME;
 	revs->pruning.flags.has_changes = 0;
 	if (diff_tree_oid(&t1->object.oid, &t2->object.oid, "",
 			   &revs->pruning) < 0)
 		return REV_TREE_DIFFERENT;
+	if (!nth_parent) {
+		if (bloom_ret == 1 && tree_difference == REV_TREE_SAME)
+			bloom_filter_count_false_positive++;
+	}
 	return tree_difference;
 }
 
@@ -855,7 +894,7 @@ static void try_to_simplify_commit(struct rev_info *revs, struct commit *commit)
 			die("cannot simplify commit %s (because of %s)",
 			    oid_to_hex(&commit->object.oid),
 			    oid_to_hex(&p->object.oid));
-		switch (rev_compare_tree(revs, p, commit)) {
+		switch (rev_compare_tree(revs, p, commit, nth_parent)) {
 		case REV_TREE_SAME:
 			if (!revs->simplify_history || !relevant_commit(p)) {
 				/* Even if a merge with an uninteresting
@@ -3326,6 +3365,37 @@ static void expand_topo_walk(struct rev_info *revs, struct commit *commit)
 	}
 }
 
+static void prepare_to_use_bloom_filter(struct rev_info *revs)
+{
+	const char *env = getenv("GIT_USE_POC_BLOOM_FILTER");
+	int i;
+
+	parse_commit(revs->commits->item);
+
+	if (!env || !*env)
+		return;
+
+	if (!the_repository->objects->commit_graph)
+		return;
+
+	revs->bloom_settings = the_repository->objects->commit_graph->settings;
+	if (!revs->bloom_settings)
+		return;
+
+	for (i = 0; i < revs->pruning.pathspec.nr; i++) {
+		struct pathspec_item *pi = &revs->pruning.pathspec.items[i];
+		const char *path = pi->match;
+		git_hash_ctx ctx;
+		size_t len = strlen(path);
+
+		revs->bloom_key = xmalloc(sizeof(struct bloom_key));
+		fill_bloom_key(path, len, revs->bloom_key, revs->bloom_settings);
+
+		/* TODO: handle multiple pathspecs */
+		break;
+	}
+}
+
 int prepare_revision_walk(struct rev_info *revs)
 {
 	int i;
@@ -3375,6 +3445,9 @@ int prepare_revision_walk(struct rev_info *revs)
 		simplify_merges(revs);
 	if (revs->children.name)
 		set_children(revs);
+
+	prepare_to_use_bloom_filter(revs);
+
 	return 0;
 }
 
