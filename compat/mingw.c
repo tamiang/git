@@ -1958,6 +1958,7 @@ static int try_shell_exec(const char *cmd, char *const *argv)
 			int status;
 			if (waitpid(pid, &status, 0) < 0)
 				status = 255;
+			trace2_exec_result(status);
 			exit(status);
 		}
 		pid = 1;	/* indicate that we tried but failed */
@@ -1978,6 +1979,7 @@ int mingw_execv(const char *cmd, char *const *argv)
 			return -1;
 		if (waitpid(pid, &status, 0) < 0)
 			status = 255;
+		trace2_exec_result(status);
 		exit(status);
 	}
 	return -1;
