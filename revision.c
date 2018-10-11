@@ -490,7 +490,6 @@ static int check_maybe_different_in_bloom_filter(struct rev_info *revs,
 						 struct commit *parent,
 						 struct commit *commit)
 {
-	unsigned char p_c_hash[GIT_MAX_RAWSZ];
 	int i;
 
 	if (!bf.bits)
@@ -509,17 +508,15 @@ static int check_maybe_different_in_bloom_filter(struct rev_info *revs,
 	 */
 	if (!the_repository->objects->commit_graph)
 		return -1;
-	if (commit->generation == GENERATION_NUMBER_INFINITY)
+	if (commit->graph_pos == COMMIT_NOT_FROM_GRAPH)
 		return -1;
-
-	hashxor(parent->object.oid.hash, commit->object.oid.hash, p_c_hash);
 
 	for (i = 0; i < revs->pruning.pathspec.nr; i++) {
 		struct pathspec_item *pi = &revs->pruning.pathspec.items[i];
 		unsigned char hash[GIT_MAX_RAWSZ];
 
-		hashxor(pi->name_hash, p_c_hash, hash);
-		if (bloom_filter_check_hash(&bf, hash)) {
+		hashxor(pi->name_hash, parent->object.oid.hash, hash);
+		if (bloom_filter_check_hash(&bf, commit->graph_pos, hash)) {
 			/*
 			 * At least one of the interesting pathspecs differs,
 			 * so we can return early and let the diff machinery

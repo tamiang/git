@@ -715,12 +715,10 @@ static int add_ref_to_list(const char *refname,
 static void add_changes_to_bloom_filter(struct bloom_filter *bf,
 					struct commit *parent,
 					struct commit *commit,
+					int index,
 					struct diff_options *diffopt)
 {
-	unsigned char p_c_hash[GIT_MAX_RAWSZ];
 	int i;
-
-	hashxor(parent->object.oid.hash, commit->object.oid.hash, p_c_hash);
 
 	diff_tree_oid(&parent->object.oid, &commit->object.oid, "", diffopt);
 	diffcore_std(diffopt);
@@ -756,8 +754,8 @@ static void add_changes_to_bloom_filter(struct bloom_filter *bf,
 			the_hash_algo->update_fn(&ctx, path, p - path);
 			the_hash_algo->final_fn(name_hash, &ctx);
 
-			hashxor(name_hash, p_c_hash, hash);
-			bloom_filter_add_hash(bf, hash);
+			hashxor(name_hash, parent->object.oid.hash, hash);
+			bloom_filter_add_hash(bf, index, hash);
 		} while (*p);
 
 		diff_free_filepair(diff_queued_diff.queue[i]);
@@ -768,11 +766,10 @@ static void add_changes_to_bloom_filter(struct bloom_filter *bf,
 }
 
 static void fill_bloom_filter(struct bloom_filter *bf,
-				    struct progress *progress)
+				    struct progress *progress, struct commit **commits, int commit_nr)
 {
 	struct rev_info revs;
 	const char *revs_argv[] = {NULL, "--all", NULL};
-	struct commit *commit;
 	int i = 0;
 
 	/* We (re-)create the bloom filter from scratch every time for now. */
@@ -783,18 +780,19 @@ static void fill_bloom_filter(struct bloom_filter *bf,
 	if (prepare_revision_walk(&revs))
 		die("revision walk setup failed while preparing bloom filter");
 
-	while ((commit = get_revision(&revs))) {
+	for (i = 0; i < commit_nr; i++) {
+		struct commit *commit = commits[i];
 		struct commit_list *parent;
 
 		for (parent = commit->parents; parent; parent = parent->next)
-			add_changes_to_bloom_filter(bf, parent->item, commit,
+			add_changes_to_bloom_filter(bf, parent->item, commit, i,
 						    &revs.diffopt);
 
-		display_progress(progress, ++i);
+		display_progress(progress, i);
 	}
 }
 
-static void write_bloom_filter(int report_progress, int commit_nr)
+static void write_bloom_filter(int report_progress, struct commit **commits, int commit_nr)
 {
 	struct bloom_filter bf;
 	struct progress *progress = NULL;
@@ -809,13 +807,13 @@ static void write_bloom_filter(int report_progress, int commit_nr)
 	if (*end)
 		die("GIT_USE_POC_BLOOM_FILTER must specify the number of bits in the bloom filter (multiple of 8, n < 2^32)");
 
-	bloom_filter_init(&bf, bitsize);
+	bloom_filter_init(&bf, commit_nr, bitsize);
 
 	if (report_progress)
 		progress = start_progress(_("Computing bloom filter"),
 					  commit_nr);
 
-	fill_bloom_filter(&bf, progress);
+	fill_bloom_filter(&bf, progress, commits, commit_nr);
 
 	bloom_filter_write(&bf);
 	bloom_filter_free(&bf);
@@ -1030,7 +1028,7 @@ void write_commit_graph(const char *obj_dir,
 	finalize_hashfile(f, NULL, CSUM_HASH_IN_STREAM | CSUM_FSYNC);
 	commit_lock_file(&lk);
 
-	write_bloom_filter(report_progress, commits.nr);
+	write_bloom_filter(report_progress, commits.list, commits.nr);
 
 	free(graph_name);
 	free(commits.list);
