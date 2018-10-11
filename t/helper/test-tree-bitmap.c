@@ -4,6 +4,7 @@
 #include "argv-array.h"
 #include "ewah/ewok.h"
 #include "varint.h"
+#include "t/helper/test-tool.h"
 
 /* map of pathnames to bit positions */
 struct pathmap_entry {
@@ -327,7 +328,7 @@ out:
 	strbuf_release(&in);
 }
 
-int cmd_main(int argc, const char **argv)
+int cmd__tree_bitmap(int argc, const char **argv)
 {
 	const char *usage_msg = "test-tree-bitmap <gen|dump>";
 
