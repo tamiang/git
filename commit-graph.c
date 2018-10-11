@@ -782,9 +782,9 @@ static void fill_bloom_filter(struct bloom_filter *bf,
 
 	for (i = 0; i < commit_nr; i++) {
 		struct commit *commit = commits[i];
-		struct commit_list *parent;
+		struct commit_list *parent = commit->parents;
 
-		for (parent = commit->parents; parent; parent = parent->next)
+		if (parent)
 			add_changes_to_bloom_filter(bf, parent->item, commit, i,
 						    &revs.diffopt);
 

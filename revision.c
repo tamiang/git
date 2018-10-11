@@ -539,11 +539,11 @@ static int check_maybe_different_in_bloom_filter(struct rev_info *revs,
 }
 
 static int rev_compare_tree(struct rev_info *revs,
-			    struct commit *parent, struct commit *commit)
+			    struct commit *parent, struct commit *commit, int nth_parent)
 {
 	struct tree *t1 = get_commit_tree(parent);
 	struct tree *t2 = get_commit_tree(commit);
-	int bloom_ret;
+	int bloom_ret = 1;
 
 	if (!t1)
 		return REV_TREE_NEW;
@@ -568,17 +568,21 @@ static int rev_compare_tree(struct rev_info *revs,
 			return REV_TREE_SAME;
 	}
 
-	bloom_ret = check_maybe_different_in_bloom_filter(revs, parent, commit);
-	if (bloom_ret == 0)
-		return REV_TREE_SAME;
+	if (!nth_parent) {
+		bloom_ret = check_maybe_different_in_bloom_filter(revs, parent, commit);
+		if (bloom_ret == 0)
+			return REV_TREE_SAME;
+	}
 
 	tree_difference = REV_TREE_SAME;
 	revs->pruning.flags.has_changes = 0;
 	if (diff_tree_oid(&t1->object.oid, &t2->object.oid, "",
 			   &revs->pruning) < 0)
 		return REV_TREE_DIFFERENT;
-	if (bloom_ret == 1 && tree_difference == REV_TREE_SAME)
-		bloom_filter_count_false_positive++;
+	if (!nth_parent) {
+		if (bloom_ret == 1 && tree_difference == REV_TREE_SAME)
+			bloom_filter_count_false_positive++;
+	}
 	return tree_difference;
 }
 
@@ -776,7 +780,7 @@ static void try_to_simplify_commit(struct rev_info *revs, struct commit *commit)
 			die("cannot simplify commit %s (because of %s)",
 			    oid_to_hex(&commit->object.oid),
 			    oid_to_hex(&p->object.oid));
-		switch (rev_compare_tree(revs, p, commit)) {
+		switch (rev_compare_tree(revs, p, commit, nth_parent)) {
 		case REV_TREE_SAME:
 			if (!revs->simplify_history || !relevant_commit(p)) {
 				/* Even if a merge with an uninteresting
