@@ -54,7 +54,7 @@ static int use_builtin_rebase(void)
 	cp.git_cmd = 1;
 	if (capture_command(&cp, &out, 6)) {
 		strbuf_release(&out);
-		return 0;
+		return 1;
 	}
 
 	strbuf_trim(&out);
@@ -365,7 +365,8 @@ N_("Resolve all conflicts manually, mark them as resolved with\n"
 "\"git rebase --abort\".");
 
 static int reset_head(struct object_id *oid, const char *action,
-		      const char *switch_to_branch, int detach_head,
+		      const char *switch_to_branch,
+		      int detach_head, int reset_hard,
 		      const char *reflog_orig_head, const char *reflog_head);
 
 static int move_to_original_branch(struct rebase_options *opts)
@@ -377,7 +378,7 @@ static int move_to_original_branch(struct rebase_options *opts)
 		strbuf_addf(&buf, "rebase finished: %s onto %s",
 			    opts->head_name,
 			    oid_to_hex(&opts->onto->object.oid));
-	ret = reset_head(NULL, "checkout", opts->head_name, 0,
+	ret = reset_head(NULL, "checkout", opts->head_name, 0, 0,
 			 "HEAD", buf.buf);
 
 	strbuf_release(&buf);
@@ -458,7 +459,7 @@ static int run_am(struct rebase_options *opts)
 		free(rebased_patches);
 		argv_array_clear(&am.args);
 
-		reset_head(&opts->orig_head, "checkout", opts->head_name, 0,
+		reset_head(&opts->orig_head, "checkout", opts->head_name, 0, 0,
 			   "HEAD", NULL);
 		error(_("\ngit encountered an error while preparing the "
 			"patches to replay\n"
@@ -700,11 +701,12 @@ finished_rebase:
 #define GIT_REFLOG_ACTION_ENVIRONMENT "GIT_REFLOG_ACTION"
 
 static int reset_head(struct object_id *oid, const char *action,
-		      const char *switch_to_branch, int detach_head,
+		      const char *switch_to_branch,
+		      int detach_head, int reset_hard,
 		      const char *reflog_orig_head, const char *reflog_head)
 {
 	struct object_id head_oid;
-	struct tree_desc desc;
+	struct tree_desc desc[2];
 	struct lock_file lock = LOCK_INIT;
 	struct unpack_trees_options unpack_tree_opts;
 	struct tree *tree;
@@ -713,7 +715,7 @@ static int reset_head(struct object_id *oid, const char *action,
 	size_t prefix_len;
 	struct object_id *orig = NULL, oid_orig,
 		*old_orig = NULL, oid_old_orig;
-	int ret = 0;
+	int ret = 0, nr = 0;
 
 	if (switch_to_branch && !starts_with(switch_to_branch, "refs/"))
 		BUG("Not a fully qualified branch: '%s'", switch_to_branch);
@@ -721,20 +723,20 @@ static int reset_head(struct object_id *oid, const char *action,
 	if (hold_locked_index(&lock, LOCK_REPORT_ON_ERROR) < 0)
 		return -1;
 
-	if (!oid) {
-		if (get_oid("HEAD", &head_oid)) {
-			rollback_lock_file(&lock);
-			return error(_("could not determine HEAD revision"));
-		}
-		oid = &head_oid;
+	if (get_oid("HEAD", &head_oid)) {
+		rollback_lock_file(&lock);
+		return error(_("could not determine HEAD revision"));
 	}
+
+	if (!oid)
+		oid = &head_oid;
 
 	memset(&unpack_tree_opts, 0, sizeof(unpack_tree_opts));
 	setup_unpack_trees_porcelain(&unpack_tree_opts, action);
 	unpack_tree_opts.head_idx = 1;
 	unpack_tree_opts.src_index = the_repository->index;
 	unpack_tree_opts.dst_index = the_repository->index;
-	unpack_tree_opts.fn = oneway_merge;
+	unpack_tree_opts.fn = reset_hard ? oneway_merge : twoway_merge;
 	unpack_tree_opts.update = 1;
 	unpack_tree_opts.merge = 1;
 	if (!detach_head)
@@ -745,16 +747,27 @@ static int reset_head(struct object_id *oid, const char *action,
 		return error(_("could not read index"));
 	}
 
-	if (!fill_tree_descriptor(&desc, oid)) {
+	if (!reset_hard && !fill_tree_descriptor(&desc[nr++], &head_oid)) {
 		error(_("failed to find tree of %s"), oid_to_hex(oid));
 		rollback_lock_file(&lock);
-		free((void *)desc.buffer);
+		free((void *)desc[nr - 1].buffer);
 		return -1;
 	}
 
-	if (unpack_trees(1, &desc, &unpack_tree_opts)) {
+	if (!fill_tree_descriptor(&desc[nr++], oid)) {
+		error(_("failed to find tree of %s"), oid_to_hex(oid));
 		rollback_lock_file(&lock);
-		free((void *)desc.buffer);
+		free((void *)desc[nr - 1].buffer);
+		if (nr > 1)
+			free((void *)desc[nr - 2].buffer);
+		return -1;
+	}
+
+	if (unpack_trees(nr, desc, &unpack_tree_opts)) {
+		rollback_lock_file(&lock);
+		free((void *)desc[nr - 1].buffer);
+		if (nr > 1)
+			free((void *)desc[nr - 2].buffer);
 		return -1;
 	}
 
@@ -763,7 +776,9 @@ static int reset_head(struct object_id *oid, const char *action,
 
 	if (write_locked_index(the_repository->index, &lock, COMMIT_LOCK) < 0)
 		ret = error(_("could not write index"));
-	free((void *)desc.buffer);
+	free((void *)desc[nr - 1].buffer);
+	if (nr > 1)
+		free((void *)desc[nr - 2].buffer);
 
 	if (ret)
 		return ret;
@@ -1180,7 +1195,7 @@ int cmd_rebase(int argc, const char **argv, const char *prefix)
 		rerere_clear(&merge_rr);
 		string_list_clear(&merge_rr, 1);
 
-		if (reset_head(NULL, "reset", NULL, 0, NULL, NULL) < 0)
+		if (reset_head(NULL, "reset", NULL, 0, 1, NULL, NULL) < 0)
 			die(_("could not discard worktree changes"));
 		if (read_basic_state(&options))
 			exit(1);
@@ -1196,7 +1211,7 @@ int cmd_rebase(int argc, const char **argv, const char *prefix)
 		if (read_basic_state(&options))
 			exit(1);
 		if (reset_head(&options.orig_head, "reset",
-			       options.head_name, 0, NULL, NULL) < 0)
+			       options.head_name, 0, 1, NULL, NULL) < 0)
 			die(_("could not move back to %s"),
 			    oid_to_hex(&options.orig_head));
 		ret = finish_rebase(&options);
@@ -1560,7 +1575,7 @@ int cmd_rebase(int argc, const char **argv, const char *prefix)
 			write_file(autostash, "%s", buf.buf);
 			printf(_("Created autostash: %s\n"), buf.buf);
 			if (reset_head(&head->object.oid, "reset --hard",
-				       NULL, 0, NULL, NULL) < 0)
+				       NULL, 0, 1, NULL, NULL) < 0)
 				die(_("could not reset --hard"));
 			printf(_("HEAD is now at %s"),
 			       find_unique_abbrev(&head->object.oid,
@@ -1614,7 +1629,7 @@ int cmd_rebase(int argc, const char **argv, const char *prefix)
 				strbuf_addf(&buf, "rebase: checkout %s",
 					    options.switch_to);
 				if (reset_head(&oid, "checkout",
-					       options.head_name, 0,
+					       options.head_name, 0, 0,
 					       NULL, NULL) < 0) {
 					ret = !!error(_("could not switch to "
 							"%s"),
@@ -1680,7 +1695,7 @@ int cmd_rebase(int argc, const char **argv, const char *prefix)
 			 "it...\n"));
 
 	strbuf_addf(&msg, "rebase: checkout %s", options.onto_name);
-	if (reset_head(&options.onto->object.oid, "checkout", NULL, 1,
+	if (reset_head(&options.onto->object.oid, "checkout", NULL, 1, 0,
 	    NULL, msg.buf))
 		die(_("Could not detach HEAD"));
 	strbuf_release(&msg);
@@ -1696,7 +1711,7 @@ int cmd_rebase(int argc, const char **argv, const char *prefix)
 		strbuf_addf(&msg, "rebase finished: %s onto %s",
 			options.head_name ? options.head_name : "detached HEAD",
 			oid_to_hex(&options.onto->object.oid));
-		reset_head(NULL, "Fast-forwarded", options.head_name, 0,
+		reset_head(NULL, "Fast-forwarded", options.head_name, 0, 0,
 			   "HEAD", msg.buf);
 		strbuf_release(&msg);
 		ret = !!finish_rebase(&options);
