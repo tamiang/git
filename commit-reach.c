@@ -8,6 +8,7 @@
 #include "revision.h"
 #include "tag.h"
 #include "commit-reach.h"
+#include "commit-graph.h"
 
 /* Remember to update object flag allocation in object.h */
 #define REACHABLE       (1u<<15)
@@ -32,17 +33,16 @@ static int queue_has_nonstale(struct prio_queue *queue)
 /* all input commits in one and twos[] must have been parsed! */
 static struct commit_list *paint_down_to_common(struct commit *one, int n,
 						struct commit **twos,
-						int min_generation)
+						struct generation *min_generation)
 {
 	struct prio_queue queue = { compare_commits_by_gen_then_commit_date };
 	struct commit_list *result = NULL;
 	int i;
-	uint32_t last_gen = GENERATION_NUMBER_INFINITY;
 	uint32_t num_walked = 0;
 
 	trace2_region_enter("paint_down_to_common");
 
-	if (!min_generation)
+	if (!min_generation || !min_generation->value1)
 		queue.compare = compare_commits_by_commit_date;
 
 	one->object.flags |= PARENT1;
@@ -63,13 +63,7 @@ static struct commit_list *paint_down_to_common(struct commit *one, int n,
 		int flags;
 		num_walked++;
 
-		if (min_generation && commit->generation > last_gen)
-			BUG("bad generation skip %8x > %8x at %s",
-			    commit->generation, last_gen,
-			    oid_to_hex(&commit->object.oid));
-		last_gen = commit->generation;
-
-		if (commit->generation < min_generation)
+		if (commit_below_generation(commit, min_generation))
 			break;
 
 		flags = commit->object.flags & (PARENT1 | PARENT2 | STALE);
@@ -182,7 +176,10 @@ static int remove_redundant(struct commit **array, int cnt)
 		parse_commit(array[i]);
 	for (i = 0; i < cnt; i++) {
 		struct commit_list *common;
-		uint32_t min_generation = array[i]->generation;
+		struct generation min_generation;
+
+		get_generation_from_commit_and_graph(array[i],
+			&min_generation);
 
 		if (redundant[i])
 			continue;
@@ -192,11 +189,13 @@ static int remove_redundant(struct commit **array, int cnt)
 			filled_index[filled] = j;
 			work[filled++] = array[j];
 
-			if (array[j]->generation < min_generation)
-				min_generation = array[j]->generation;
+			if (commit_below_generation(array[j], &min_generation))
+				get_generation_from_commit_and_graph(array[j],
+					&min_generation);
 		}
+
 		common = paint_down_to_common(array[i], filled, work,
-					      min_generation);
+					      &min_generation);
 		if (array[i]->object.flags & PARENT2)
 			redundant[i] = 1;
 		for (j = 0; j < filled; j++)
@@ -316,21 +315,28 @@ int in_merge_bases_many(struct commit *commit, int nr_reference, struct commit *
 {
 	struct commit_list *bases;
 	int ret = 0, i;
-	uint32_t min_generation = GENERATION_NUMBER_INFINITY;
+	struct generation min_generation;
+
+	get_generation_infinity_from_graph(&min_generation);
 
 	if (parse_commit(commit))
 		return ret;
+
 	for (i = 0; i < nr_reference; i++) {
 		if (parse_commit(reference[i]))
 			return ret;
-		if (reference[i]->generation < min_generation)
-			min_generation = reference[i]->generation;
+		if (commit_below_generation(reference[i], &min_generation))
+			get_generation_from_commit_and_graph(
+				reference[i],
+				&min_generation);
 	}
 
-	if (commit->generation > min_generation)
+	if (commit_above_generation(commit, &min_generation))
 		return ret;
 
-	bases = paint_down_to_common(commit, nr_reference, reference, commit->generation);
+	get_generation_from_commit_and_graph(commit, &min_generation);
+
+	bases = paint_down_to_common(commit, nr_reference, reference, &min_generation);
 	if (commit->object.flags & PARENT2)
 		ret = 1;
 	clear_commit_marks(commit, all_flags);
@@ -446,7 +452,7 @@ static int in_commit_list(const struct commit_list *want, struct commit *c)
 static enum contains_result contains_test(struct commit *candidate,
 					  const struct commit_list *want,
 					  struct contains_cache *cache,
-					  uint32_t cutoff)
+					  struct generation *cutoff)
 {
 	enum contains_result *cached = contains_cache_at(cache, candidate);
 
@@ -463,7 +469,7 @@ static enum contains_result contains_test(struct commit *candidate,
 	/* Otherwise, we don't know; prepare to recurse */
 	parse_commit_or_die(candidate);
 
-	if (candidate->generation < cutoff)
+	if (commit_below_generation(candidate, cutoff))
 		return CONTAINS_NO;
 
 	return CONTAINS_UNKNOWN;
@@ -482,18 +488,21 @@ static enum contains_result contains_tag_algo(struct commit *candidate,
 {
 	struct contains_stack contains_stack = { 0, 0, NULL };
 	enum contains_result result;
-	uint32_t cutoff = GENERATION_NUMBER_INFINITY;
+	struct generation cutoff;
 	const struct commit_list *p;
 	uint32_t num_walked = 0;
+
+	get_generation_infinity_from_graph(&cutoff);
 
 	for (p = want; p; p = p->next) {
 		struct commit *c = p->item;
 		load_commit_graph_info(the_repository, c);
-		if (c->generation < cutoff)
-			cutoff = c->generation;
+		if (commit_below_generation(c, &cutoff))
+			get_generation_from_commit_and_graph(c,
+				&cutoff);
 	}
 
-	result = contains_test(candidate, want, cache, cutoff);
+	result = contains_test(candidate, want, cache, &cutoff);
 	if (result != CONTAINS_UNKNOWN)
 		return result;
 
@@ -514,7 +523,7 @@ static enum contains_result contains_tag_algo(struct commit *candidate,
 		 * If we just popped the stack, parents->item has been marked,
 		 * therefore contains_test will return a meaningful yes/no.
 		 */
-		else switch (contains_test(parents->item, want, cache, cutoff)) {
+		else switch (contains_test(parents->item, want, cache, &cutoff)) {
 		case CONTAINS_YES:
 			*contains_cache_at(cache, commit) = CONTAINS_YES;
 			contains_stack.nr--;
@@ -529,7 +538,7 @@ static enum contains_result contains_tag_algo(struct commit *candidate,
 	}
 	free(contains_stack.contains_stack);
 
-	result = contains_test(candidate, want, cache, cutoff);
+	result = contains_test(candidate, want, cache, &cutoff);
 
 	trace2_data_intmax("contains_tag_algo", "num_walked", num_walked);
 	trace2_region_leave("contains_tag_algo");
@@ -550,18 +559,19 @@ static int compare_commits_by_gen(const void *_a, const void *_b)
 	const struct commit *a = (const struct commit *)_a;
 	const struct commit *b = (const struct commit *)_b;
 
-	if (a->generation < b->generation)
-		return -1;
-	if (a->generation > b->generation)
-		return 1;
-	return 0;
+	struct generation ga, gb;
+
+	get_generation_from_commit_and_graph(a,	&ga);
+	get_generation_from_commit_and_graph(b,	&gb);
+
+	return compare_generations(&ga, &gb);
 }
 
 int can_all_from_reach_with_flag(struct object_array *from,
 				 unsigned int with_flag,
 				 unsigned int assign_flag,
 				 time_t min_commit_date,
-				 uint32_t min_generation)
+				 struct generation *min_generation)
 {
 	struct commit **list = NULL;
 	int i;
@@ -573,7 +583,7 @@ int can_all_from_reach_with_flag(struct object_array *from,
 		list[i] = (struct commit *)from->objects[i].item;
 
 		if (parse_commit(list[i]) ||
-		    list[i]->generation < min_generation)
+		    commit_below_generation(list[i], min_generation))
 			return 0;
 	}
 
@@ -609,7 +619,7 @@ int can_all_from_reach_with_flag(struct object_array *from,
 
 					if (parse_commit(parent->item) ||
 					    parent->item->date < min_commit_date ||
-					    parent->item->generation < min_generation)
+					    commit_below_generation(parent->item, min_generation))
 						continue;
 
 					commit_list_insert(parent->item, &stack);
@@ -645,7 +655,9 @@ int can_all_from_reach(struct commit_list *from, struct commit_list *to,
 	time_t min_commit_date = cutoff_by_min_date ? from->item->date : 0;
 	struct commit_list *from_iter = from, *to_iter = to;
 	int result;
-	uint32_t min_generation = GENERATION_NUMBER_INFINITY;
+	struct generation min_generation;
+
+	get_generation_infinity_from_graph(&min_generation);
 
 	while (from_iter) {
 		add_object_array(&from_iter->item->object, NULL, &from_objs);
@@ -654,8 +666,10 @@ int can_all_from_reach(struct commit_list *from, struct commit_list *to,
 			if (from_iter->item->date < min_commit_date)
 				min_commit_date = from_iter->item->date;
 
-			if (from_iter->item->generation < min_generation)
-				min_generation = from_iter->item->generation;
+			if (commit_below_generation(from_iter->item, &min_generation))
+				get_generation_from_commit_and_graph(
+					from_iter->item,
+					&min_generation);
 		}
 
 		from_iter = from_iter->next;
@@ -666,8 +680,10 @@ int can_all_from_reach(struct commit_list *from, struct commit_list *to,
 			if (to_iter->item->date < min_commit_date)
 				min_commit_date = to_iter->item->date;
 
-			if (to_iter->item->generation < min_generation)
-				min_generation = to_iter->item->generation;
+			if (commit_below_generation(to_iter->item, &min_generation))
+				get_generation_from_commit_and_graph(
+					to_iter->item,
+					&min_generation);
 		}
 
 		to_iter->item->object.flags |= PARENT2;
@@ -676,7 +692,7 @@ int can_all_from_reach(struct commit_list *from, struct commit_list *to,
 	}
 
 	result = can_all_from_reach_with_flag(&from_objs, PARENT2, PARENT1,
-					      min_commit_date, min_generation);
+					      min_commit_date, &min_generation);
 
 	while (from) {
 		clear_commit_marks(from->item, PARENT1);

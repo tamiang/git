@@ -25,6 +25,7 @@
 #include "upload-pack.h"
 #include "serve.h"
 #include "commit-reach.h"
+#include "commit-graph.h"
 
 /* Remember to update object flag allocation in object.h */
 #define THEY_HAVE	(1u << 11)
@@ -339,14 +340,16 @@ static int got_oid(const char *hex, struct object_id *oid)
 
 static int ok_to_give_up(void)
 {
-	uint32_t min_generation = GENERATION_NUMBER_ZERO;
+	struct generation min_generation;
+
+	get_generation_infinity_from_graph(&min_generation);
 
 	if (!have_obj.nr)
 		return 0;
 
 	return can_all_from_reach_with_flag(&want_obj, THEY_HAVE,
 					    COMMON_KNOWN, oldest_have,
-					    min_generation);
+					    &min_generation);
 }
 
 static int get_common_commits(void)

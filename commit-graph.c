@@ -56,6 +56,119 @@ static struct commit_graph *alloc_commit_graph(void)
 	return g;
 }
 
+int compare_generations(struct generation *a, struct generation *b)
+{
+	switch (a->version) {
+	case 0:
+		if (a->value1 < b->value1)
+			return -1;
+		if (a->value1 > b->value1)
+			return 1;
+		return 0;
+
+	case 1:
+		if (a->value1 < b->value1)
+			return -1;
+		if (a->value1 > b->value1)
+			return 1;
+
+		if (a->value1 == GENERATION_NUMBER_INFINITY)
+			return 0;
+
+		if (a->date < b->date)
+			return -1;
+		if (a->date > b->date)
+			return 1;
+		return 0;
+	}
+
+	return 0;
+}
+
+void get_generation_infinity_from_graph(struct generation *gen)
+{
+	struct commit_graph *graph = NULL;
+
+	if (the_repository && the_repository->objects)
+		graph = the_repository->objects->commit_graph;
+
+	gen->version = graph ? graph->generation_number_version : 0;
+	gen->value1 = GENERATION_NUMBER_INFINITY;
+	gen->date = 0;
+}
+
+static void get_generation_version_from_commit(const struct commit *c,
+					       int version,
+					       struct generation *gen)
+{
+	gen->version = version;
+	switch (version) {
+		case 0:
+			gen->value1 = c->generation;
+			gen->date = 0;
+			break;
+
+		default:
+			die(_("unknown generation number version: %d"),
+			    version);
+	}
+}
+
+void get_generation_from_commit_and_graph(const struct commit *c,
+					  struct generation *gen)
+{
+	struct commit_graph *graph = NULL;
+
+	if (the_repository && the_repository->objects)
+		graph = the_repository->objects->commit_graph;
+
+	get_generation_version_from_commit(c,
+		graph ? graph->generation_number_version : 0,
+		gen);
+}
+
+int commit_below_generation(const struct commit *c, struct generation *g)
+{
+	struct generation gc;
+
+	if (!g)
+		return 0;
+
+	get_generation_version_from_commit(c, g->version, &gc);
+
+	switch (g->version) {
+		case 0:
+			return gc.value1 < g->value1;
+
+		default:
+			die(_("unknown generation number version: %d"),
+			    g->version);
+	}
+
+	return 0;
+}
+
+int commit_above_generation(const struct commit *c, struct generation *g)
+{
+	struct generation gc;
+
+	if (!g)
+		return 0;
+
+	get_generation_version_from_commit(c, g->version, &gc);
+
+	switch (g->version) {
+		case 0:
+			return gc.value1 > g->value1;
+
+		default:
+			die(_("unknown generation number version: %d"),
+			    g->version);
+	}
+
+	return 0;
+}
+
 struct commit_graph *load_commit_graph_one(const char *graph_file)
 {
 	void *graph_map;
@@ -110,6 +223,9 @@ struct commit_graph *load_commit_graph_one(const char *graph_file)
 
 	graph->hash_len = GRAPH_OID_LEN;
 	graph->num_chunks = *(unsigned char*)(data + 6);
+
+	graph->generation_number_version = (int)*(unsigned char*)(data + 7);
+
 	graph->graph_fd = fd;
 	graph->data = graph_map;
 	graph->data_len = graph_size;

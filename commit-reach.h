@@ -7,6 +7,7 @@ struct commit;
 struct commit_list;
 struct contains_cache;
 struct ref_filter;
+struct generation;
 
 struct commit_list *get_merge_bases_many(struct commit *one,
 					 int n,
@@ -70,7 +71,7 @@ int can_all_from_reach_with_flag(struct object_array *from,
 				 unsigned int with_flag,
 				 unsigned int assign_flag,
 				 time_t min_commit_date,
-				 uint32_t min_generation);
+				 struct generation *min_generation);
 int can_all_from_reach(struct commit_list *from, struct commit_list *to,
 		       int commit_date_cutoff);
 
