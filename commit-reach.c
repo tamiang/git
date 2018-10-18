@@ -42,6 +42,9 @@ static struct commit_list *paint_down_to_common(struct commit *one, int n,
 
 	trace2_region_enter("paint_down_to_common");
 
+	if (!min_generation)
+		queue.compare = compare_commits_by_commit_date;
+
 	one->object.flags |= PARENT1;
 	if (!n) {
 		commit_list_append(one, &result);
@@ -60,7 +63,7 @@ static struct commit_list *paint_down_to_common(struct commit *one, int n,
 		int flags;
 		num_walked++;
 
-		if (commit->generation > last_gen)
+		if (min_generation && commit->generation > last_gen)
 			BUG("bad generation skip %8x > %8x at %s",
 			    commit->generation, last_gen,
 			    oid_to_hex(&commit->object.oid));

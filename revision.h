@@ -24,6 +24,8 @@
 #define USER_GIVEN	(1u<<25) /* given directly by the user */
 #define TRACK_LINEAR	(1u<<26)
 #define ALL_REV_FLAGS	(((1u<<11)-1) | USER_GIVEN | TRACK_LINEAR)
+#define TOPO_WALK_EXPLORED	(1u<<27)
+#define TOPO_WALK_INDEGREE	(1u<<28)
 
 #define DECORATE_SHORT_REFS	1
 #define DECORATE_FULL_REFS	2
@@ -56,6 +58,8 @@ struct rev_cmdline_info {
 #define REVISION_WALK_NO_WALK_SORTED 1
 #define REVISION_WALK_NO_WALK_UNSORTED 2
 
+struct topo_walk_info;
+
 struct rev_info {
 	/* Starting list */
 	struct commit_list *commits;
@@ -81,6 +85,11 @@ struct rev_info {
 	 * list (e.g., patterns like "--all" or "--glob").
 	 */
 	int rev_input_given;
+
+	/*
+	 * Whether we read from stdin due to the --stdin option.
+	 */
+	int read_from_stdin;
 
 	/* topo-sort */
 	enum rev_sort_order sort_order;
@@ -214,6 +223,17 @@ struct rev_info {
 	/* notes-specific options: which refs to show */
 	struct display_notes_opt notes_opt;
 
+	/* interdiff */
+	const struct object_id *idiff_oid1;
+	const struct object_id *idiff_oid2;
+	const char *idiff_title;
+
+	/* range-diff */
+	const char *rdiff1;
+	const char *rdiff2;
+	int creation_factor;
+	const char *rdiff_title;
+
 	/* commit counts */
 	int count_left;
 	int count_right;
@@ -229,6 +249,8 @@ struct rev_info {
 	const char *break_bar;
 
 	struct revision_sources *sources;
+
+	struct topo_walk_info *topo_walk_info;
 };
 
 int ref_excluded(struct string_list *, const char *path);

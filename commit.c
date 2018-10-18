@@ -46,7 +46,7 @@ struct commit *lookup_commit_or_die(const struct object_id *oid, const char *ref
 	struct commit *c = lookup_commit_reference(the_repository, oid);
 	if (!c)
 		die(_("could not parse %s"), ref_name);
-	if (oidcmp(oid, &c->object.oid)) {
+	if (!oideq(oid, &c->object.oid)) {
 		warning(_("%s %s is not a commit!"),
 			ref_name, oid_to_hex(oid));
 	}
@@ -655,11 +655,10 @@ struct commit *pop_commit(struct commit_list **stack)
 /* count number of children that have not been emitted */
 define_commit_slab(indegree_slab, int);
 
-/* record author-date for each commit object */
-define_commit_slab(author_date_slab, timestamp_t);
+implement_shared_commit_slab(author_date_slab, timestamp_t);
 
-static void record_author_date(struct author_date_slab *author_date,
-			       struct commit *commit)
+void record_author_date(struct author_date_slab *author_date,
+			struct commit *commit)
 {
 	const char *buffer = get_commit_buffer(commit, NULL);
 	struct ident_split ident;
@@ -684,8 +683,8 @@ fail_exit:
 	unuse_commit_buffer(commit, buffer);
 }
 
-static int compare_commits_by_author_date(const void *a_, const void *b_,
-					  void *cb_data)
+int compare_commits_by_author_date(const void *a_, const void *b_,
+				   void *cb_data)
 {
 	const struct commit *a = a_, *b = b_;
 	struct author_date_slab *author_date = cb_data;
@@ -1426,10 +1425,10 @@ const char *find_commit_header(const char *msg, const char *key, size_t *out_len
  * Returns the number of bytes from the tail to ignore, to be fed as
  * the second parameter to append_signoff().
  */
-int ignore_non_trailer(const char *buf, size_t len)
+size_t ignore_non_trailer(const char *buf, size_t len)
 {
-	int boc = 0;
-	int bol = 0;
+	size_t boc = 0;
+	size_t bol = 0;
 	int in_old_conflicts_block = 0;
 	size_t cutoff = wt_status_locate_end(buf, len);
 

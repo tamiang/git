@@ -30,6 +30,7 @@ static struct test_cmd cmds[] = {
 	{ "prio-queue", cmd__prio_queue },
 	{ "reach", cmd__reach },
 	{ "read-cache", cmd__read_cache },
+	{ "read-midx", cmd__read_midx },
 	{ "ref-store", cmd__ref_store },
 	{ "regex", cmd__regex },
 	{ "repository", cmd__repository },
