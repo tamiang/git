@@ -413,6 +413,8 @@ static int cmd_log_walk(struct rev_info *rev)
 	    rev->diffopt.flags.check_failed) {
 		return 02;
 	}
+
+	log_topo_stats(rev);
 	return diff_result_code(&rev->diffopt, 0);
 }
 
@@ -1953,6 +1955,8 @@ int cmd_format_patch(int argc, const char **argv, const char *prefix)
 		free_patch_ids(&ids);
 
 done:
+	log_topo_stats(&rev);
+
 	oid_array_clear(&idiff_prev);
 	strbuf_release(&idiff_title);
 	strbuf_release(&rdiff1);

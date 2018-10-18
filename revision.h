@@ -59,6 +59,7 @@ struct rev_cmdline_info {
 #define REVISION_WALK_NO_WALK_UNSORTED 2
 
 struct topo_walk_info;
+void log_topo_stats(struct rev_info *revs);
 
 struct rev_info {
 	/* Starting list */

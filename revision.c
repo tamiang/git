@@ -27,6 +27,7 @@
 #include "commit-reach.h"
 #include "commit-graph.h"
 #include "prio-queue.h"
+#include "trace2.h"
 
 volatile show_early_output_fn_t show_early_output;
 
@@ -2905,7 +2906,22 @@ struct topo_walk_info {
 	struct prio_queue topo_queue;
 	struct indegree_slab indegree;
 	struct author_date_slab author_date;
+	uint32_t num_walked_explore;
+	uint32_t num_walked_indegree;
+	uint32_t num_walked_topo;
 };
+
+void log_topo_stats(struct rev_info *revs)
+{
+	struct topo_walk_info *info = revs->topo_walk_info;
+
+	if (!info)
+		return;
+
+	trace2_data_intmax("log", "num_walked_explore", info->num_walked_explore);
+	trace2_data_intmax("log", "num_walked_indegree", info->num_walked_indegree);
+	trace2_data_intmax("log", "num_walked_topo", info->num_walked_topo);
+}
 
 static inline void test_flag_and_insert(struct prio_queue *q, struct commit *c, int flag)
 {
@@ -2924,6 +2940,8 @@ static void explore_walk_step(struct rev_info *revs)
 
 	if (!c)
 		return;
+
+	info->num_walked_explore++;
 
 	if (parse_commit_gently(c, 1) < 0)
 		return;
@@ -2962,6 +2980,8 @@ static void indegree_walk_step(struct rev_info *revs)
 
 	if (!c)
 		return;
+
+	info->num_walked_indegree++;
 
 	if (parse_commit_gently(c, 1) < 0)
 		return;
@@ -3069,6 +3089,8 @@ static struct commit *next_topo_commit(struct rev_info *revs)
 
 	/* pop next off of topo_queue */
 	c = prio_queue_get(&info->topo_queue);
+
+	info->num_walked_topo++;
 
 	if (c)
 		*(indegree_slab_at(&info->indegree, c)) = 0;
