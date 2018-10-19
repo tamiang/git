@@ -42,9 +42,6 @@ static struct commit_list *paint_down_to_common(struct commit *one, int n,
 
 	trace2_region_enter("paint_down_to_common");
 
-	if (!min_generation || !min_generation->value1)
-		queue.compare = compare_commits_by_commit_date;
-
 	one->object.flags |= PARENT1;
 	if (!n) {
 		commit_list_append(one, &result);

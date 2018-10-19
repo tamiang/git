@@ -10,7 +10,7 @@ static char const * const builtin_commit_graph_usage[] = {
 	N_("git commit-graph [--object-dir <objdir>]"),
 	N_("git commit-graph read [--object-dir <objdir>]"),
 	N_("git commit-graph verify [--object-dir <objdir>]"),
-	N_("git commit-graph write [--object-dir <objdir>] [--append] [--reachable|--stdin-packs|--stdin-commits]"),
+	N_("git commit-graph write [--object-dir <objdir>] [--append] [--version=<n>] [--reachable|--stdin-packs|--stdin-commits]"),
 	NULL
 };
 
@@ -25,7 +25,7 @@ static const char * const builtin_commit_graph_read_usage[] = {
 };
 
 static const char * const builtin_commit_graph_write_usage[] = {
-	N_("git commit-graph write [--object-dir <objdir>] [--append] [--reachable|--stdin-packs|--stdin-commits]"),
+	N_("git commit-graph write [--object-dir <objdir>] [--append] [--version=<n>] [--reachable|--stdin-packs|--stdin-commits]"),
 	NULL
 };
 
@@ -35,6 +35,7 @@ static struct opts_commit_graph {
 	int stdin_packs;
 	int stdin_commits;
 	int append;
+	int version;
 } opts;
 
 
@@ -138,6 +139,8 @@ static int graph_write(int argc, const char **argv)
 			N_("start walk at commits listed by stdin")),
 		OPT_BOOL(0, "append", &opts.append,
 			N_("include all commits already in the commit-graph file")),
+		OPT_INTEGER(0, "version", &opts.version,
+			N_("the version of generation numbers to use")),
 		OPT_END(),
 	};
 
@@ -151,7 +154,7 @@ static int graph_write(int argc, const char **argv)
 		opts.obj_dir = get_object_directory();
 
 	if (opts.reachable) {
-		write_commit_graph_reachable(opts.obj_dir, opts.append);
+		write_commit_graph_reachable(opts.obj_dir, opts.append, opts.version);
 		return 0;
 	}
 
@@ -171,7 +174,8 @@ static int graph_write(int argc, const char **argv)
 	write_commit_graph(opts.obj_dir,
 			   pack_indexes,
 			   commit_hex,
-			   opts.append);
+			   opts.append,
+			   opts.version);
 
 	string_list_clear(&lines, 0);
 	return 0;

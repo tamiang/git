@@ -226,6 +226,8 @@ struct commit_graph *load_commit_graph_one(const char *graph_file)
 
 	graph->generation_number_version = (int)*(unsigned char*)(data + 7);
 
+	trace2_data_intmax("commit-graph", "gen_version", graph->generation_number_version);
+
 	graph->graph_fd = fd;
 	graph->data = graph_map;
 	graph->data_len = graph_size;
@@ -802,19 +804,22 @@ static int add_ref_to_list(const char *refname,
 	return 0;
 }
 
-void write_commit_graph_reachable(const char *obj_dir, int append)
+void write_commit_graph_reachable(const char *obj_dir, int append,
+				  int generation_version)
 {
 	struct string_list list;
 
 	string_list_init(&list, 1);
 	for_each_ref(add_ref_to_list, &list);
-	write_commit_graph(obj_dir, NULL, &list, append);
+	write_commit_graph(obj_dir, NULL, &list, append,
+			   generation_version);
 }
 
 void write_commit_graph(const char *obj_dir,
 			struct string_list *pack_indexes,
 			struct string_list *commit_hex,
-			int append)
+			int append,
+			int generation_version)
 {
 	struct packed_oid_list oids;
 	struct packed_commit_list commits;
@@ -949,7 +954,7 @@ void write_commit_graph(const char *obj_dir,
 	hashwrite_u8(f, GRAPH_VERSION);
 	hashwrite_u8(f, GRAPH_OID_VERSION);
 	hashwrite_u8(f, num_chunks);
-	hashwrite_u8(f, 0); /* unused padding byte */
+	hashwrite_u8(f, (unsigned char)generation_version);
 
 	chunk_ids[0] = GRAPH_CHUNKID_OIDFANOUT;
 	chunk_ids[1] = GRAPH_CHUNKID_OIDLOOKUP;
