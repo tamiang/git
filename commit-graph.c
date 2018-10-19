@@ -56,10 +56,25 @@ static struct commit_graph *alloc_commit_graph(void)
 	return g;
 }
 
+static void prepare_commit_graph_one(struct repository *r, const char *obj_dir)
+{
+	char *graph_name;
+
+	if (r->objects->commit_graph)
+		return;
+
+	graph_name = get_commit_graph_filename(obj_dir);
+	r->objects->commit_graph =
+		load_commit_graph_one(graph_name);
+
+	FREE_AND_NULL(graph_name);
+}
+
 int compare_generations(struct generation *a, struct generation *b)
 {
 	switch (a->version) {
 	case 0:
+	case 2:
 		if (a->value1 < b->value1)
 			return -1;
 		if (a->value1 > b->value1)
@@ -89,6 +104,8 @@ void get_generation_infinity_from_graph(struct generation *gen)
 {
 	struct commit_graph *graph = NULL;
 
+	prepare_commit_graph_one(the_repository, get_object_directory());
+
 	if (the_repository && the_repository->objects)
 		graph = the_repository->objects->commit_graph;
 
@@ -104,8 +121,14 @@ static void get_generation_version_from_commit(const struct commit *c,
 	gen->version = version;
 	switch (version) {
 		case 0:
+		case 2:
 			gen->value1 = c->generation;
 			gen->date = 0;
+			break;
+
+		case 1:
+			gen->value1 = c->generation;
+			gen->date = c->date;
 			break;
 
 		default:
@@ -118,6 +141,8 @@ void get_generation_from_commit_and_graph(const struct commit *c,
 					  struct generation *gen)
 {
 	struct commit_graph *graph = NULL;
+
+	prepare_commit_graph_one(the_repository, get_object_directory());
 
 	if (the_repository && the_repository->objects)
 		graph = the_repository->objects->commit_graph;
@@ -138,7 +163,16 @@ int commit_below_generation(const struct commit *c, struct generation *g)
 
 	switch (g->version) {
 		case 0:
+		case 2:
 			return gc.value1 < g->value1;
+
+		case 1:
+			if (gc.value1 < g->value1)
+				return 1;
+			if (gc.value1 == g->value1 &&
+			    gc.date < g->date)
+				return 1;
+			return 0;
 
 		default:
 			die(_("unknown generation number version: %d"),
@@ -159,7 +193,16 @@ int commit_above_generation(const struct commit *c, struct generation *g)
 
 	switch (g->version) {
 		case 0:
+		case 2:
 			return gc.value1 > g->value1;
+
+		case 1:
+			if (gc.value1 > g->value1)
+				return 1;
+			if (gc.value1 == g->value1 &&
+			    gc.date > g->date)
+				return 1;
+			return 0;
 
 		default:
 			die(_("unknown generation number version: %d"),
@@ -301,19 +344,6 @@ cleanup_fail:
 	exit(1);
 }
 
-static void prepare_commit_graph_one(struct repository *r, const char *obj_dir)
-{
-	char *graph_name;
-
-	if (r->objects->commit_graph)
-		return;
-
-	graph_name = get_commit_graph_filename(obj_dir);
-	r->objects->commit_graph =
-		load_commit_graph_one(graph_name);
-
-	FREE_AND_NULL(graph_name);
-}
 
 /*
  * Return 1 if commit_graph is non-NULL, and 0 otherwise.
@@ -755,7 +785,15 @@ static void close_reachable(struct packed_oid_list *oids)
 	}
 }
 
-static void compute_generation_numbers(struct packed_commit_list* commits)
+static void clear_generation_numbers(struct packed_commit_list* commits)
+{
+	int i;
+
+	for (i = 0; i < commits->nr; i++)
+		commits->list[i]->generation = GENERATION_NUMBER_ZERO;
+}
+
+static void compute_generation_numbers_0(struct packed_commit_list* commits)
 {
 	int i;
 	struct commit_list *list = NULL;
@@ -791,6 +829,109 @@ static void compute_generation_numbers(struct packed_commit_list* commits)
 					current->generation = GENERATION_NUMBER_MAX;
 			}
 		}
+	}
+}
+
+static void compute_generation_numbers_1(struct packed_commit_list* commits)
+{
+	int i;
+	struct commit_list *list = NULL;
+
+	for (i = 0; i < commits->nr; i++) {
+		if (commits->list[i]->generation != GENERATION_NUMBER_INFINITY &&
+		    commits->list[i]->generation != GENERATION_NUMBER_ZERO)
+			continue;
+
+		commit_list_insert(commits->list[i], &list);
+		while (list) {
+			struct commit *current = list->item;
+			struct commit_list *parent;
+			int all_parents_computed = 1;
+			uint32_t max_generation = 1;
+
+			for (parent = current->parents; parent; parent = parent->next) {
+				if (parent->item->generation == GENERATION_NUMBER_INFINITY ||
+				    parent->item->generation == GENERATION_NUMBER_ZERO) {
+					all_parents_computed = 0;
+					commit_list_insert(parent->item, &list);
+					break;
+				} else if (parent->item->date > current->date) {
+					/*
+					 * if clock skew, then ensure strictly greater
+					 * generation number.
+					 */
+					fprintf(stderr, "clock skew at %s\n", oid_to_hex(&current->object.oid));
+					if (parent->item->generation >= max_generation)
+						max_generation = parent->item->generation + 1;
+				} else if (parent->item->generation > max_generation) {
+					/*
+					 * otherwise, equal generation is fine.
+					 */
+					max_generation = parent->item->generation;
+				}
+			}
+
+			if (all_parents_computed) {
+				current->generation = max_generation;
+				pop_commit(&list);
+
+				if (current->generation > GENERATION_NUMBER_MAX)
+					current->generation = GENERATION_NUMBER_MAX;
+			}
+		}
+	}
+}
+
+static void compute_generation_numbers_2(struct packed_commit_list *commits)
+{
+	int i;
+	struct commit *commit;
+	struct commit_list *commit_list = NULL;
+	struct rev_info revs;
+
+	init_revisions(&revs, NULL);
+	revs.topo_order = 1;
+
+	/* initialize to maximum possible value */
+	for (i = 0; i < commits->nr; i++) {
+		commits->list[i]->generation = commits->nr;
+		commit_list_insert(commits->list[i], &commit_list);
+	}
+
+	revs.commits = commit_list;
+
+	while ((commit = get_revision(&revs)) != NULL) {
+		struct commit_list *parents = commit->parents;
+
+		while (parents) {
+			struct commit *p = parents->item;
+
+			if (p->generation >= commit->generation)
+				p->generation = commit->generation - 1;
+
+			parents = parents->next;
+		}
+	}
+}
+
+static void compute_generation_numbers(struct packed_commit_list *commits,
+				       int generation_version)
+{
+	if (the_repository->objects && the_repository->objects->commit_graph &&
+	    the_repository->objects->commit_graph->generation_number_version != generation_version) {
+		clear_generation_numbers(commits);
+	}
+
+	switch (generation_version) {
+	case 0:
+		compute_generation_numbers_0(commits);
+		return;
+	case 1:
+		compute_generation_numbers_1(commits);
+		return;
+	case 2:
+		compute_generation_numbers_2(commits);
+		return;
 	}
 }
 
@@ -939,7 +1080,7 @@ void write_commit_graph(const char *obj_dir,
 	if (commits.nr >= GRAPH_PARENT_MISSING)
 		die(_("too many commits to write graph"));
 
-	compute_generation_numbers(&commits);
+	compute_generation_numbers(&commits, generation_version);
 
 	graph_name = get_commit_graph_filename(obj_dir);
 	if (safe_create_leading_directories(graph_name))
