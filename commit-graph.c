@@ -72,6 +72,8 @@ static void prepare_commit_graph_one(struct repository *r, const char *obj_dir)
 
 int compare_generations(struct generation *a, struct generation *b)
 {
+	timestamp_t ta, tb;
+
 	switch (a->version) {
 	case 0:
 	case 2:
@@ -93,6 +95,25 @@ int compare_generations(struct generation *a, struct generation *b)
 		if (a->date < b->date)
 			return -1;
 		if (a->date > b->date)
+			return 1;
+		return 0;
+
+	case 3:
+		ta = a->date + a->value1;
+		tb = b->date + b->value1;
+
+		if (a->value1 == GENERATION_NUMBER_INFINITY) {
+			if (b->value1 == GENERATION_NUMBER_INFINITY)
+				return 0;
+			else
+				return 1;
+		} else if (b->value1 == GENERATION_NUMBER_INFINITY) {
+			return -1;
+		}
+
+		if (ta < tb)
+			return -1;
+		if (ta > tb)
 			return 1;
 		return 0;
 	}
@@ -127,6 +148,7 @@ static void get_generation_version_from_commit(const struct commit *c,
 			break;
 
 		case 1:
+		case 3:
 			gen->value1 = c->generation;
 			gen->date = c->date;
 			break;
@@ -160,26 +182,7 @@ int commit_below_generation(const struct commit *c, struct generation *g)
 		return 0;
 
 	get_generation_version_from_commit(c, g->version, &gc);
-
-	switch (g->version) {
-		case 0:
-		case 2:
-			return gc.value1 < g->value1;
-
-		case 1:
-			if (gc.value1 < g->value1)
-				return 1;
-			if (gc.value1 == g->value1 &&
-			    gc.date < g->date)
-				return 1;
-			return 0;
-
-		default:
-			die(_("unknown generation number version: %d"),
-			    g->version);
-	}
-
-	return 0;
+	return compare_generations(&gc, g) < 0;
 }
 
 int commit_above_generation(const struct commit *c, struct generation *g)
@@ -190,26 +193,7 @@ int commit_above_generation(const struct commit *c, struct generation *g)
 		return 0;
 
 	get_generation_version_from_commit(c, g->version, &gc);
-
-	switch (g->version) {
-		case 0:
-		case 2:
-			return gc.value1 > g->value1;
-
-		case 1:
-			if (gc.value1 > g->value1)
-				return 1;
-			if (gc.value1 == g->value1 &&
-			    gc.date > g->date)
-				return 1;
-			return 0;
-
-		default:
-			die(_("unknown generation number version: %d"),
-			    g->version);
-	}
-
-	return 0;
+	return compare_generations(&gc, g) > 0;
 }
 
 struct commit_graph *load_commit_graph_one(const char *graph_file)
@@ -914,6 +898,54 @@ static void compute_generation_numbers_2(struct packed_commit_list *commits)
 	}
 }
 
+static void compute_generation_numbers_3(struct packed_commit_list *commits)
+{
+	int i;
+	struct commit_list *list = NULL;
+
+        for (i = 0; i < commits->nr; i++) {
+                if (commits->list[i]->generation != GENERATION_NUMBER_INFINITY &&
+                    commits->list[i]->generation != GENERATION_NUMBER_ZERO)
+                        continue;
+
+                commit_list_insert(commits->list[i], &list);
+
+                while (list) {
+                        struct commit *current = list->item;
+                        struct commit_list *parent;
+                        int all_parents_computed = 1;
+
+                        timestamp_t max_timestamp = current->date;
+
+                        for (parent = current->parents; parent; parent = parent->next) {
+                                if (parent->item->generation == GENERATION_NUMBER_INFINITY ||
+                                    parent->item->generation == GENERATION_NUMBER_ZERO) {
+                                        all_parents_computed = 0;
+                                        commit_list_insert(parent->item, &list);
+                                        break;
+                                } else {
+					struct generation pg;
+					timestamp_t pt;
+					get_generation_version_from_commit(parent->item, 3, &pg);
+
+					pt = pg.value1 + pg.date;
+
+					if (pt > max_timestamp)
+						max_timestamp = pt + 1;
+				}
+                        }
+
+                        if (all_parents_computed) {
+				current->generation = (uint32_t)(max_timestamp - current->date) + 1;
+                                pop_commit(&list);
+
+                                if (current->generation > GENERATION_NUMBER_MAX)
+                                        die(_("generation number gap is too high!"));
+                        }
+                }
+        }
+}
+
 static void compute_generation_numbers(struct packed_commit_list *commits,
 				       int generation_version)
 {
@@ -931,6 +963,9 @@ static void compute_generation_numbers(struct packed_commit_list *commits,
 		return;
 	case 2:
 		compute_generation_numbers_2(commits);
+		return;
+	case 3:
+		compute_generation_numbers_3(commits);
 		return;
 	}
 }
