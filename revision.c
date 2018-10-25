@@ -1073,6 +1073,7 @@ static int limit_list(struct rev_info *revs)
 {
 	int slop = SLOP;
 	timestamp_t date = TIME_MAX;
+	uint32_t count = 0;
 	struct commit_list *list = revs->commits;
 	struct commit_list *newlist = NULL;
 	struct commit_list **p = &newlist;
@@ -1108,6 +1109,7 @@ static int limit_list(struct rev_info *revs)
 			continue;
 		date = commit->date;
 		p = &commit_list_insert(commit, p)->next;
+		count++;
 
 		show = show_early_output;
 		if (!show)
@@ -1140,6 +1142,7 @@ static int limit_list(struct rev_info *revs)
 		}
 
 	revs->commits = newlist;
+
 	return 0;
 }
 
@@ -2901,6 +2904,7 @@ define_commit_slab(indegree_slab, int);
 
 struct topo_walk_info {
 	struct generation min_generation;
+	struct generation indegree_gen;
 	struct prio_queue explore_queue;
 	struct prio_queue indegree_queue;
 	struct prio_queue topo_queue;
@@ -2977,7 +2981,6 @@ static void indegree_walk_step(struct rev_info *revs)
 	struct commit_list *p;
 	struct topo_walk_info *info = revs->topo_walk_info;
 	struct commit *c = prio_queue_get(&info->indegree_queue);
-	struct generation gen;
 
 	if (!c)
 		return;
@@ -2987,8 +2990,8 @@ static void indegree_walk_step(struct rev_info *revs)
 	if (parse_commit_gently(c, 1) < 0)
 		return;
 
-	get_generation_from_commit_and_graph(c, &gen);
-	explore_to_depth(revs, &gen);
+	set_generation_below_commit(c, &info->indegree_gen);
+	explore_to_depth(revs, &info->indegree_gen);
 
 	if (parse_commit_gently(c, 1) < 0)
 		return;
@@ -3018,6 +3021,17 @@ static void compute_indegrees_to_depth(struct rev_info *revs)
 		indegree_walk_step(revs);
 }
 
+static int compare_commits_by_feline(const void *a_, const void *b_, void *unused) {
+	const struct commit *a = a_, *b = b_;
+
+	/* commits with smaller felineX first */
+	if (a->generation < b->generation)
+		return -1;
+	else if (a->generation > b->generation)
+		return 1;
+	return 0; 
+}
+
 static void init_topo_walk(struct rev_info *revs)
 {
 	struct topo_walk_info *info;
@@ -3043,12 +3057,17 @@ static void init_topo_walk(struct rev_info *revs)
 		info->topo_queue.compare = compare_commits_by_author_date;
 		info->topo_queue.cb_data = &info->author_date;
 		break;
+	case REV_SORT_BY_FELINE:
+		info->topo_queue.compare = compare_commits_by_feline;
+		break;
 	}
 
 	info->explore_queue.compare = compare_commits_by_gen_then_commit_date;
 	info->indegree_queue.compare = compare_commits_by_gen_then_commit_date;
 
 	get_generation_infinity_from_graph(&info->min_generation);
+	get_generation_infinity_from_graph(&info->indegree_gen);
+	
 	for (list = revs->commits; list; list = list->next) {
 		struct commit *c = list->item;
 		test_flag_and_insert(&info->explore_queue, c, TOPO_WALK_EXPLORED);
@@ -3056,8 +3075,7 @@ static void init_topo_walk(struct rev_info *revs)
 
 		if (parse_commit_gently(c, 1))
 			continue;
-		if (commit_below_generation(c, &info->min_generation))
-			get_generation_from_commit_and_graph(c, &info->min_generation);
+		set_generation_below_commit(c, &info->min_generation);
 	}
 
 	for (list = revs->commits; list; list = list->next) {
@@ -3117,11 +3135,8 @@ static void expand_topo_walk(struct rev_info *revs, struct commit *commit)
 		if (parse_commit_gently(parent, 1) < 0)
 			continue;
 
-		if (commit_below_generation(parent, &info->min_generation)) {
-			get_generation_from_commit_and_graph(parent,
-				&info->min_generation);
-			compute_indegrees_to_depth(revs);
-		}
+		set_generation_below_commit(p->item, &revs->topo_walk_info->min_generation);			
+		compute_indegrees_to_depth(revs);
 
 		pi = indegree_slab_at(&info->indegree, parent);
 

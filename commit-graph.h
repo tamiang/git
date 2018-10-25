@@ -52,11 +52,14 @@ struct commit_graph {
 	const unsigned char *chunk_oid_lookup;
 	const unsigned char *chunk_commit_data;
 	const unsigned char *chunk_large_edges;
+	const unsigned char *chunk_feline_gen;
 };
 
 struct generation {
 	int version;
 	uint32_t value1;
+	uint32_t felineX;
+	uint32_t felineY;
 	timestamp_t date;
 };
 
@@ -65,6 +68,11 @@ int compare_generations(struct generation *a, struct generation *b);
 void get_generation_infinity_from_graph(struct generation *gen);
 void get_generation_from_commit_and_graph(const struct commit *c,
 					  struct generation *gen);
+void get_generation_version_from_commit(const struct commit *c,
+					int version,
+					struct generation *gen);
+
+void set_generation_below_commit(const struct commit *c, struct generation *gen);
 int commit_below_generation(const struct commit *c, struct generation *g);
 int commit_above_generation(const struct commit *c, struct generation *g);
 

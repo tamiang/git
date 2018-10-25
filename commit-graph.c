@@ -19,6 +19,7 @@
 #define GRAPH_CHUNKID_OIDLOOKUP 0x4f49444c /* "OIDL" */
 #define GRAPH_CHUNKID_DATA 0x43444154 /* "CDAT" */
 #define GRAPH_CHUNKID_LARGEEDGES 0x45444745 /* "EDGE" */
+#define GRAPH_CHUNKID_FELINE 0x46454c49 /* "FELI" */
 
 #define GRAPH_DATA_WIDTH 36
 
@@ -116,6 +117,14 @@ int compare_generations(struct generation *a, struct generation *b)
 		if (ta > tb)
 			return 1;
 		return 0;
+
+	case 4:
+		/* sort by felineX when used under prioqueue */
+		if (a->felineX < b->felineX)
+			return -1;
+		if (a->felineX > b->felineX)
+			return 1;
+		return 0;
 	}
 
 	return 0;
@@ -132,13 +141,17 @@ void get_generation_infinity_from_graph(struct generation *gen)
 
 	gen->version = graph ? graph->generation_number_version : 0;
 	gen->value1 = GENERATION_NUMBER_INFINITY;
+	gen->felineX = GENERATION_NUMBER_INFINITY;
+	gen->felineY = GENERATION_NUMBER_INFINITY;
 	gen->date = 0;
 }
 
-static void get_generation_version_from_commit(const struct commit *c,
-					       int version,
-					       struct generation *gen)
+void get_generation_version_from_commit(const struct commit *c,
+				       int version,
+				       struct generation *gen)
 {
+	struct commit_graph *g;
+
 	gen->version = version;
 	switch (version) {
 		case 0:
@@ -151,6 +164,17 @@ static void get_generation_version_from_commit(const struct commit *c,
 		case 3:
 			gen->value1 = c->generation;
 			gen->date = c->date;
+			break;
+
+		case 4:
+			if (c->graph_pos == COMMIT_NOT_FROM_GRAPH) {
+				gen->felineX = GENERATION_NUMBER_INFINITY;
+				gen->felineY = GENERATION_NUMBER_INFINITY;
+				return;
+			}
+			g = the_repository->objects->commit_graph;
+			gen->felineX = get_be32(g->chunk_feline_gen + 8 * c->graph_pos);
+			gen->felineY = get_be32(g->chunk_feline_gen + 8 * c->graph_pos + 4);
 			break;
 
 		default:
@@ -174,6 +198,34 @@ void get_generation_from_commit_and_graph(const struct commit *c,
 		gen);
 }
 
+void set_generation_below_commit(const struct commit *c, struct generation *g)
+{
+	struct generation gc;
+	get_generation_version_from_commit(c, g->version, &gc);
+
+	switch (g->version) {
+		case 4:
+			if (gc.felineX < g->felineX)
+				g->felineX = gc.felineX;
+			if (gc.felineY < g->felineY)
+				g->felineY = gc.felineY;
+			break;
+
+		case 3:
+			if (g->value1 + g->date >= gc.value1 + gc.date) {
+				g->value1 = 0;
+				g->date = gc.value1 + gc.date;			
+			}
+			break;
+
+		default:
+			if (g->value1 > gc.value1)
+				g->value1 = gc.value1;
+			if (g->date > gc.date)
+				g->date = gc.date;
+	}
+}
+
 int commit_below_generation(const struct commit *c, struct generation *g)
 {
 	struct generation gc;
@@ -182,6 +234,10 @@ int commit_below_generation(const struct commit *c, struct generation *g)
 		return 0;
 
 	get_generation_version_from_commit(c, g->version, &gc);
+
+	if (g->version == 4)
+		return gc.felineX < g->felineX && gc.felineY < g->felineY;
+
 	return compare_generations(&gc, g) < 0;
 }
 
@@ -193,7 +249,11 @@ int commit_above_generation(const struct commit *c, struct generation *g)
 		return 0;
 
 	get_generation_version_from_commit(c, g->version, &gc);
-	return compare_generations(&gc, g) > 0;
+
+	if (g->version == 4)
+		return gc.felineX >= g->felineX && gc.felineY >= g->felineY;
+
+	return compare_generations(&gc, g) >= 0;
 }
 
 struct commit_graph *load_commit_graph_one(const char *graph_file)
@@ -303,6 +363,13 @@ struct commit_graph *load_commit_graph_one(const char *graph_file)
 			else
 				graph->chunk_large_edges = data + chunk_offset;
 			break;
+		
+		case GRAPH_CHUNKID_FELINE:
+			if (graph->chunk_feline_gen)
+				chunk_repeated = 1;
+			else
+				graph->chunk_feline_gen = data + chunk_offset;
+			break;
 		}
 
 		if (chunk_repeated) {
@@ -381,7 +448,7 @@ int generation_numbers_enabled(struct repository *r)
 	first_generation = get_be32(g->chunk_commit_data +
 				    g->hash_len + 8) >> 2;
 
-	return !!first_generation;
+	return !!first_generation || g->chunk_feline_gen;
 }
 
 static void close_commit_graph(void)
@@ -883,6 +950,7 @@ static void compute_generation_numbers_2(struct packed_commit_list *commits)
 	}
 
 	revs.commits = commit_list;
+	prepare_revision_walk(&revs);
 
 	while ((commit = get_revision(&revs)) != NULL) {
 		struct commit_list *parents = commit->parents;
@@ -967,7 +1035,79 @@ static void compute_generation_numbers(struct packed_commit_list *commits,
 	case 3:
 		compute_generation_numbers_3(commits);
 		return;
+	case 4:
+		/* compute at write time */
+		return;
 	}
+}
+
+static void write_graph_chunk_feline(struct hashfile *f,
+                                     struct commit **commits,
+                                     int nr_commits)
+{
+	uint32_t i = 0;
+	struct rev_info revs;
+	struct commit *c;
+	struct commit_list *commit_list = NULL;
+	struct generation *gens = xcalloc(sizeof(struct generation), nr_commits);
+
+	/* felineX is the order we get when we topo-sort using default order */
+
+	init_revisions(&revs, NULL);
+	revs.topo_order = 1;
+	revs.limited = 1;
+	revs.sort_order = REV_SORT_BY_COMMIT_DATE;
+
+        for (i = 0; i < nr_commits; i++)
+		commit_list_insert(commits[i], &commit_list);
+
+	clear_commit_marks_many(nr_commits, commits, ~0);
+	revs.commits = commit_list;
+
+	prepare_revision_walk(&revs);
+
+	i = nr_commits;
+	while ((c = get_revision(&revs)) != NULL) {
+		int j = sha1_pos(c->object.oid.hash, commits, nr_commits, commit_to_sha1);
+
+		c->generation = i;
+		gens[j].felineX = i;
+		i--;
+	}
+
+	/*
+	 * felineY is the order we get when we topo-sort trying to minimize the
+ 	 * felineX order.
+	 */
+
+	init_revisions(&revs, NULL);
+	revs.topo_order = 1;
+	revs.limited = 1;
+	revs.sort_order = REV_SORT_BY_FELINE;
+      
+	commit_list = NULL; 
+	for (i = 0; i < nr_commits; i++)
+		commit_list_insert(commits[i], &commit_list);
+
+	clear_commit_marks_many(nr_commits, commits, ~0);
+	revs.commits = commit_list;
+
+	prepare_revision_walk(&revs);
+	
+	i = nr_commits;
+	while ((c = get_revision(&revs)) != NULL) {
+		int j = sha1_pos(c->object.oid.hash, commits, nr_commits, commit_to_sha1);
+
+		gens[j].felineY = i--;
+	}
+
+	/* write to chunk */
+	for (i = 0; i < nr_commits; i++) {	
+		hashwrite_be32(f, gens[i].felineX);
+		hashwrite_be32(f, gens[i].felineY);
+	}
+
+	free(gens);
 }
 
 static int add_ref_to_list(const char *refname,
@@ -1003,8 +1143,8 @@ void write_commit_graph(const char *obj_dir,
 	uint32_t i, count_distinct = 0;
 	char *graph_name;
 	struct lock_file lk = LOCK_INIT;
-	uint32_t chunk_ids[5];
-	uint64_t chunk_offsets[5];
+	uint32_t chunk_ids[6];
+	uint64_t chunk_offsets[6];
 	int num_chunks;
 	int num_extra_edges;
 	struct commit_list *parent;
@@ -1110,7 +1250,6 @@ void write_commit_graph(const char *obj_dir,
 
 		commits.nr++;
 	}
-	num_chunks = num_extra_edges ? 4 : 3;
 
 	if (commits.nr >= GRAPH_PARENT_MISSING)
 		die(_("too many commits to write graph"));
@@ -1127,25 +1266,39 @@ void write_commit_graph(const char *obj_dir,
 
 	hashwrite_be32(f, GRAPH_SIGNATURE);
 
-	hashwrite_u8(f, GRAPH_VERSION);
-	hashwrite_u8(f, GRAPH_OID_VERSION);
-	hashwrite_u8(f, num_chunks);
-	hashwrite_u8(f, (unsigned char)generation_version);
-
 	chunk_ids[0] = GRAPH_CHUNKID_OIDFANOUT;
 	chunk_ids[1] = GRAPH_CHUNKID_OIDLOOKUP;
 	chunk_ids[2] = GRAPH_CHUNKID_DATA;
-	if (num_extra_edges)
-		chunk_ids[3] = GRAPH_CHUNKID_LARGEEDGES;
-	else
-		chunk_ids[3] = 0;
-	chunk_ids[4] = 0;
+
+	num_chunks = 3 +
+			(num_extra_edges ? 1 : 0) +
+			(generation_version == 4 ? 1 : 0);
 
 	chunk_offsets[0] = 8 + (num_chunks + 1) * GRAPH_CHUNKLOOKUP_WIDTH;
 	chunk_offsets[1] = chunk_offsets[0] + GRAPH_FANOUT_SIZE;
 	chunk_offsets[2] = chunk_offsets[1] + GRAPH_OID_LEN * commits.nr;
 	chunk_offsets[3] = chunk_offsets[2] + (GRAPH_OID_LEN + 16) * commits.nr;
-	chunk_offsets[4] = chunk_offsets[3] + 4 * num_extra_edges;
+
+	num_chunks = 3;
+
+	if (num_extra_edges) {
+		chunk_ids[num_chunks] = GRAPH_CHUNKID_LARGEEDGES;
+		chunk_offsets[num_chunks + 1] = chunk_offsets[num_chunks] + 4 * num_extra_edges;
+		num_chunks++;
+	}
+
+	if (generation_version == 4) {
+		chunk_ids[num_chunks] = GRAPH_CHUNKID_FELINE;
+		chunk_offsets[num_chunks + 1] = chunk_offsets[num_chunks] + 8 * commits.nr;
+		num_chunks++;
+	}
+
+	chunk_ids[num_chunks] = 0;
+
+	hashwrite_u8(f, GRAPH_VERSION);
+	hashwrite_u8(f, GRAPH_OID_VERSION);
+	hashwrite_u8(f, num_chunks);
+	hashwrite_u8(f, (unsigned char)generation_version);
 
 	for (i = 0; i <= num_chunks; i++) {
 		uint32_t chunk_write[3];
@@ -1159,7 +1312,11 @@ void write_commit_graph(const char *obj_dir,
 	write_graph_chunk_fanout(f, commits.list, commits.nr);
 	write_graph_chunk_oids(f, GRAPH_OID_LEN, commits.list, commits.nr);
 	write_graph_chunk_data(f, GRAPH_OID_LEN, commits.list, commits.nr);
-	write_graph_chunk_large_edges(f, commits.list, commits.nr);
+
+	if (num_extra_edges)
+		write_graph_chunk_large_edges(f, commits.list, commits.nr);
+	if (generation_version == 4)
+		write_graph_chunk_feline(f, commits.list, commits.nr);
 
 	close_commit_graph();
 	finalize_hashfile(f, NULL, CSUM_HASH_IN_STREAM | CSUM_FSYNC);

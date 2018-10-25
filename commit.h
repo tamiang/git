@@ -179,7 +179,8 @@ void clear_commit_marks_many(int nr, struct commit **commit, unsigned int mark);
 enum rev_sort_order {
 	REV_SORT_IN_GRAPH_ORDER = 0,
 	REV_SORT_BY_COMMIT_DATE,
-	REV_SORT_BY_AUTHOR_DATE
+	REV_SORT_BY_AUTHOR_DATE,
+	REV_SORT_BY_FELINE
 };
 
 /*

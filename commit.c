@@ -731,17 +731,32 @@ int compare_commits_by_commit_date(const void *a_, const void *b_, void *unused)
 	return 0;
 }
 
+static int compare_commits_by_feline(const void *a_, const void *b_, void *unused)
+{
+	const struct commit *a = a_, *b = b_;
+
+	/* SUPER BAD CHEAT: use generation to make sure this is in-memory, not commit-graph */
+
+	/* sort with lower felineX first */
+	if (a->generation < b->generation)
+		return -1;
+	else if (a->generation > b->generation)
+		return 1;
+	return 0;
+}
+
 /*
  * Performs an in-place topological sort on the list supplied.
  */
 void sort_in_topological_order(struct commit_list **list, enum rev_sort_order sort_order)
 {
-	struct commit_list *next, *orig = *list;
+	struct commit_list *prev, *next, *orig = *list;
 	struct commit_list **pptr;
 	struct indegree_slab indegree;
 	struct prio_queue queue;
 	struct commit *commit;
 	struct author_date_slab author_date;
+	uint32_t count = 0;
 
 	if (!orig)
 		return;
@@ -762,11 +777,22 @@ void sort_in_topological_order(struct commit_list **list, enum rev_sort_order so
 		queue.compare = compare_commits_by_author_date;
 		queue.cb_data = &author_date;
 		break;
+	case REV_SORT_BY_FELINE:
+		queue.compare = compare_commits_by_feline;
 	}
 
 	/* Mark them and clear the indegree */
+	prev = NULL;
 	for (next = orig; next; next = next->next) {
 		struct commit *commit = next->item;
+		
+		if (*(indegree_slab_at(&indegree, commit))) {
+			prev->next = next->next;
+			continue;
+		}
+
+		prev = next;
+
 		*(indegree_slab_at(&indegree, commit)) = 1;
 		/* also record the author dates, if needed */
 		if (sort_order == REV_SORT_BY_AUTHOR_DATE)
@@ -837,6 +863,7 @@ void sort_in_topological_order(struct commit_list **list, enum rev_sort_order so
 		*(indegree_slab_at(&indegree, commit)) = 0;
 
 		pptr = &commit_list_insert(commit, pptr)->next;
+		count++;
 	}
 
 	clear_indegree_slab(&indegree);

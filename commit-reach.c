@@ -186,8 +186,7 @@ static int remove_redundant(struct commit **array, int cnt)
 			filled_index[filled] = j;
 			work[filled++] = array[j];
 
-			if (commit_below_generation(array[j], &min_generation))
-				get_generation_from_commit_and_graph(array[j],
+			set_generation_below_commit(array[j],
 					&min_generation);
 		}
 
@@ -322,8 +321,7 @@ int in_merge_bases_many(struct commit *commit, int nr_reference, struct commit *
 	for (i = 0; i < nr_reference; i++) {
 		if (parse_commit(reference[i]))
 			return ret;
-		if (commit_below_generation(reference[i], &min_generation))
-			get_generation_from_commit_and_graph(
+		set_generation_below_commit(
 				reference[i],
 				&min_generation);
 	}
