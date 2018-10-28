@@ -8,6 +8,7 @@
 #include "revision.h"
 #include "tag.h"
 #include "commit-reach.h"
+#include "config.h"
 
 /* Remember to update object flag allocation in object.h */
 #define REACHABLE       (1u<<15)
@@ -37,10 +38,13 @@ static struct commit_list *paint_down_to_common(struct commit *one, int n,
 	struct prio_queue queue = { compare_commits_by_gen_then_commit_date };
 	struct commit_list *result = NULL;
 	int i;
-	uint32_t last_gen = GENERATION_NUMBER_INFINITY;
 	uint32_t num_walked = 0;
+	int old_paint = git_env_bool("GIT_TEST_OLD_PAINT", 0);
 
 	trace2_region_enter("paint_down_to_common");
+
+	if (old_paint)
+		queue.compare = compare_commits_by_commit_date;
 
 	one->object.flags |= PARENT1;
 	if (!n) {
@@ -60,14 +64,12 @@ static struct commit_list *paint_down_to_common(struct commit *one, int n,
 		int flags;
 		num_walked++;
 
-		if (commit->generation > last_gen)
-			BUG("bad generation skip %8x > %8x at %s",
-			    commit->generation, last_gen,
-			    oid_to_hex(&commit->object.oid));
-		last_gen = commit->generation;
-
-		if (commit->generation < min_generation)
-			break;
+		if (commit->generation < min_generation) {
+			if (old_paint)
+				continue;
+			else
+				break;
+		}
 
 		flags = commit->object.flags & (PARENT1 | PARENT2 | STALE);
 		if (flags == (PARENT1 | PARENT2)) {
