@@ -9,6 +9,7 @@
 #include "tag.h"
 #include "commit-reach.h"
 #include "commit-graph.h"
+#include "config.h"
 
 /* Remember to update object flag allocation in object.h */
 #define REACHABLE       (1u<<15)
@@ -39,8 +40,12 @@ static struct commit_list *paint_down_to_common(struct commit *one, int n,
 	struct commit_list *result = NULL;
 	int i;
 	uint32_t num_walked = 0;
+	int old_paint = git_env_bool("GIT_TEST_OLD_PAINT", 0);
 
 	trace2_region_enter("paint_down_to_common");
+
+	if (old_paint)
+		queue.compare = compare_commits_by_commit_date;
 
 	one->object.flags |= PARENT1;
 	if (!n) {
@@ -60,8 +65,12 @@ static struct commit_list *paint_down_to_common(struct commit *one, int n,
 		int flags;
 		num_walked++;
 
-		if (commit_below_generation(commit, min_generation))
-			break;
+		if (commit_below_generation(commit, min_generation)) {
+			if (old_paint)
+				continue;
+			else
+				break;
+		}
 
 		flags = commit->object.flags & (PARENT1 | PARENT2 | STALE);
 		if (flags == (PARENT1 | PARENT2)) {
