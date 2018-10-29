@@ -46,6 +46,9 @@ static struct commit_list *paint_down_to_common(struct commit *one, int n,
 	if (old_paint)
 		queue.compare = compare_commits_by_commit_date;
 
+	if (!min_generation)
+		queue.compare = compare_commits_by_commit_date;
+
 	one->object.flags |= PARENT1;
 	if (!n) {
 		commit_list_append(one, &result);

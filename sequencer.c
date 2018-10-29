@@ -226,13 +226,16 @@ static const char *get_todo_path(const struct replay_opts *opts)
  * Returns 3 when sob exists within conforming footer as last entry
  */
 static int has_conforming_footer(struct strbuf *sb, struct strbuf *sob,
-	int ignore_footer)
+	size_t ignore_footer)
 {
+	struct process_trailer_options opts = PROCESS_TRAILER_OPTIONS_INIT;
 	struct trailer_info info;
-	int i;
+	size_t i;
 	int found_sob = 0, found_sob_last = 0;
 
-	trailer_info_get(&info, sb->buf);
+	opts.no_divider = 1;
+
+	trailer_info_get(&info, sb->buf, &opts);
 
 	if (info.trailer_start == info.trailer_end)
 		return 0;
@@ -611,7 +614,7 @@ static int is_index_unchanged(void)
 	if (!(cache_tree_oid = get_cache_tree_oid()))
 		return -1;
 
-	return !oidcmp(cache_tree_oid, get_commit_tree_oid(head_commit));
+	return oideq(cache_tree_oid, get_commit_tree_oid(head_commit));
 }
 
 static int write_author_script(const char *message)
@@ -640,7 +643,7 @@ missing_author:
 		else if (*message != '\'')
 			strbuf_addch(&buf, *(message++));
 		else
-			strbuf_addf(&buf, "'\\\\%c'", *(message++));
+			strbuf_addf(&buf, "'\\%c'", *(message++));
 	strbuf_addstr(&buf, "'\nGIT_AUTHOR_EMAIL='");
 	while (*message && *message != '\n' && *message != '\r')
 		if (skip_prefix(message, "> ", &message))
@@ -648,17 +651,35 @@ missing_author:
 		else if (*message != '\'')
 			strbuf_addch(&buf, *(message++));
 		else
-			strbuf_addf(&buf, "'\\\\%c'", *(message++));
+			strbuf_addf(&buf, "'\\%c'", *(message++));
 	strbuf_addstr(&buf, "'\nGIT_AUTHOR_DATE='@");
 	while (*message && *message != '\n' && *message != '\r')
 		if (*message != '\'')
 			strbuf_addch(&buf, *(message++));
 		else
-			strbuf_addf(&buf, "'\\\\%c'", *(message++));
+			strbuf_addf(&buf, "'\\%c'", *(message++));
 	strbuf_addch(&buf, '\'');
 	res = write_message(buf.buf, buf.len, rebase_path_author_script(), 1);
 	strbuf_release(&buf);
 	return res;
+}
+
+
+/*
+ * write_author_script() used to fail to terminate the last line with a "'" and
+ * also escaped "'" incorrectly as "'\\\\''" rather than "'\\''". We check for
+ * the terminating "'" on the last line to see how "'" has been escaped in case
+ * git was upgraded while rebase was stopped.
+ */
+static int quoting_is_broken(const char *s, size_t n)
+{
+	/* Skip any empty lines in case the file was hand edited */
+	while (n > 0 && s[--n] == '\n')
+		; /* empty */
+	if (n > 0 && s[n] != '\'')
+		return 1;
+
+	return 0;
 }
 
 /*
@@ -668,14 +689,18 @@ missing_author:
 static int read_env_script(struct argv_array *env)
 {
 	struct strbuf script = STRBUF_INIT;
-	int i, count = 0;
-	char *p, *p2;
+	int i, count = 0, sq_bug;
+	const char *p2;
+	char *p;
 
 	if (strbuf_read_file(&script, rebase_path_author_script(), 256) <= 0)
 		return -1;
-
+	/* write_author_script() used to quote incorrectly */
+	sq_bug = quoting_is_broken(script.buf, script.len);
 	for (p = script.buf; *p; p++)
-		if (skip_prefix(p, "'\\\\''", (const char **)&p2))
+		if (sq_bug && skip_prefix(p, "'\\\\''", &p2))
+			strbuf_splice(&script, p - script.buf, p2 - p, "'", 1);
+		else if (skip_prefix(p, "'\\''", &p2))
 			strbuf_splice(&script, p - script.buf, p2 - p, "'", 1);
 		else if (*p == '\'')
 			strbuf_splice(&script, p-- - script.buf, 1, "", 0);
@@ -799,10 +824,17 @@ static int run_git_commit(const char *defmsg, struct replay_opts *opts,
 
 	if ((flags & CREATE_ROOT_COMMIT) && !(flags & AMEND_MSG)) {
 		struct strbuf msg = STRBUF_INIT, script = STRBUF_INIT;
-		const char *author = is_rebase_i(opts) ?
-			read_author_ident(&script) : NULL;
+		const char *author = NULL;
 		struct object_id root_commit, *cache_tree_oid;
 		int res = 0;
+
+		if (is_rebase_i(opts)) {
+			author = read_author_ident(&script);
+			if (!author) {
+				strbuf_release(&script);
+				return -1;
+			}
+		}
 
 		if (!defmsg)
 			BUG("root commit without message");
@@ -1189,7 +1221,7 @@ static int parse_head(struct commit **head)
 		current_head = lookup_commit_reference(the_repository, &oid);
 		if (!current_head)
 			return error(_("could not parse HEAD"));
-		if (oidcmp(&oid, &current_head->object.oid)) {
+		if (!oideq(&oid, &current_head->object.oid)) {
 			warning(_("HEAD %s is not a commit!"),
 				oid_to_hex(&oid));
 		}
@@ -1259,9 +1291,9 @@ static int try_to_commit(struct strbuf *msg, const char *author,
 		goto out;
 	}
 
-	if (!(flags & ALLOW_EMPTY) && !oidcmp(current_head ?
-					      get_commit_tree_oid(current_head) :
-					      the_hash_algo->empty_tree, &tree)) {
+	if (!(flags & ALLOW_EMPTY) && oideq(current_head ?
+					    get_commit_tree_oid(current_head) :
+					    the_hash_algo->empty_tree, &tree)) {
 		res = 1; /* run 'git commit' to display error message */
 		goto out;
 	}
@@ -1366,7 +1398,7 @@ static int is_original_commit_empty(struct commit *commit)
 		ptree_oid = the_hash_algo->empty_tree; /* commit is root */
 	}
 
-	return !oidcmp(ptree_oid, get_commit_tree_oid(commit));
+	return oideq(ptree_oid, get_commit_tree_oid(commit));
 }
 
 /*
@@ -1646,7 +1678,7 @@ static int do_pick_commit(enum todo_command command, struct commit *commit,
 		unborn = get_oid("HEAD", &head);
 		/* Do we want to generate a root commit? */
 		if (is_pick_or_similar(command) && opts->have_squash_onto &&
-		    !oidcmp(&head, &opts->squash_onto)) {
+		    oideq(&head, &opts->squash_onto)) {
 			if (is_fixup(command))
 				return error(_("cannot fixup root commit"));
 			flags |= CREATE_ROOT_COMMIT;
@@ -1689,7 +1721,7 @@ static int do_pick_commit(enum todo_command command, struct commit *commit,
 			oid_to_hex(&commit->object.oid));
 
 	if (opts->allow_ff && !is_fixup(command) &&
-	    ((parent && !oidcmp(&parent->object.oid, &head)) ||
+	    ((parent && oideq(&parent->object.oid, &head)) ||
 	     (!parent && unborn))) {
 		if (is_rebase_i(opts))
 			write_author_script(msg.message);
@@ -2394,7 +2426,7 @@ static int rollback_is_safe(void)
 	if (get_oid("HEAD", &actual_head))
 		oidclr(&actual_head);
 
-	return !oidcmp(&actual_head, &expected_head);
+	return oideq(&actual_head, &expected_head);
 }
 
 static int reset_for_rollback(const struct object_id *oid)
@@ -2955,7 +2987,7 @@ static int do_merge(struct commit *commit, const char *arg, int arg_len,
 	}
 
 	if (opts->have_squash_onto &&
-	    !oidcmp(&head_commit->object.oid, &opts->squash_onto)) {
+	    oideq(&head_commit->object.oid, &opts->squash_onto)) {
 		/*
 		 * When the user tells us to "merge" something into a
 		 * "[new root]", let's simply fast-forward to the merge head.
@@ -3024,8 +3056,8 @@ static int do_merge(struct commit *commit, const char *arg, int arg_len,
 	 * commit, we cannot fast-forward.
 	 */
 	can_fast_forward = opts->allow_ff && commit && commit->parents &&
-		!oidcmp(&commit->parents->item->object.oid,
-			&head_commit->object.oid);
+		oideq(&commit->parents->item->object.oid,
+		      &head_commit->object.oid);
 
 	/*
 	 * If any merge head is different from the original one, we cannot
@@ -3035,7 +3067,7 @@ static int do_merge(struct commit *commit, const char *arg, int arg_len,
 		struct commit_list *p = commit->parents->next;
 
 		for (j = to_merge; j && p; j = j->next, p = p->next)
-			if (oidcmp(&j->item->object.oid,
+			if (!oideq(&j->item->object.oid,
 				   &p->item->object.oid)) {
 				can_fast_forward = 0;
 				break;
@@ -3103,8 +3135,8 @@ static int do_merge(struct commit *commit, const char *arg, int arg_len,
 	write_message("no-ff", 5, git_path_merge_mode(the_repository), 0);
 
 	bases = get_merge_bases(head_commit, merge_commit);
-	if (bases && !oidcmp(&merge_commit->object.oid,
-			     &bases->item->object.oid)) {
+	if (bases && oideq(&merge_commit->object.oid,
+			   &bases->item->object.oid)) {
 		ret = 0;
 		/* skip merging an ancestor of HEAD */
 		goto leave_merge;
@@ -3350,9 +3382,9 @@ static int pick_commits(struct todo_list *todo_list, struct replay_opts *opts)
 				 */
 				if (item->command == TODO_REWORD &&
 				    !get_oid("HEAD", &oid) &&
-				    (!oidcmp(&item->commit->object.oid, &oid) ||
+				    (oideq(&item->commit->object.oid, &oid) ||
 				     (opts->have_squash_onto &&
-				      !oidcmp(&opts->squash_onto, &oid))))
+				      oideq(&opts->squash_onto, &oid))))
 					to_amend = 1;
 
 				return res | error_with_patch(item->commit,
@@ -3567,7 +3599,7 @@ static int commit_staged_changes(struct replay_opts *opts,
 		if (get_oid_hex(rev.buf, &to_amend))
 			return error(_("invalid contents: '%s'"),
 				rebase_path_amend());
-		if (!is_clean && oidcmp(&head, &to_amend))
+		if (!is_clean && !oideq(&head, &to_amend))
 			return error(_("\nYou have uncommitted changes in your "
 				       "working tree. Please, commit them\n"
 				       "first and then run 'git rebase "
@@ -3579,7 +3611,7 @@ static int commit_staged_changes(struct replay_opts *opts,
 		 * the commit message and if there was a squash, let the user
 		 * edit it.
 		 */
-		if (is_clean && !oidcmp(&head, &to_amend) &&
+		if (is_clean && oideq(&head, &to_amend) &&
 		    opts->current_fixup_count > 0 &&
 		    file_exists(rebase_path_stopped_sha())) {
 			const char *p = opts->current_fixups.buf;
@@ -3800,7 +3832,7 @@ int sequencer_pick_revisions(struct replay_opts *opts)
 	return res;
 }
 
-void append_signoff(struct strbuf *msgbuf, int ignore_footer, unsigned flag)
+void append_signoff(struct strbuf *msgbuf, size_t ignore_footer, unsigned flag)
 {
 	unsigned no_dup_sob = flag & APPEND_SIGNOFF_DEDUP;
 	struct strbuf sob = STRBUF_INIT;
@@ -4546,7 +4578,7 @@ int skip_unnecessary_picks(void)
 		if (item->commit->parents->next)
 			break; /* merge commit */
 		parent_oid = &item->commit->parents->item->object.oid;
-		if (hashcmp(parent_oid->hash, oid->hash))
+		if (!oideq(parent_oid, oid))
 			break;
 		oid = &item->commit->object.oid;
 	}
