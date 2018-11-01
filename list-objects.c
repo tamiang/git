@@ -242,6 +242,10 @@ static void add_pending_tree(struct rev_info *revs, struct tree *tree)
 	add_pending_object(revs, &tree->object, "");
 }
 
+static int num_commits = 0;
+static int num_trees = 0;
+static int num_blobs = 0;
+
 static void traverse_trees_and_blobs(struct rev_info *revs,
 				     struct strbuf *base,
 				     show_object_fn show_object,
@@ -271,12 +275,14 @@ static void traverse_trees_and_blobs(struct rev_info *revs,
 			process_tree(revs, (struct tree *)obj, show_object,
 				     base, path, show_data,
 				     filter_fn, filter_data);
+			num_trees++;
 			continue;
 		}
 		if (obj->type == OBJ_BLOB) {
 			process_blob(revs, (struct blob *)obj, show_object,
 				     base, path, show_data,
 				     filter_fn, filter_data);
+			num_blobs++;
 			continue;
 		}
 		die("unknown pending object %s (%s)",
@@ -304,6 +310,7 @@ static void do_traverse(struct rev_info *revs,
 		if (get_commit_tree(commit))
 			add_pending_tree(revs, get_commit_tree(commit));
 		show_commit(commit, show_data);
+		num_commits++;
 
 		if (revs->tree_blobs_in_commit_order)
 			/*
@@ -319,6 +326,10 @@ static void do_traverse(struct rev_info *revs,
 				 show_object, show_data,
 				 filter_fn, filter_data);
 	strbuf_release(&csp);
+
+	fprintf(stderr, "num_commits: %d\n", num_commits);
+	fprintf(stderr, "num_trees: %d\n", num_trees);
+	fprintf(stderr, "num_blobs: %d\n", num_blobs);
 }
 
 void traverse_commit_list(struct rev_info *revs,
