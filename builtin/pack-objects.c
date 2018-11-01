@@ -3402,6 +3402,9 @@ int cmd_pack_objects(int argc, const char **argv, const char *prefix)
 	stop_progress(&progress_state);
 	trace2_region_leave("pack-objects", "enumerate-objects", the_repository);
 
+	/* BREAK HERE TO AVOID ACTUALLY PUSHING DURING TESTING */
+	exit(1);
+
 	if (non_empty && !nr_result)
 		return 0;
 	if (nr_result) {
