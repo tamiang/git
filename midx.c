@@ -50,6 +50,8 @@ struct multi_pack_index *load_multi_pack_index(const char *object_dir, int local
 	uint32_t i;
 	const char *cur_pack_name;
 
+	fprintf(stderr, "load_multi_pack_index\n");
+
 	fd = git_open(midx_name);
 
 	if (fd < 0)
@@ -336,6 +338,8 @@ int prepare_multi_pack_index_one(struct repository *r, const char *object_dir, i
 	struct multi_pack_index *m_search;
 	int config_value;
 	static int env_value = -1;
+
+	fprintf(stderr, "prepare_multi_pack_index_one\n");
 
 	if (env_value < 0)
 		env_value = git_env_bool(GIT_TEST_MULTI_PACK_INDEX, 0);
