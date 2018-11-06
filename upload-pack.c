@@ -24,6 +24,7 @@
 #include "quote.h"
 #include "upload-pack.h"
 #include "serve.h"
+#include "trace2.h"
 
 /* Remember to update object flag allocation in object.h */
 #define THEY_HAVE	(1u << 11)
@@ -849,10 +850,15 @@ static int process_deepen_since(const char *line, timestamp_t *deepen_since, int
 
 static int process_deepen_not(const char *line, struct string_list *deepen_not, int *deepen_rev_list)
 {
-	const char *arg;
+	const char *arg, *arg_end;
 	if (skip_prefix(line, "deepen-not ", &arg)) {
 		char *ref = NULL;
 		struct object_id oid;
+		if (!parse_oid_hex(arg, &oid, &arg_end)) {
+			string_list_append(deepen_not, arg);
+			*deepen_rev_list = 1;
+			return 1;
+		}
 		if (expand_ref(arg, strlen(arg), &oid, &ref) != 1)
 			die("git upload-pack: ambiguous deepen-not: %s", line);
 		string_list_append(deepen_not, ref);
@@ -871,6 +877,8 @@ static void receive_needs(void)
 	int has_non_tip = 0;
 	timestamp_t deepen_since = 0;
 	int deepen_rev_list = 0;
+
+	trace2_region_enter("input", "receive_needs", the_repository);
 
 	shallow_nr = 0;
 	for (;;) {
@@ -965,6 +973,8 @@ static void receive_needs(void)
 			      &deepen_not, &shallows))
 		packet_flush(1);
 	object_array_clear(&shallows);
+	
+	trace2_region_leave("input", "receive_needs", the_repository);
 }
 
 /* return non-zero if the ref is hidden, otherwise 0 */
