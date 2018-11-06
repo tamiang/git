@@ -74,6 +74,8 @@ static int pack_objects(int fd, struct ref *refs, struct oid_array *extra, struc
 	int i;
 	int rc;
 
+	argv_array_push(&po.args, "-c");
+	argv_array_push(&po.args, "core.warnAmbiguousRefs=false");
 	argv_array_push(&po.args, "pack-objects");
 	argv_array_push(&po.args, "--all-progress-implied");
 	argv_array_push(&po.args, "--revs");
