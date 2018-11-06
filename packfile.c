@@ -964,6 +964,9 @@ static void prepare_packed_git(struct repository *r)
 
 	if (r->objects->packed_git_initialized)
 		return;
+
+	fprintf(stderr, "prepare_packed_git\n");
+
 	prepare_multi_pack_index_one(r, r->objects->objectdir, 1);
 	prepare_packed_git_one(r, r->objects->objectdir, 1);
 	prepare_alt_odb(r);
