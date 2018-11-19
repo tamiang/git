@@ -301,7 +301,8 @@ test_expect_success 'multi-pack-index in an alternate' '
 	git multi-pack-index write &&
 	midx_read_expect 1 3 4 $objdir &&
 	git reset --hard HEAD~1 &&
-	rm -f .git/objects/pack/*
+	rm -f .git/objects/pack/* &&
+	git -c core.multiPackIndex=true fsck
 '
 
 compare_results_with_midx "with alternate (remote midx)"
@@ -313,6 +314,11 @@ corrupt_data () {
 	data="${3:-\0}"
 	printf "$data" | dd of="$file" bs=1 seek="$pos" conv=notrunc
 }
+
+test_expect_success 'fsck fails on corrupted alternate' '
+	corrupt_data alt.git/objects/pack/multi-pack-index 12 "\07" &&
+	test_must_fail git -c core.multiPackIndex=true fsck --full
+'
 
 # Force 64-bit offsets by manipulating the idx file.
 # This makes the IDX file _incorrect_ so be careful to clean up after!
