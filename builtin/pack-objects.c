@@ -33,6 +33,7 @@
 #include "object-store.h"
 #include "dir.h"
 #include "midx.h"
+#include "tree-walk-sparse.h"
 
 #define IN_PACK(obj) oe_in_pack(&to_pack, obj)
 #define SIZE(obj) oe_size(&to_pack, obj)
@@ -3087,6 +3088,7 @@ static void get_object_list(int ac, const char **av)
 	char line[1000];
 	int flags = 0;
 	int save_warning;
+	int sparse = 1; /* TODO: fix */
 
 	repo_init_revisions(the_repository, &revs, NULL);
 	save_commit_buffer = 0;
@@ -3135,7 +3137,11 @@ static void get_object_list(int ac, const char **av)
 
 	if (prepare_revision_walk(&revs))
 		die(_("revision walk setup failed"));
-	mark_edges_uninteresting(&revs, show_edge);
+
+	if (sparse)
+		mark_edges_uninteresting_sparse(&revs, show_edge);
+	else
+		mark_edges_uninteresting(&revs, show_edge);
 
 	if (!fn_show_object)
 		fn_show_object = show_object;
