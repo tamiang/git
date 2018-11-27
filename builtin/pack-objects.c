@@ -3138,7 +3138,7 @@ static void get_object_list(int ac, const char **av)
 	if (prepare_revision_walk(&revs))
 		die(_("revision walk setup failed"));
 
-	if (sparse)
+	if (sparse && thin)
 		mark_edges_uninteresting_sparse(&revs, show_edge);
 	else
 		mark_edges_uninteresting(&revs, show_edge);
