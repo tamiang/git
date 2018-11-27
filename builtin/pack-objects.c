@@ -18,6 +18,7 @@
 #include "list-objects.h"
 #include "list-objects-filter.h"
 #include "list-objects-filter-options.h"
+#include "tree-walk-sparse.h"
 #include "pack-objects.h"
 #include "progress.h"
 #include "refs.h"
@@ -2988,6 +2989,11 @@ static void get_object_list(int ac, const char **av)
 	struct rev_info revs;
 	char line[1000];
 	int flags = 0;
+<<<<<<< HEAD
+=======
+	int save_warning;
+	int sparse = 1; /* TODO: fix */
+>>>>>>> temp: some of the logic is wired
 
 	init_revisions(&revs, NULL);
 	save_commit_buffer = 0;
@@ -3027,7 +3033,11 @@ static void get_object_list(int ac, const char **av)
 
 	if (prepare_revision_walk(&revs))
 		die(_("revision walk setup failed"));
-	mark_edges_uninteresting(&revs, show_edge);
+
+	if (sparse)
+		mark_edges_uninteresting_sparse(&revs, show_edge);
+	else
+		mark_edges_uninteresting(&revs, show_edge);
 
 	if (!fn_show_object)
 		fn_show_object = show_object;
