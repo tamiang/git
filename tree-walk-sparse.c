@@ -78,8 +78,7 @@ static void mark_tree_uninteresting_shallow(struct tree *tree)
 }
 
 int num_walked = 0;
-static void walk_tree_contents(struct repository *r,
-			       struct tree *tree,
+static void walk_tree_contents(struct tree *tree,
 			       struct names_and_oids *no)
 {
 	struct tree_desc desc;
@@ -97,11 +96,11 @@ static void walk_tree_contents(struct repository *r,
 			insert_name_and_oid(no, entry.path, entry.oid);
 
 			if (tree->object.flags & UNINTERESTING)
-				mark_tree_uninteresting_shallow(lookup_tree(r, entry.oid));
+				mark_tree_uninteresting_shallow(lookup_tree(the_repository, entry.oid));
 			break;
 		case OBJ_BLOB:
 			if (tree->object.flags & UNINTERESTING)
-				mark_blob_uninteresting(lookup_blob(r, entry.oid));
+				mark_blob_uninteresting(lookup_blob(the_repository, entry.oid));
 			break;
 		default:
 			/* Subproject commit - not in this repository */
@@ -124,7 +123,7 @@ static void tree_walk_sparse(struct rev_info *revs,
 	/* Check if we need to recurse down these trees */
 	oidset_iter_init(set, &iter);
 	while ((oid = oidset_iter_next(&iter))) {
-		struct tree *tree = lookup_tree(revs->repo, oid);
+		struct tree *tree = lookup_tree(the_repository, oid);
 		if (tree->object.flags & UNINTERESTING)
 			has_uninteresting = 1;
 		else
@@ -138,8 +137,8 @@ static void tree_walk_sparse(struct rev_info *revs,
 	/* Phase 1: read all trees in the set, add trees to dictionary */
 	oidset_iter_init(set, &iter);
 	while ((oid = oidset_iter_next(&iter))) {
-		struct tree *tree = lookup_tree(revs->repo, oid);
-		walk_tree_contents(revs->repo, tree, &no);
+		struct tree *tree = lookup_tree(the_repository, oid);
+		walk_tree_contents(tree, &no);
 	}
 
 	/* Phase 2: for each path, recurse on that oidset */
@@ -212,7 +211,7 @@ void mark_edges_uninteresting_sparse(struct rev_info *revs,
 			
 			/* this will do a full recursion on the trees, stopping only
 			 * at trees that are already marked UNINTERESTING. */
-			mark_tree_uninteresting(revs->repo, get_commit_tree(commit));
+			mark_tree_uninteresting(get_commit_tree(commit));
 			if (!(obj->flags & SHOWN)) {
 				obj->flags |= SHOWN;
 				show_edge(commit);

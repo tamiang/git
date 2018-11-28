@@ -81,7 +81,6 @@ static int depth = 50;
 static int delta_search_threads;
 static int pack_to_stdout;
 static int sparse;
-static int thin;
 static int num_preferred_base;
 static struct progress *progress_state;
 
@@ -2995,8 +2994,6 @@ static void get_object_list(int ac, const char **av)
 	struct rev_info revs;
 	char line[1000];
 	int flags = 0;
-	int save_warning;
-	int sparse = 1; /* TODO: fix */
 
 	init_revisions(&revs, NULL);
 	save_commit_buffer = 0;
