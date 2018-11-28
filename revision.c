@@ -109,6 +109,9 @@ void mark_trees_uninteresting_sparse(struct repository *r,
 	while ((oid = oidset_iter_next(&iter))) {
 		struct tree *tree = lookup_tree(r, oid);
 
+		if (!tree)
+			continue;
+
 		if (tree->object.flags & UNINTERESTING) {
 			/*
 			 * Remove the flag so the next call
