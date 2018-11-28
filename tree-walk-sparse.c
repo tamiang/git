@@ -77,6 +77,7 @@ static void mark_tree_uninteresting_shallow(struct tree *tree)
 	/* don't recurse now! */
 }
 
+int num_walked = 0;
 static void walk_tree_contents(struct repository *r,
 			       struct tree *tree,
 			       struct names_and_oids *no)
@@ -86,6 +87,8 @@ static void walk_tree_contents(struct repository *r,
 
 	if (parse_tree_gently(tree, 1) < 0)
 		return;
+
+	num_walked++;
 
 	init_tree_desc(&desc, tree->buffer, tree->size);
 	while (tree_entry(&desc, &entry)) {
@@ -216,4 +219,6 @@ void mark_edges_uninteresting_sparse(struct rev_info *revs,
 			}
 		}
 	}
+	
+	fprintf(stderr, "num_walked: %d\n", num_walked);
 }

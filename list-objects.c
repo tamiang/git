@@ -204,6 +204,7 @@ static void mark_edge_parents_uninteresting(struct commit *commit,
 	}
 }
 
+extern int num_walked;
 void mark_edges_uninteresting(struct rev_info *revs, show_edge_fn show_edge)
 {
 	struct commit_list *list;
@@ -235,6 +236,8 @@ void mark_edges_uninteresting(struct rev_info *revs, show_edge_fn show_edge)
 			}
 		}
 	}
+
+	fprintf(stderr, "num_walked: %d\n", num_walked);
 }
 
 static void add_pending_tree(struct rev_info *revs, struct tree *tree)
