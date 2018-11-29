@@ -5,12 +5,14 @@
 #include "midx.h"
 
 static char const * const builtin_multi_pack_index_usage[] = {
-	N_("git multi-pack-index [--object-dir=<dir>] (write|verify)"),
+	N_("git multi-pack-index [--object-dir=<dir>] (write|verify|repack)"),
 	NULL
 };
 
 static struct opts_multi_pack_index {
 	const char *object_dir;
+	size_t size;
+	timestamp_t until;
 } opts;
 
 int cmd_multi_pack_index(int argc, const char **argv,
@@ -44,6 +46,8 @@ int cmd_multi_pack_index(int argc, const char **argv,
 		return write_midx_file(opts.object_dir);
 	if (!strcmp(argv[0], "verify"))
 		return verify_midx_file(opts.object_dir);
+	if (!strcmp(argv[0], "repack"))
+		return repack_midx_file(opts.object_dir);
 
 	die(_("unrecognized verb: %s"), argv[0]);
 }
