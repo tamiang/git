@@ -306,8 +306,8 @@ test_expect_success 'multi-pack-index in an alternate' '
 
 compare_results_with_midx "with alternate (remote midx)"
 
-test_expect_success 'multi-pack-index repack' '
-	git multi-pack-index repack
+test_expect_success 'multi-pack-index expire' '
+	git multi-pack-index expire
 '
 
 # usage: corrupt_data <file> <pos> [<data>]
