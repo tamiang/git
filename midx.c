@@ -1089,8 +1089,11 @@ int expire_midx_packs(const char *object_dir)
 			continue;
 
 		printf(_("Deleting %s\n"), m->pack_names[i]);
-		close_pack(m->packs[i]);
-		m->packs[i] = NULL;
+
+		if (m->packs[i]) {
+			close_pack(m->packs[i]);
+			m->packs[i] = NULL;
+		}
 
 		string_list_insert(&packs_to_drop, m->pack_names[i]);
 
