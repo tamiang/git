@@ -9,6 +9,7 @@
 #include "midx.h"
 #include "progress.h"
 #include "string-list.h"
+#include "run-command.h"
 
 #define MIDX_SIGNATURE 0x4d494458 /* "MIDX" */
 #define MIDX_VERSION 1
@@ -1057,15 +1058,14 @@ int verify_midx_file(const char *object_dir)
 	return verify_midx_error;
 }
 
-
 int expire_midx_packs(const char *object_dir)
 {
 	uint32_t i;
 	size_t dirlen;
 	struct strbuf buf = STRBUF_INIT;
-	struct multi_pack_index *m = load_multi_pack_index(object_dir, 1);
 	uint32_t *count;
 	struct string_list packs_to_drop = STRING_LIST_INIT_NODUP;
+	struct multi_pack_index *m = load_multi_pack_index(object_dir, 1);
 
 	if (!m)
 		return 0;
@@ -1112,4 +1112,149 @@ int expire_midx_packs(const char *object_dir)
 	string_list_clear(&packs_to_drop, 0);
 
 	return 0;
+}
+
+struct date_and_size {
+	timestamp_t mtime;
+	int pack_int_id;
+};
+
+static int compare_by_date(const void *_a, const void *_b)
+{
+	const struct date_and_size *a, *b;
+
+	a = (const struct date_and_size *)_a;
+	b = (const struct date_and_size *)_b;
+
+	if (a->mtime < b->mtime)
+		return -1;
+	if (a->mtime > b->mtime)
+		return 1;
+	return 0;
+}
+
+int repack_midx_packs(struct repository *r, const char *object_dir, size_t size)
+{
+	uint32_t i;
+	size_t total_size;
+	struct oidset *pack_sets;
+	struct date_and_size *pack_ds;
+	size_t *pack_sizes;
+	struct child_process cmd = CHILD_PROCESS_INIT;
+	int result = 0;
+	int packs_to_repack;
+	struct strbuf base_name = STRBUF_INIT;
+	struct multi_pack_index *m = load_multi_pack_index(object_dir, 1);
+
+	if (!m)
+		return 0;
+
+	packs_to_repack = m->num_packs;
+	pack_sizes = xcalloc(m->num_packs, sizeof(size_t));
+	pack_ds = xcalloc(m->num_packs, sizeof(struct date_and_size));
+	pack_sets = xcalloc(m->num_packs, sizeof(struct oidset));
+
+	for (i = 0; i < m->num_packs; i++) {
+		if (!prepare_midx_pack(m, i))
+			continue;
+
+		pack_ds[i].mtime = m->packs[i]->mtime;
+		pack_ds[i].pack_int_id = i;
+	}
+
+	total_size = 0;
+	for (i = 0; i < m->num_objects; i++) {
+		struct pack_entry e;
+		off_t disk_size;
+		struct object_info info = OBJECT_INFO_INIT;
+		uint32_t pack_int_id = nth_midxed_pack_int_id(m, i);
+
+		if (pack_sizes[pack_int_id] >= size)
+			continue;
+		
+		if (!nth_midxed_pack_entry(m, &e, i))
+			continue;
+
+		info.disk_sizep = &disk_size;
+		packed_object_info(r, e.p, e.offset, &info);
+		pack_sizes[pack_int_id] += disk_size;
+		total_size += disk_size;
+
+		if (pack_sizes[pack_int_id] >= size) {
+			oidset_clear(&pack_sets[pack_int_id]);
+			total_size -= pack_sizes[pack_int_id];
+			packs_to_repack--;
+		} else {
+			struct object_id oid;
+			nth_midxed_object_oid(&oid, m, i);
+			oidset_insert(&pack_sets[pack_int_id], &oid);
+		}
+	}
+
+	if (total_size < size || packs_to_repack < 2)
+		goto cleanup;
+
+	QSORT(pack_ds, m->num_packs, compare_by_date);	
+
+	argv_array_push(&cmd.args, "pack-objects");
+
+	strbuf_addstr(&base_name, object_dir);
+
+	/* TODO: allow custimizing this prefix */
+	strbuf_addstr(&base_name, "/pack/pack");
+	argv_array_push(&cmd.args, base_name.buf);
+	strbuf_release(&base_name);
+
+	cmd.git_cmd = 1;
+	cmd.out = -1;
+	cmd.in = -1;
+
+	if (start_command(&cmd)) {
+		error(_("could not start pack-objects"));
+		result = 1;
+		goto cleanup;
+	}
+
+	total_size = 0;
+	for (i = 0; total_size < size && i < m->num_packs; i++) {
+		struct oidset_iter iter;
+		struct object_id *oid;
+		int pack_int_id = pack_ds[i].pack_int_id;
+
+		if (pack_sizes[pack_int_id] >= size)
+			continue;
+
+		total_size += pack_sizes[pack_int_id];
+
+		oidset_iter_init(&pack_sets[pack_int_id], &iter);
+		while ((oid = oidset_iter_next(&iter))) {
+			xwrite(cmd.in, oid_to_hex(oid), GIT_SHA1_HEXSZ);
+			xwrite(cmd.in, "\n", 1);
+		}
+	}
+	close(cmd.in);
+
+	if (finish_command(&cmd)) {
+		error(_("could not finish pack-objects"));
+		result = 1;
+		goto cleanup;
+	}
+
+	for (i = 0; m && i < m->num_packs; i++)
+		oidset_clear(&pack_sets[i]);
+	close_midx(m);
+	m = NULL;
+
+	result = write_midx_file(object_dir);
+	
+cleanup:
+	for (i = 0; m && i < m->num_packs; i++)
+		oidset_clear(&pack_sets[i]);
+	if (m)
+		close_midx(m);
+	free(pack_sets);
+	free(pack_sizes);
+	free(pack_ds);
+
+	return result;
 }

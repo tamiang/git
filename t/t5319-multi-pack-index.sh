@@ -269,6 +269,14 @@ test_expect_success 'git-fsck incorrect offset' '
 		"git -c core.multipackindex=true fsck"
 '
 
+test_expect_success 'multi-pack-index repack' '
+	git multi-pack-index repack --pack-size=16
+'
+
+test_expect_success 'multi-pack-index expire' '
+	git multi-pack-index expire
+'
+
 test_expect_success 'repack removes multi-pack-index' '
 	test_path_is_file $objdir/pack/multi-pack-index &&
 	GIT_TEST_MULTI_PACK_INDEX=0 git repack -adf &&
@@ -305,10 +313,6 @@ test_expect_success 'multi-pack-index in an alternate' '
 '
 
 compare_results_with_midx "with alternate (remote midx)"
-
-test_expect_success 'multi-pack-index expire' '
-	git multi-pack-index expire
-'
 
 # usage: corrupt_data <file> <pos> [<data>]
 corrupt_data () {

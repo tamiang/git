@@ -51,6 +51,7 @@ void clear_midx_file(struct repository *r);
 int verify_midx_file(const char *object_dir);
 
 int expire_midx_packs(const char *object_dir);
+int repack_midx_packs(struct repository *r, const char *object_dir, size_t size);
 
 void close_midx(struct multi_pack_index *m);
 
