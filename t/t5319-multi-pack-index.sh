@@ -356,4 +356,45 @@ test_expect_success 'verify incorrect 64-bit offset' '
 		"incorrect object offset"
 '
 
+test_expect_success 'setup large repo for repack tests' '
+	mkdir repack-repo &&
+	(
+		cd repack-repo &&
+		git init &&
+		for i in $(test_seq 1 20)
+		do
+			test_commit $i &&
+			git branch $i
+		done &&
+		PREFIX=.git/objects/pack/pack &&
+		git pack-objects --revs $PREFIX <<-EOF &&
+		refs/heads/3
+		EOF
+		git pack-objects --revs $PREFIX <<-EOF &&
+		refs/heads/8
+		^refs/heads/3
+		EOF
+		git pack-objects --revs $PREFIX <<-EOF &&
+		refs/heads/13
+		^refs/heads/8
+		EOF
+		git pack-objects --revs $PREFIX <<-EOF &&
+		refs/heads/20
+		^refs/heads/13
+		EOF
+		git multi-pack-index write
+	)
+'
+
+test_expect_success 'expire repack expire' '
+	cp -r repack-repo repack-repo2 &&
+	(
+		cd repack-repo2 &&
+		MAXSIZE=$(ls -l .git/objects/pack/*pack | awk "{print \$5;}" | sort -n -r | head -n 1) &&
+		git multi-pack-index expire &&
+		git multi-pack-index repack --pack-size=$MAXSIZE &&
+		git multi-pack-index expire
+	)
+'
+
 test_done
