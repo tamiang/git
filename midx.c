@@ -430,9 +430,11 @@ static size_t write_midx_header(struct hashfile *f,
 struct pack_list {
 	struct packed_git **list;
 	char **names;
+	uint32_t *perm;
 	uint32_t nr;
 	uint32_t alloc_list;
 	uint32_t alloc_names;
+	uint32_t alloc_perm;
 	size_t pack_name_concat_len;
 	struct multi_pack_index *m;
 };
@@ -448,6 +450,7 @@ static void add_pack_to_midx(const char *full_path, size_t full_path_len,
 
 		ALLOC_GROW(packs->list, packs->nr + 1, packs->alloc_list);
 		ALLOC_GROW(packs->names, packs->nr + 1, packs->alloc_names);
+		ALLOC_GROW(packs->perm, packs->nr + 1, packs->alloc_perm);
 
 		packs->list[packs->nr] = add_packed_git(full_path,
 							full_path_len,
@@ -467,6 +470,7 @@ static void add_pack_to_midx(const char *full_path, size_t full_path_len,
 			return;
 		}
 
+		packs->perm[packs->nr] = packs->nr;
 		packs->names[packs->nr] = xstrdup(file_name);
 		packs->pack_name_concat_len += strlen(file_name) + 1;
 		packs->nr++;
@@ -493,7 +497,7 @@ static void sort_packs_by_name(char **pack_names, uint32_t nr_packs, uint32_t *p
 	ALLOC_ARRAY(pairs, nr_packs);
 
 	for (i = 0; i < nr_packs; i++) {
-		pairs[i].pack_int_id = i;
+		pairs[i].pack_int_id = perm[i];
 		pairs[i].pack_name = pack_names[i];
 	}
 
@@ -805,7 +809,6 @@ int write_midx_file(const char *object_dir)
 	struct hashfile *f = NULL;
 	struct lock_file lk;
 	struct pack_list packs;
-	uint32_t *pack_perm = NULL;
 	uint64_t written = 0;
 	uint32_t chunk_ids[MIDX_MAX_CHUNKS + 1];
 	uint64_t chunk_offsets[MIDX_MAX_CHUNKS + 1];
@@ -824,18 +827,22 @@ int write_midx_file(const char *object_dir)
 
 	packs.nr = 0;
 	packs.alloc_list = packs.m ? packs.m->num_packs : 16;
-	packs.alloc_names = packs.alloc_list;
+	packs.alloc_perm = packs.alloc_names = packs.alloc_list;
 	packs.list = NULL;
 	packs.names = NULL;
+	packs.perm = NULL;
 	packs.pack_name_concat_len = 0;
 	ALLOC_ARRAY(packs.list, packs.alloc_list);
 	ALLOC_ARRAY(packs.names, packs.alloc_names);
+	ALLOC_ARRAY(packs.perm, packs.alloc_perm);
 
 	if (packs.m) {
 		for (i = 0; i < packs.m->num_packs; i++) {
 			ALLOC_GROW(packs.list, packs.nr + 1, packs.alloc_list);
 			ALLOC_GROW(packs.names, packs.nr + 1, packs.alloc_names);
+			ALLOC_GROW(packs.perm, packs.nr + 1, packs.alloc_perm);
 
+			packs.perm[packs.nr] = i;
 			packs.list[packs.nr] = NULL;
 			packs.names[packs.nr] = xstrdup(packs.m->pack_names[i]);
 			packs.pack_name_concat_len += strlen(packs.names[packs.nr]) + 1;
@@ -852,10 +859,9 @@ int write_midx_file(const char *object_dir)
 		packs.pack_name_concat_len += MIDX_CHUNK_ALIGNMENT -
 					      (packs.pack_name_concat_len % MIDX_CHUNK_ALIGNMENT);
 
-	ALLOC_ARRAY(pack_perm, packs.nr);
-	sort_packs_by_name(packs.names, packs.nr, pack_perm);
+	sort_packs_by_name(packs.names, packs.nr, packs.perm);
 
-	entries = get_sorted_entries(packs.m, packs.list, pack_perm, packs.nr, &nr_entries);
+	entries = get_sorted_entries(packs.m, packs.list, packs.perm, packs.nr, &nr_entries);
 
 	for (i = 0; i < nr_entries; i++) {
 		if (entries[i].offset > 0x7fffffff)
@@ -973,8 +979,8 @@ cleanup:
 
 	free(packs.list);
 	free(packs.names);
+	free(packs.perm);
 	free(entries);
-	free(pack_perm);
 	free(midx_name);
 	return 0;
 }
