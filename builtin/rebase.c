@@ -368,6 +368,7 @@ static void add_var(struct strbuf *buf, const char *name, const char *value)
 
 #define RESET_HEAD_DETACH (1<<0)
 #define RESET_HEAD_HARD (1<<1)
+#define RESET_HEAD_REFS_ONLY (1<<2)
 
 static int reset_head(struct object_id *oid, const char *action,
 		      const char *switch_to_branch, unsigned flags,
@@ -389,6 +390,9 @@ static int reset_head(struct object_id *oid, const char *action,
 
 	if (switch_to_branch && !starts_with(switch_to_branch, "refs/"))
 		BUG("Not a fully qualified branch: '%s'", switch_to_branch);
+
+	if (flags & RESET_HEAD_REFS_ONLY)
+		goto reset_head_refs;
 
 	if (hold_locked_index(&lock, LOCK_REPORT_ON_ERROR) < 0) {
 		ret = -1;
@@ -443,6 +447,7 @@ static int reset_head(struct object_id *oid, const char *action,
 		goto leave_reset_head;
 	}
 
+reset_head_refs:
 	reflog_action = getenv(GIT_REFLOG_ACTION_ENVIRONMENT);
 	strbuf_addf(&msg, "%s: ", reflog_action ? reflog_action : "rebase");
 	prefix_len = msg.len;
@@ -499,7 +504,8 @@ static int move_to_original_branch(struct rebase_options *opts)
 		    opts->head_name, oid_to_hex(&opts->onto->object.oid));
 	strbuf_addf(&head_reflog, "rebase finished: returning to %s",
 		    opts->head_name);
-	ret = reset_head(NULL, "checkout", opts->head_name, 0,
+	ret = reset_head(NULL, "checkout", opts->head_name,
+			 RESET_HEAD_REFS_ONLY,
 			 orig_head_reflog.buf, head_reflog.buf);
 
 	strbuf_release(&orig_head_reflog);
