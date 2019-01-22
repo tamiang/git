@@ -585,6 +585,7 @@ static void handle_ref_opt(const char *pattern, const char *prefix)
 int cmd_rev_parse(int argc, const char **argv, const char *prefix)
 {
 	int i, as_is = 0, verify = 0, quiet = 0, revs_count = 0, type = 0;
+	int count = 1;
 	int did_repo_setup = 0;
 	int has_dashdash = 0;
 	int output_prefix = 0;
@@ -918,6 +919,10 @@ int cmd_rev_parse(int argc, const char **argv, const char *prefix)
 				show_datestring("--min-age=", arg);
 				continue;
 			}
+			if (skip_prefix(arg, "--count=", &arg)) {
+				count = atoi(arg);
+				continue;
+			}
 			if (show_flag(arg) && verify)
 				die_no_single_rev(quiet);
 			continue;
@@ -934,18 +939,27 @@ int cmd_rev_parse(int argc, const char **argv, const char *prefix)
 			name++;
 			type = REVERSED;
 		}
+		
 		if (!get_oid_with_context(name, flags, &oid, &unused)) {
-			if (verify)
-				revs_count++;
-			else
-				show_rev(type, &oid, name);
+			while (count > 0) {
+				if (!get_oid_with_context(name, flags, &oid, &unused)) {
+					if (verify)
+						revs_count++;
+					else
+						show_rev(type, &oid, name);
+				}
+
+				count--;
+			}
 			continue;
 		}
+
 		if (verify)
 			die_no_single_rev(quiet);
 		if (has_dashdash)
 			die("bad revision '%s'", arg);
 		as_is = 1;
+
 		if (!show_file(arg, output_prefix))
 			continue;
 		verify_filename(prefix, arg, 1);
