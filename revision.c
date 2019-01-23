@@ -34,6 +34,8 @@ volatile show_early_output_fn_t show_early_output;
 static const char *term_bad;
 static const char *term_good;
 
+int num_trees_parsed;
+
 implement_shared_commit_slab(revision_sources, char *);
 
 void show_object_with_name(FILE *out, struct object *obj, const char *name)
@@ -63,6 +65,8 @@ static void mark_tree_contents_uninteresting(struct repository *r,
 
 	if (parse_tree_gently(tree, 1) < 0)
 		return;
+
+	num_trees_parsed++;
 
 	init_tree_desc(&desc, tree->buffer, tree->size);
 	while (tree_entry(&desc, &entry)) {
@@ -171,6 +175,8 @@ static void add_children_by_path(struct repository *r,
 
 	if (parse_tree_gently(tree, 1) < 0)
 		return;
+
+	num_trees_parsed++;
 
 	init_tree_desc(&desc, tree->buffer, tree->size);
 	while (tree_entry(&desc, &entry)) {

@@ -249,13 +249,15 @@ static void add_edge_parents(struct commit *commit,
 	}
 }
 
+extern int num_trees_parsed;
+
 void mark_edges_uninteresting(struct rev_info *revs,
 			      show_edge_fn show_edge,
 			      int sparse)
 {
 	struct commit_list *list;
 	int i;
-
+	num_trees_parsed = 0;
 	if (sparse) {
 		struct oidset set;
 		oidset_init(&set, 16);
@@ -303,6 +305,8 @@ void mark_edges_uninteresting(struct rev_info *revs,
 			}
 		}
 	}
+
+        trace2_data_intmax("pack-objects", revs->repo, "num_trees_parsed", num_trees_parsed);
 }
 
 static void add_pending_tree(struct rev_info *revs, struct tree *tree)
