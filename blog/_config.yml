@@ -1,0 +1,5 @@
+name: The Git Contributor Blog
+description: A blog about Git by the community building Git
+url: http:<F10>//derrickstolee.github.io/blog
+plugins:
+  - jekyll-feed
