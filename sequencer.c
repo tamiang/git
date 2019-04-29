@@ -2941,7 +2941,7 @@ static int do_reset(const char *name, int len, struct replay_opts *opts)
 	struct tree_desc desc;
 	struct tree *tree;
 	struct unpack_trees_options unpack_tree_opts;
-	int ret = 0;
+	int ret = 0, unpack_trees_result;
 
 	if (hold_locked_index(&lock, LOCK_REPORT_ON_ERROR) < 0)
 		return -1;
@@ -3002,7 +3002,11 @@ static int do_reset(const char *name, int len, struct replay_opts *opts)
 		return -1;
 	}
 
-	if (unpack_trees(1, &desc, &unpack_tree_opts)) {
+	trace2_region_enter("unpack-trees", "sequencer", the_repository);
+	unpack_trees_result = unpack_trees(1, &desc, &unpack_tree_opts);
+	trace2_region_leave("unpack-trees", "sequencer", the_repository);
+
+	if (unpack_trees_result) {
 		rollback_lock_file(&lock);
 		free((void *)desc.buffer);
 		strbuf_release(&ref_name);

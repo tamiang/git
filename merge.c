@@ -52,7 +52,7 @@ int checkout_fast_forward(struct repository *r,
 	struct tree *trees[MAX_UNPACK_TREES];
 	struct unpack_trees_options opts;
 	struct tree_desc t[MAX_UNPACK_TREES];
-	int i, nr_trees = 0;
+	int i, nr_trees = 0, unpack_trees_result;
 	struct dir_struct dir;
 	struct lock_file lock_file = LOCK_INIT;
 
@@ -96,7 +96,11 @@ int checkout_fast_forward(struct repository *r,
 	opts.fn = twoway_merge;
 	setup_unpack_trees_porcelain(&opts, "merge");
 
-	if (unpack_trees(nr_trees, t, &opts)) {
+	trace2_region_enter("unpack-trees", "merge", r);
+	unpack_trees_result = unpack_trees(nr_trees, t, &opts);
+	trace2_region_leave("unpack-trees", "merge", r);
+
+	if (unpack_trees_result) {
 		rollback_lock_file(&lock_file);
 		clear_unpack_trees_porcelain(&opts);
 		return -1;

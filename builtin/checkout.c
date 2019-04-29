@@ -632,7 +632,10 @@ static int merge_working_tree(const struct checkout_opts *opts,
 		tree = parse_tree_indirect(&new_branch_info->commit->object.oid);
 		init_tree_desc(&trees[1], tree->buffer, tree->size);
 
+		trace2_region_enter("unpack-trees", "checkout", the_repository);
 		ret = unpack_trees(2, trees, &topts);
+		trace2_region_leave("unpack-trees", "checkout", the_repository);
+
 		clear_unpack_trees_porcelain(&topts);
 		if (ret == -1) {
 			/*

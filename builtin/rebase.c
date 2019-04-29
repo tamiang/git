@@ -387,7 +387,7 @@ static int reset_head(struct object_id *oid, const char *action,
 	size_t prefix_len;
 	struct object_id *orig = NULL, oid_orig,
 		*old_orig = NULL, oid_old_orig;
-	int ret = 0, nr = 0;
+	int ret = 0, nr = 0, unpack_trees_result;
 
 	if (switch_to_branch && !starts_with(switch_to_branch, "refs/"))
 		BUG("Not a fully qualified branch: '%s'", switch_to_branch);
@@ -435,7 +435,11 @@ static int reset_head(struct object_id *oid, const char *action,
 		goto leave_reset_head;
 	}
 
-	if (unpack_trees(nr, desc, &unpack_tree_opts)) {
+	trace2_region_enter("unpack-trees", "rebase", the_repository);
+	unpack_trees_result = unpack_trees(nr, desc, &unpack_tree_opts);
+	trace2_region_leave("unpack-trees", "rebase", the_repository);
+	
+	if (unpack_trees_result) {
 		ret = -1;
 		goto leave_reset_head;
 	}
