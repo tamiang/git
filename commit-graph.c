@@ -371,6 +371,25 @@ static int bsearch_graph(struct commit_graph *g, struct object_id *oid, uint32_t
 			    g->chunk_oid_lookup, g->hash_len, pos);
 }
 
+static void load_oid_from_graph(struct commit_graph *g, int pos, struct object_id *oid)
+{
+	if (!g)
+		BUG("NULL commit-graph");
+
+	if (pos < g->num_commits_in_base) {
+		load_oid_from_graph(g->base_graph, pos, oid);
+		return;
+	}
+
+	if (pos >= g->num_commits + g->num_commits_in_base)
+		BUG("position %d is beyond the scope of this commit-graph (%d local + %d base commits)",
+		    pos, g->num_commits, g->num_commits_in_base);
+
+	pos -= g->num_commits_in_base;
+
+	hashcpy(oid->hash, g->chunk_oid_lookup + g->hash_len * pos);
+}
+
 static struct commit_list **insert_parent_or_die(struct repository *r,
 						 struct commit_graph *g,
 						 uint64_t pos,
@@ -379,10 +398,10 @@ static struct commit_list **insert_parent_or_die(struct repository *r,
 	struct commit *c;
 	struct object_id oid;
 
-	if (pos >= g->num_commits)
+	if (pos >= g->num_commits + g->num_commits_in_base)
 		die("invalid parent position %"PRIu64, pos);
 
-	hashcpy(oid.hash, g->chunk_oid_lookup + g->hash_len * pos);
+	load_oid_from_graph(g, pos, &oid);
 	c = lookup_commit(r, &oid);
 	if (!c)
 		die(_("could not find commit %s"), oid_to_hex(&oid));
@@ -393,7 +412,7 @@ static struct commit_list **insert_parent_or_die(struct repository *r,
 static void fill_commit_graph_info(struct commit *item, struct commit_graph *g, uint32_t pos)
 {
 	const unsigned char *commit_data = g->chunk_commit_data + GRAPH_DATA_WIDTH * pos;
-	item->graph_pos = pos;
+	item->graph_pos = pos + g->num_commits_in_base;
 	item->generation = get_be32(commit_data + g->hash_len + 8) >> 2;
 }
 
@@ -405,10 +424,25 @@ static int fill_commit_in_graph(struct repository *r,
 	uint32_t *parent_data_ptr;
 	uint64_t date_low, date_high;
 	struct commit_list **pptr;
-	const unsigned char *commit_data = g->chunk_commit_data + (g->hash_len + 16) * pos;
+	const unsigned char *commit_data;
+
+	if (pos < g->num_commits_in_base)
+		return fill_commit_in_graph(r, item, g->base_graph, pos);
+
+	if (pos >= g->num_commits + g->num_commits_in_base)
+		BUG("position %d is beyond the scope of this commit-graph (%d local + %d base commits)",
+		    pos, g->num_commits, g->num_commits_in_base);
+
+	/*
+	 * Store the "full" position, but then use the
+	 * "local" position for the rest of the calculation.
+	 */
+	item->graph_pos = pos;
+	pos -= g->num_commits_in_base;
+
+	commit_data = g->chunk_commit_data + (g->hash_len + 16) * pos;
 
 	item->object.parsed = 1;
-	item->graph_pos = pos;
 
 	item->maybe_tree = NULL;
 
@@ -452,7 +486,18 @@ static int find_commit_in_graph(struct commit *item, struct commit_graph *g, uin
 		*pos = item->graph_pos;
 		return 1;
 	} else {
-		return bsearch_graph(g, &(item->object.oid), pos);
+		struct commit_graph *cur_g = g;
+		uint32_t pos_in_g;
+
+		while (cur_g && !bsearch_graph(cur_g, &(item->object.oid), &pos_in_g))
+			cur_g = cur_g->base_graph;
+
+		if (cur_g) {
+			*pos = pos_in_g + cur_g->num_commits_in_base;
+			return 1;
+		}
+
+		return 0;
 	}
 }
 
@@ -492,8 +537,13 @@ static struct tree *load_tree_for_commit(struct repository *r,
 					 struct commit *c)
 {
 	struct object_id oid;
-	const unsigned char *commit_data = g->chunk_commit_data +
-					   GRAPH_DATA_WIDTH * (c->graph_pos);
+	const unsigned char *commit_data;
+
+	if (c->graph_pos < g->num_commits_in_base)
+		return load_tree_for_commit(r, g->base_graph, c);
+
+	commit_data = g->chunk_commit_data +
+			GRAPH_DATA_WIDTH * (c->graph_pos - g->num_commits_in_base);
 
 	hashcpy(oid.hash, commit_data);
 	c->maybe_tree = lookup_tree(r, &oid);
