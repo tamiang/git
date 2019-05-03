@@ -45,6 +45,19 @@ char *get_commit_graph_filename(const char *obj_dir)
 	return xstrfmt("%s/info/commit-graph", obj_dir);
 }
 
+static char *get_split_graph_filename(const char *obj_dir,
+				      const char *oid_hex)
+{
+	return xstrfmt("%s/info/commit-graphs/commit-graph-%s",
+		       obj_dir,
+		       oid_hex);
+}
+
+static char *get_chain_filename(const char *obj_dir)
+{
+	return xstrfmt("%s/info/commit-graphs/commit-graph-chain", obj_dir);
+}
+
 static uint8_t oid_version(void)
 {
 	return 1;
@@ -286,18 +299,68 @@ static struct commit_graph *load_commit_graph_one(const char *graph_file)
 	return load_commit_graph_one_fd_st(fd, &st);
 }
 
+
+static int prepare_commit_graph_v1(struct repository *r, const char *obj_dir)
+{
+	char *graph_name = get_commit_graph_filename(obj_dir);
+	r->objects->commit_graph = load_commit_graph_one(graph_name);
+	free(graph_name);
+
+	return r->objects->commit_graph ? 0 : -1;
+}
+
+static void prepare_commit_graph_chain(struct repository *r, const char *obj_dir)
+{
+	struct strbuf line = STRBUF_INIT;
+	char *chain_name = get_chain_filename(obj_dir);
+	FILE *fp = fopen(chain_name, "r");
+	uint32_t num_commits = 0;
+
+	free(chain_name);
+
+	if (!fp)
+		return;
+
+	while (strbuf_getline_lf(&line, fp) != EOF) {
+		struct object_id oid;
+		struct object_directory *odb;
+
+		if (get_oid_hex(line.buf, &oid)) {
+			warning(_("invalid commit-graph chain: line '%s' not a hash"),
+				line.buf);
+			return;
+		}
+
+		for (odb = r->objects->odb; odb; odb = odb->next) {
+			char *graph_name = get_split_graph_filename(odb->path, line.buf);
+			struct commit_graph *g = load_commit_graph_one(graph_name);
+			free(graph_name);
+
+			if (g) {
+				g->base_graph = r->objects->commit_graph;
+				r->objects->commit_graph = g;
+
+				g->num_commits_in_base = num_commits;
+				num_commits += g->num_commits;
+
+				break;
+			}
+		}
+	}
+
+	fclose(fp);
+}
+
 static void prepare_commit_graph_one(struct repository *r, const char *obj_dir)
 {
-	char *graph_name;
 
 	if (r->objects->commit_graph)
 		return;
 
-	graph_name = get_commit_graph_filename(obj_dir);
-	r->objects->commit_graph =
-		load_commit_graph_one(graph_name);
+	if (!prepare_commit_graph_v1(r, obj_dir))
+		return;
 
-	FREE_AND_NULL(graph_name);
+	prepare_commit_graph_chain(r, obj_dir);
 }
 
 /*
@@ -411,8 +474,15 @@ static struct commit_list **insert_parent_or_die(struct repository *r,
 
 static void fill_commit_graph_info(struct commit *item, struct commit_graph *g, uint32_t pos)
 {
-	const unsigned char *commit_data = g->chunk_commit_data + GRAPH_DATA_WIDTH * pos;
-	item->graph_pos = pos + g->num_commits_in_base;
+	const unsigned char *commit_data;
+
+	if (pos < g->num_commits_in_base) {
+		fill_commit_graph_info(item, g->base_graph, pos);
+		return;
+	}
+
+	commit_data = g->chunk_commit_data + GRAPH_DATA_WIDTH * (pos - g->num_commits_in_base);
+	item->graph_pos = pos;
 	item->generation = get_be32(commit_data + g->hash_len + 8) >> 2;
 }
 
