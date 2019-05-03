@@ -51,6 +51,8 @@ struct commit_graph {
 	uint32_t num_commits_in_base;
 	struct commit_graph *base_graph;
 
+	const char *obj_dir;
+
 	const uint32_t *chunk_oid_fanout;
 	const unsigned char *chunk_oid_lookup;
 	const unsigned char *chunk_commit_data;
