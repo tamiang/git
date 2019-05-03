@@ -48,7 +48,7 @@ char *get_commit_graph_filename(const char *obj_dir)
 static char *get_split_graph_filename(const char *obj_dir,
 				      uint32_t split_count)
 {
-	return xstrfmt("%s/info/commit-graph-%d", obj_dir, split_count);
+	return xstrfmt("%s/info/commit-graphs/commit-graph-%d", obj_dir, split_count);
 }
 
 static uint8_t oid_version(void)
@@ -578,6 +578,28 @@ struct tree *get_commit_tree_in_graph(struct repository *r, const struct commit 
 	return get_commit_tree_in_graph_one(r, r->objects->commit_graph, c);
 }
 
+struct packed_commit_list {
+	struct commit **list;
+	int nr;
+	int alloc;
+};
+
+struct write_commit_graph_data {
+	struct repository *r;
+	const char *obj_dir;
+	struct commit_graph **existing_graphs;
+	uint32_t num_existing_graphs;
+	uint32_t num_goal_graphs;
+	uint32_t num_extra_edges;
+	uint32_t num_chunks;
+	uint64_t approx_nr_objects;
+	char *graph_name;
+	struct packed_commit_list commits;
+	struct progress *progress;
+	unsigned report_progress:1,
+			append:1;
+};
+
 static void write_graph_chunk_fanout(struct hashfile *f,
 				     struct commit **commits,
 				     int nr_commits,
@@ -753,12 +775,6 @@ static int commit_compare(const void *_a, const void *_b)
 	return oidcmp(a, b);
 }
 
-struct packed_commit_list {
-	struct commit **list;
-	int nr;
-	int alloc;
-};
-
 struct packed_oid_list {
 	struct object_id *list;
 	int nr;
@@ -807,71 +823,130 @@ static void add_missing_parents(struct packed_oid_list *oids, struct commit *com
 	}
 }
 
-static void close_reachable(struct packed_oid_list *oids, int report_progress)
+static void close_reachable(struct write_commit_graph_data *data,
+			    struct packed_oid_list *oids)
 {
 	int i;
 	struct commit *commit;
-	struct progress *progress = NULL;
 
-	if (report_progress)
-		progress = start_delayed_progress(
-			_("Loading known commits in commit graph"), oids->nr);
+	if (data->report_progress)
+		data->progress = start_delayed_progress(
+				 _("Loading known commits in commit graph"), oids->nr);
 	for (i = 0; i < oids->nr; i++) {
-		display_progress(progress, i + 1);
-		commit = lookup_commit(the_repository, &oids->list[i]);
+		display_progress(data->progress, i + 1);
+		commit = lookup_commit(data->r, &oids->list[i]);
 		if (commit)
 			commit->object.flags |= UNINTERESTING;
 	}
-	stop_progress(&progress);
+	stop_progress(&data->progress);
 
 	/*
 	 * As this loop runs, oids->nr may grow, but not more
 	 * than the number of missing commits in the reachable
 	 * closure.
 	 */
-	if (report_progress)
-		progress = start_delayed_progress(
-			_("Expanding reachable commits in commit graph"), oids->nr);
+	if (data->report_progress)
+		data->progress = start_delayed_progress(
+				 _("Expanding reachable commits in commit graph"), oids->nr);
 	for (i = 0; i < oids->nr; i++) {
-		display_progress(progress, i + 1);
-		commit = lookup_commit(the_repository, &oids->list[i]);
+		display_progress(data->progress, i + 1);
+		commit = lookup_commit(data->r, &oids->list[i]);
 
 		if (commit && !parse_commit_no_graph(commit))
 			add_missing_parents(oids, commit);
 	}
-	stop_progress(&progress);
+	stop_progress(&data->progress);
 
-	if (report_progress)
-		progress = start_delayed_progress(
-			_("Clearing commit marks in commit graph"), oids->nr);
+	if (data->report_progress)
+		data->progress = start_delayed_progress(
+				_("Clearing commit marks in commit graph"), oids->nr);
 	for (i = 0; i < oids->nr; i++) {
-		display_progress(progress, i + 1);
+		display_progress(data->progress, i + 1);
 		commit = lookup_commit(the_repository, &oids->list[i]);
 
 		if (commit)
 			commit->object.flags &= ~UNINTERESTING;
 	}
-	stop_progress(&progress);
+	stop_progress(&data->progress);
 }
 
-static void compute_generation_numbers(struct packed_commit_list* commits,
-				       int report_progress)
+static uint32_t count_distinct_commits(struct write_commit_graph_data *data,
+				       struct packed_oid_list *oids)
+{
+	uint32_t i, count_distinct = 0;
+
+	if (data->report_progress)
+		data->progress = start_delayed_progress(
+			_("Counting distinct commits in commit graph"),
+			oids->nr);
+	display_progress(data->progress, 0); /* TODO: Measure QSORT() progress */
+	QSORT(oids->list, oids->nr, commit_compare);
+	count_distinct = 1;
+	for (i = 1; i < oids->nr; i++) {
+		display_progress(data->progress, i + 1);
+		if (!oideq(&oids->list[i - 1], &oids->list[i]))
+			count_distinct++;
+	}
+	stop_progress(&data->progress);
+
+	return count_distinct;
+}
+
+static void copy_distinct_commits(struct write_commit_graph_data *data,
+				  struct packed_oid_list *oids,
+				  uint32_t count_distinct)
+{
+	uint32_t i;
+	struct commit_list *parent;
+
+	data->num_extra_edges = 0;
+
+	data->commits.nr = 0;
+	data->commits.alloc = count_distinct;
+	ALLOC_ARRAY(data->commits.list, data->commits.alloc);
+
+	if (data->report_progress)
+		data->progress = start_delayed_progress(
+			_("Finding extra edges in commit graph"),
+			oids->nr);
+	for (i = 0; i < oids->nr; i++) {
+		int num_parents = 0;
+		display_progress(data->progress, i + 1);
+		if (i > 0 && oideq(&oids->list[i - 1], &oids->list[i]))
+			continue;
+
+		data->commits.list[data->commits.nr] = lookup_commit(data->r, &oids->list[i]);
+		parse_commit_no_graph(data->commits.list[data->commits.nr]);
+
+		for (parent = data->commits.list[data->commits.nr]->parents;
+		     parent; parent = parent->next)
+			num_parents++;
+
+		if (num_parents > 2)
+			data->num_extra_edges += num_parents - 1;
+
+		data->commits.nr++;
+	}
+	data->num_chunks = data->num_extra_edges ? 4 : 3;
+	stop_progress(&data->progress);
+}
+
+static void compute_generation_numbers(struct write_commit_graph_data* data)
 {
 	int i;
 	struct commit_list *list = NULL;
-	struct progress *progress = NULL;
 
-	if (report_progress)
-		progress = start_progress(
+	if (data->report_progress)
+		data->progress = start_progress(
 			_("Computing commit graph generation numbers"),
-			commits->nr);
-	for (i = 0; i < commits->nr; i++) {
-		display_progress(progress, i + 1);
-		if (commits->list[i]->generation != GENERATION_NUMBER_INFINITY &&
-		    commits->list[i]->generation != GENERATION_NUMBER_ZERO)
+			data->commits.nr);
+	for (i = 0; i < data->commits.nr; i++) {
+		display_progress(data->progress, i + 1);
+		if (data->commits.list[i]->generation != GENERATION_NUMBER_INFINITY &&
+		    data->commits.list[i]->generation != GENERATION_NUMBER_ZERO)
 			continue;
 
-		commit_list_insert(commits->list[i], &list);
+		commit_list_insert(data->commits.list[i], &list);
 		while (list) {
 			struct commit *current = list->item;
 			struct commit_list *parent;
@@ -898,7 +973,75 @@ static void compute_generation_numbers(struct packed_commit_list* commits,
 			}
 		}
 	}
-	stop_progress(&progress);
+	stop_progress(&data->progress);
+}
+
+static void write_commit_graph_1(struct write_commit_graph_data* data)
+{
+	struct hashfile *f;
+	uint32_t i;
+	struct lock_file lk = LOCK_INIT;
+	uint32_t chunk_ids[5];
+	uint64_t chunk_offsets[5];
+	const unsigned hashsz = the_hash_algo->rawsz;
+	struct strbuf progress_title = STRBUF_INIT;
+	uint64_t progress_cnt = 0;
+
+	hold_lock_file_for_update(&lk, data->graph_name, LOCK_DIE_ON_ERROR);
+	f = hashfd(lk.tempfile->fd, lk.tempfile->filename.buf);
+
+	hashwrite_be32(f, GRAPH_SIGNATURE);
+
+	hashwrite_u8(f, GRAPH_VERSION);
+	hashwrite_u8(f, oid_version());
+	hashwrite_u8(f, data->num_chunks);
+	hashwrite_u8(f, 0); /* unused padding byte */
+
+	chunk_ids[0] = GRAPH_CHUNKID_OIDFANOUT;
+	chunk_ids[1] = GRAPH_CHUNKID_OIDLOOKUP;
+	chunk_ids[2] = GRAPH_CHUNKID_DATA;
+	if (data->num_extra_edges)
+		chunk_ids[3] = GRAPH_CHUNKID_EXTRAEDGES;
+	else
+		chunk_ids[3] = 0;
+	chunk_ids[4] = 0;
+
+	chunk_offsets[0] = 8 + (data->num_chunks + 1) * GRAPH_CHUNKLOOKUP_WIDTH;
+	chunk_offsets[1] = chunk_offsets[0] + GRAPH_FANOUT_SIZE;
+	chunk_offsets[2] = chunk_offsets[1] + hashsz * data->commits.nr;
+	chunk_offsets[3] = chunk_offsets[2] + (hashsz + 16) * data->commits.nr;
+	chunk_offsets[4] = chunk_offsets[3] + 4 * data->num_extra_edges;
+
+	for (i = 0; i <= data->num_chunks; i++) {
+		uint32_t chunk_write[3];
+
+		chunk_write[0] = htonl(chunk_ids[i]);
+		chunk_write[1] = htonl(chunk_offsets[i] >> 32);
+		chunk_write[2] = htonl(chunk_offsets[i] & 0xffffffff);
+		hashwrite(f, chunk_write, 12);
+	}
+
+	if (data->report_progress) {
+		strbuf_addf(&progress_title,
+			    Q_("Writing out commit graph in %d pass",
+			       "Writing out commit graph in %d passes",
+			       data->num_chunks),
+			    data->num_chunks);
+		data->progress = start_delayed_progress(
+				 progress_title.buf,
+				 data->num_chunks * data->commits.nr);
+	}
+	write_graph_chunk_fanout(f, data->commits.list, data->commits.nr, data->progress, &progress_cnt);
+	write_graph_chunk_oids(f, hashsz, data->commits.list, data->commits.nr, data->progress, &progress_cnt);
+	write_graph_chunk_data(f, hashsz, data->commits.list, data->commits.nr, data->progress, &progress_cnt);
+	if (data->num_extra_edges)
+		write_graph_chunk_extra_edges(f, data->commits.list, data->commits.nr, data->progress, &progress_cnt);
+	stop_progress(&data->progress);
+	strbuf_release(&progress_title);
+
+	close_commit_graph(data->r);
+	finalize_hashfile(f, NULL, CSUM_HASH_IN_STREAM | CSUM_FSYNC);
+	commit_lock_file(&lk);
 }
 
 static int add_ref_to_list(const char *refname,
@@ -924,74 +1067,47 @@ int write_commit_graph_reachable(const char *obj_dir, unsigned int flags)
 	return result;
 }
 
-int write_commit_graph(const char *obj_dir,
-		       struct string_list *pack_indexes,
-		       struct string_list *commit_hex,
-		       unsigned int flags)
+static int fill_required_oids(struct write_commit_graph_data *data,
+			      struct packed_oid_list *oids,
+			      struct string_list *pack_indexes,
+			      struct string_list *commit_hex)
 {
-	struct packed_oid_list oids;
-	struct packed_commit_list commits;
-	struct hashfile *f;
-	uint32_t i, count_distinct = 0;
-	char *graph_name = NULL;
-	struct lock_file lk = LOCK_INIT;
-	uint32_t chunk_ids[5];
-	uint64_t chunk_offsets[5];
-	int num_chunks;
-	int num_extra_edges;
-	struct commit_list *parent;
-	struct progress *progress = NULL;
-	const unsigned hashsz = the_hash_algo->rawsz;
-	uint64_t progress_cnt = 0;
 	struct strbuf progress_title = STRBUF_INIT;
-	unsigned long approx_nr_objects;
-	int res = 0;
-	int append = flags & COMMIT_GRAPH_APPEND;
-	int report_progress = flags & COMMIT_GRAPH_PROGRESS;
+	uint32_t i;
 
-	if (!commit_graph_compatible(the_repository))
-		return 0;
-
-	oids.nr = 0;
-	approx_nr_objects = approximate_object_count();
-	oids.alloc = approx_nr_objects / 32;
-	oids.progress = NULL;
-	oids.progress_done = 0;
-	commits.list = NULL;
-
-	if (append) {
-		prepare_commit_graph_one(the_repository, obj_dir);
-		if (the_repository->objects->commit_graph)
-			oids.alloc += the_repository->objects->commit_graph->num_commits;
+	if (data->append) {
+		prepare_commit_graph_one(data->r, data->obj_dir);
+		if (data->r->objects->commit_graph)
+			oids->alloc += data->r->objects->commit_graph->num_commits
+						 + data->r->objects->commit_graph->num_commits_in_base;
 	}
 
-	if (oids.alloc < 1024)
-		oids.alloc = 1024;
-	ALLOC_ARRAY(oids.list, oids.alloc);
+	if (oids->alloc < 1024)
+		oids->alloc = 1024;
+	ALLOC_ARRAY(oids->list, oids->alloc);
 
-	if (append && the_repository->objects->commit_graph) {
-		struct commit_graph *commit_graph =
-			the_repository->objects->commit_graph;
-		for (i = 0; i < commit_graph->num_commits; i++) {
-			const unsigned char *hash = commit_graph->chunk_oid_lookup +
-				commit_graph->hash_len * i;
-			hashcpy(oids.list[oids.nr++].hash, hash);
+	if (data->append && data->r->objects->commit_graph) {
+		struct commit_graph *g =
+			data->r->objects->commit_graph;
+		for (i = 0; i < g->num_commits; i++) {
+			const unsigned char *hash = g->chunk_oid_lookup + g->hash_len * i;
+			hashcpy(oids->list[oids->nr++].hash, hash);
 		}
 	}
 
 	if (pack_indexes) {
 		struct strbuf packname = STRBUF_INIT;
 		int dirlen;
-		strbuf_addf(&packname, "%s/pack/", obj_dir);
+		strbuf_addf(&packname, "%s/pack/", data->obj_dir);
 		dirlen = packname.len;
-		if (report_progress) {
+		if (data->report_progress) {
 			strbuf_addf(&progress_title,
 				    Q_("Finding commits for commit graph in %d pack",
 				       "Finding commits for commit graph in %d packs",
 				       pack_indexes->nr),
 				    pack_indexes->nr);
-			oids.progress = start_delayed_progress(progress_title.buf, 0);
-			oids.progress_done = 0;
+			oids->progress = start_delayed_progress(progress_title.buf, 0);
+			oids->progress_done = 0;
 		}
 		for (i = 0; i < pack_indexes->nr; i++) {
 			struct packed_git *p;
@@ -1000,40 +1116,38 @@ int write_commit_graph(const char *obj_dir,
 			p = add_packed_git(packname.buf, packname.len, 1);
 			if (!p) {
 				error(_("error adding pack %s"), packname.buf);
-				res = 1;
-				goto cleanup;
+				return 1;
 			}
 			if (open_pack_index(p)) {
 				error(_("error opening index for %s"), packname.buf);
-				res = 1;
-				goto cleanup;
+				return 1;
 			}
-			for_each_object_in_pack(p, add_packed_commits, &oids,
+			for_each_object_in_pack(p, add_packed_commits, oids,
 						FOR_EACH_OBJECT_PACK_ORDER);
 			close_pack(p);
 			free(p);
 		}
-		stop_progress(&oids.progress);
+		stop_progress(&oids->progress);
 		strbuf_reset(&progress_title);
 		strbuf_release(&packname);
 	}
 
 	if (commit_hex) {
-		if (report_progress) {
+		if (data->report_progress) {
 			strbuf_addf(&progress_title,
 				    Q_("Finding commits for commit graph from %d ref",
 				       "Finding commits for commit graph from %d refs",
 				       commit_hex->nr),
 				    commit_hex->nr);
-			progress = start_delayed_progress(progress_title.buf,
-							  commit_hex->nr);
+			oids->progress = start_delayed_progress(progress_title.buf,
+								commit_hex->nr);
 		}
 		for (i = 0; i < commit_hex->nr; i++) {
 			const char *end;
 			struct object_id oid;
 			struct commit *result;
 
-			display_progress(progress, i + 1);
+			display_progress(data->progress, i + 1);
 			if (commit_hex->items[i].string &&
 			    parse_oid_hex(commit_hex->items[i].string, &oid, &end))
 				continue;
@@ -1041,42 +1155,64 @@ int write_commit_graph(const char *obj_dir,
 			result = lookup_commit_reference_gently(the_repository, &oid, 1);
 
 			if (result) {
-				ALLOC_GROW(oids.list, oids.nr + 1, oids.alloc);
-				oidcpy(&oids.list[oids.nr], &(result->object.oid));
-				oids.nr++;
+				ALLOC_GROW(oids->list, oids->nr + 1, oids->alloc);
+				oidcpy(&oids->list[oids->nr], &(result->object.oid));
+				oids->nr++;
 			}
 		}
-		stop_progress(&progress);
+		stop_progress(&oids->progress);
 		strbuf_reset(&progress_title);
 	}
 
 	if (!pack_indexes && !commit_hex) {
-		if (report_progress)
-			oids.progress = start_delayed_progress(
+		if (data->report_progress)
+			oids->progress = start_delayed_progress(
 				_("Finding commits for commit graph among packed objects"),
-				approx_nr_objects);
-		for_each_packed_object(add_packed_commits, &oids,
+				data->approx_nr_objects);
+		for_each_packed_object(add_packed_commits, oids,
 				       FOR_EACH_OBJECT_PACK_ORDER);
-		if (oids.progress_done < approx_nr_objects)
-			display_progress(oids.progress, approx_nr_objects);
-		stop_progress(&oids.progress);
+		if (oids->progress_done < data->approx_nr_objects)
+			display_progress(data->progress, data->approx_nr_objects);
+		stop_progress(&oids->progress);
 	}
 
-	close_reachable(&oids, report_progress);
+	return 0;
+}
 
-	if (report_progress)
-		progress = start_delayed_progress(
-			_("Counting distinct commits in commit graph"),
-			oids.nr);
-	display_progress(progress, 0); /* TODO: Measure QSORT() progress */
-	QSORT(oids.list, oids.nr, commit_compare);
-	count_distinct = 1;
-	for (i = 1; i < oids.nr; i++) {
-		display_progress(progress, i + 1);
-		if (!oideq(&oids.list[i - 1], &oids.list[i]))
-			count_distinct++;
-	}
-	stop_progress(&progress);
+int write_commit_graph(const char *obj_dir,
+		       struct string_list *pack_indexes,
+		       struct string_list *commit_hex,
+		       unsigned int flags)
+{
+	struct packed_oid_list oids;
+	uint32_t count_distinct;
+	int res = 0;
+	struct write_commit_graph_data data;
+
+	memset(&data, 0, sizeof(struct write_commit_graph_data));
+	data.r = the_repository;
+	data.obj_dir = obj_dir;
+
+	if (flags & COMMIT_GRAPH_APPEND)
+		data.append = 1;
+	if (flags & COMMIT_GRAPH_PROGRESS)
+		data.report_progress = 1;
+
+	if (!commit_graph_compatible(the_repository))
+		return 0;
+
+	oids.nr = 0;
+	data.approx_nr_objects = approximate_object_count();
+	oids.alloc = data.approx_nr_objects / 32;
+	oids.progress_done = 0;
+	data.commits.list = NULL;
+
+	if (fill_required_oids(&data, &oids, pack_indexes, commit_hex))
+		goto cleanup;
+
+	close_reachable(&data, &oids);
+
+	count_distinct = count_distinct_commits(&data, &oids);
 
 	if (count_distinct >= GRAPH_EDGE_LAST_MASK) {
 		error(_("the commit graph format cannot write %d commits"), count_distinct);
@@ -1084,112 +1220,30 @@ int write_commit_graph(const char *obj_dir,
 		goto cleanup;
 	}
 
-	commits.nr = 0;
-	commits.alloc = count_distinct;
-	ALLOC_ARRAY(commits.list, commits.alloc);
+	copy_distinct_commits(&data, &oids, count_distinct);
 
-	num_extra_edges = 0;
-	if (report_progress)
-		progress = start_delayed_progress(
-			_("Finding extra edges in commit graph"),
-			oids.nr);
-	for (i = 0; i < oids.nr; i++) {
-		int num_parents = 0;
-		display_progress(progress, i + 1);
-		if (i > 0 && oideq(&oids.list[i - 1], &oids.list[i]))
-			continue;
-
-		commits.list[commits.nr] = lookup_commit(the_repository, &oids.list[i]);
-		parse_commit_no_graph(commits.list[commits.nr]);
-
-		for (parent = commits.list[commits.nr]->parents;
-		     parent; parent = parent->next)
-			num_parents++;
-
-		if (num_parents > 2)
-			num_extra_edges += num_parents - 1;
-
-		commits.nr++;
-	}
-	num_chunks = num_extra_edges ? 4 : 3;
-	stop_progress(&progress);
-
-	if (commits.nr >= GRAPH_EDGE_LAST_MASK) {
+	if (data.commits.nr >= GRAPH_EDGE_LAST_MASK) {
 		error(_("too many commits to write graph"));
 		res = 1;
 		goto cleanup;
 	}
 
-	compute_generation_numbers(&commits, report_progress);
+	compute_generation_numbers(&data);
 
-	graph_name = get_commit_graph_filename(obj_dir);
-	if (safe_create_leading_directories(graph_name)) {
-		UNLEAK(graph_name);
+	data.graph_name = get_commit_graph_filename(data.obj_dir);
+	if (safe_create_leading_directories(data.graph_name)) {
+		UNLEAK(data.graph_name);
 		error(_("unable to create leading directories of %s"),
-			graph_name);
+			data.graph_name);
 		res = errno;
 		goto cleanup;
 	}
 
-	hold_lock_file_for_update(&lk, graph_name, LOCK_DIE_ON_ERROR);
-	f = hashfd(lk.tempfile->fd, lk.tempfile->filename.buf);
-
-	hashwrite_be32(f, GRAPH_SIGNATURE);
-
-	hashwrite_u8(f, GRAPH_VERSION);
-	hashwrite_u8(f, oid_version());
-	hashwrite_u8(f, num_chunks);
-	hashwrite_u8(f, 0); /* unused padding byte */
-
-	chunk_ids[0] = GRAPH_CHUNKID_OIDFANOUT;
-	chunk_ids[1] = GRAPH_CHUNKID_OIDLOOKUP;
-	chunk_ids[2] = GRAPH_CHUNKID_DATA;
-	if (num_extra_edges)
-		chunk_ids[3] = GRAPH_CHUNKID_EXTRAEDGES;
-	else
-		chunk_ids[3] = 0;
-	chunk_ids[4] = 0;
-
-	chunk_offsets[0] = 8 + (num_chunks + 1) * GRAPH_CHUNKLOOKUP_WIDTH;
-	chunk_offsets[1] = chunk_offsets[0] + GRAPH_FANOUT_SIZE;
-	chunk_offsets[2] = chunk_offsets[1] + hashsz * commits.nr;
-	chunk_offsets[3] = chunk_offsets[2] + (hashsz + 16) * commits.nr;
-	chunk_offsets[4] = chunk_offsets[3] + 4 * num_extra_edges;
-
-	for (i = 0; i <= num_chunks; i++) {
-		uint32_t chunk_write[3];
-
-		chunk_write[0] = htonl(chunk_ids[i]);
-		chunk_write[1] = htonl(chunk_offsets[i] >> 32);
-		chunk_write[2] = htonl(chunk_offsets[i] & 0xffffffff);
-		hashwrite(f, chunk_write, 12);
-	}
-
-	if (report_progress) {
-		strbuf_addf(&progress_title,
-			    Q_("Writing out commit graph in %d pass",
-			       "Writing out commit graph in %d passes",
-			       num_chunks),
-			    num_chunks);
-		progress = start_delayed_progress(
-			progress_title.buf,
-			num_chunks * commits.nr);
-	}
-	write_graph_chunk_fanout(f, commits.list, commits.nr, progress, &progress_cnt);
-	write_graph_chunk_oids(f, hashsz, commits.list, commits.nr, progress, &progress_cnt);
-	write_graph_chunk_data(f, hashsz, commits.list, commits.nr, progress, &progress_cnt);
-	if (num_extra_edges)
-		write_graph_chunk_extra_edges(f, commits.list, commits.nr, progress, &progress_cnt);
-	stop_progress(&progress);
-	strbuf_release(&progress_title);
-
-	close_commit_graph(the_repository);
-	finalize_hashfile(f, NULL, CSUM_HASH_IN_STREAM | CSUM_FSYNC);
-	commit_lock_file(&lk);
+	write_commit_graph_1(&data);
 
 cleanup:
-	free(graph_name);
-	free(commits.list);
+	free(data.graph_name);
+	free(data.commits.list);
 	free(oids.list);
 
 	return res;
