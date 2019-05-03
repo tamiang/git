@@ -40,6 +40,8 @@
 #define GRAPH_MIN_SIZE (GRAPH_HEADER_SIZE + 4 * GRAPH_CHUNKLOOKUP_WIDTH \
 			+ GRAPH_FANOUT_SIZE + the_hash_algo->rawsz)
 
+#define MAX_INITIAL_ALLOCATION (64000)
+
 char *get_commit_graph_filename(const char *obj_dir)
 {
 	return xstrfmt("%s/info/commit-graph", obj_dir);
@@ -1204,6 +1206,9 @@ int write_commit_graph(const char *obj_dir,
 	oids.nr = 0;
 	data.approx_nr_objects = approximate_object_count();
 	oids.alloc = data.approx_nr_objects / 32;
+	if (oids.alloc > MAX_INITIAL_ALLOCATION)
+		oids.alloc = MAX_INITIAL_ALLOCATION;
+
 	oids.progress_done = 0;
 	data.commits.list = NULL;
 
