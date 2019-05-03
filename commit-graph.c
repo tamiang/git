@@ -45,6 +45,12 @@ char *get_commit_graph_filename(const char *obj_dir)
 	return xstrfmt("%s/info/commit-graph", obj_dir);
 }
 
+static char *get_split_graph_filename(const char *obj_dir,
+				      uint32_t split_count)
+{
+	return xstrfmt("%s/info/commit-graph-%d", obj_dir, split_count);
+}
+
 static uint8_t oid_version(void)
 {
 	return 1;
@@ -289,15 +295,24 @@ static struct commit_graph *load_commit_graph_one(const char *graph_file)
 static void prepare_commit_graph_one(struct repository *r, const char *obj_dir)
 {
 	char *graph_name;
+	uint32_t split_count = 1;
+	struct commit_graph *g;
 
 	if (r->objects->commit_graph)
 		return;
 
 	graph_name = get_commit_graph_filename(obj_dir);
-	r->objects->commit_graph =
-		load_commit_graph_one(graph_name);
-
+	g = load_commit_graph_one(graph_name);
 	FREE_AND_NULL(graph_name);
+
+	while (g) {
+		g->base_graph = r->objects->commit_graph;
+		r->objects->commit_graph = g;
+
+		graph_name = get_split_graph_filename(obj_dir, split_count);
+		g = load_commit_graph_one(graph_name);
+		FREE_AND_NULL(graph_name);
+	}
 }
 
 /*
