@@ -1042,6 +1042,18 @@ static void compute_generation_numbers(struct write_commit_graph_data* data)
 	stop_progress(&data->progress);
 }
 
+static void delete_stale_split_graphs(struct write_commit_graph_data *data)
+{
+	uint32_t i = data->num_existing_graphs - 1;
+
+	while (i > data->new_num_base_graphs) {
+		char *graph_name = get_split_graph_filename(data->obj_dir, i);
+		unlink(graph_name);
+		free(graph_name);
+		i--;
+	}
+}
+
 static void write_commit_graph_1(struct write_commit_graph_data* data)
 {
 	struct hashfile *f;
@@ -1107,6 +1119,9 @@ static void write_commit_graph_1(struct write_commit_graph_data* data)
 
 	close_commit_graph(data->r);
 	finalize_hashfile(f, NULL, CSUM_HASH_IN_STREAM | CSUM_FSYNC);
+
+	delete_stale_split_graphs(data);
+
 	commit_lock_file(&lk);
 }
 
@@ -1252,9 +1267,17 @@ static int fill_required_oids(struct write_commit_graph_data *data,
 	return 0;
 }
 
+static size_t expected_commit_graph_size(size_t num_commits)
+{
+	return GRAPH_HEADER_SIZE + GRAPH_FANOUT_SIZE + 6 * GRAPH_CHUNKLOOKUP_WIDTH +
+		(num_commits + 1) * (GRAPH_DATA_WIDTH + the_hash_algo->rawsz);
+}
+
 static void split_graph_merge_strategy(struct write_commit_graph_data *data)
 {
 	struct commit_graph *g = data->r->objects->commit_graph;
+	uint32_t num_commits = data->commits.nr;
+	size_t expected_size = expected_commit_graph_size(num_commits);
 
 	data->num_existing_graphs = 0;
 	while (g) {
@@ -1262,13 +1285,15 @@ static void split_graph_merge_strategy(struct write_commit_graph_data *data)
 		g = g->base_graph;
 	}
 
-	/*
-	 * Super basic strategy: merge after 3
-	 */
-	if (data->num_existing_graphs < 3)
-		data->new_num_base_graphs = data->num_existing_graphs;
-	else
-		data->new_num_base_graphs = 3;
+	g = data->r->objects->commit_graph;
+	data->new_num_base_graphs = data->num_existing_graphs;
+
+	while (g && g->data_len <= 2 * expected_size) {
+		num_commits += g->num_commits;
+		expected_size = expected_commit_graph_size(num_commits);
+		g = g->base_graph;
+		data->new_num_base_graphs--;
+	}
 }
 
 static void merge_commit_graph(struct write_commit_graph_data *data,
