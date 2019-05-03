@@ -604,8 +604,8 @@ struct packed_commit_list {
 struct write_commit_graph_data {
 	struct repository *r;
 	const char *obj_dir;
-	uint32_t num_existing_graphs;
-	uint32_t new_num_base_graphs;
+	int num_existing_graphs;
+	int new_num_base_graphs;
 	uint32_t num_extra_edges;
 	uint32_t num_chunks;
 	uint32_t new_num_commits_in_base;
@@ -1044,7 +1044,7 @@ static void compute_generation_numbers(struct write_commit_graph_data* data)
 
 static void delete_stale_split_graphs(struct write_commit_graph_data *data)
 {
-	uint32_t i = data->num_existing_graphs - 1;
+	int i = data->num_existing_graphs - 1;
 
 	while (i > data->new_num_base_graphs) {
 		char *graph_name = get_split_graph_filename(data->obj_dir, i);
@@ -1421,6 +1421,9 @@ int write_commit_graph(const char *obj_dir,
 	data.commits.list = NULL;
 
 	if (fill_required_oids(&data, &oids, pack_indexes, commit_hex))
+		goto cleanup;
+
+	if (!oids.nr)
 		goto cleanup;
 
 	close_reachable(&data, &oids, data.split ? data.r->objects->commit_graph : NULL);
