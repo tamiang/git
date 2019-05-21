@@ -320,6 +320,9 @@ static int prepare_commit_graph_v1(struct repository *r, const char *obj_dir)
 	r->objects->commit_graph = load_commit_graph_one(graph_name);
 	free(graph_name);
 
+	if (r->objects->commit_graph)
+		r->objects->commit_graph->obj_dir = obj_dir;
+
 	return r->objects->commit_graph ? 0 : -1;
 }
 
@@ -380,8 +383,7 @@ static void prepare_commit_graph_chain(struct repository *r, const char *obj_dir
 	oids = xcalloc(st.st_size / (the_hash_algo->hexsz + 1), sizeof(struct object_id));
 
 	while (strbuf_getline_lf(&line, fp) != EOF && valid) {
-		char *graph_name;
-		struct commit_graph *g;
+		struct object_directory *odb;
 
 		if (get_oid_hex(line.buf, &oids[i])) {
 			warning(_("invalid commit-graph chain: line '%s' not a hash"),
@@ -390,14 +392,23 @@ static void prepare_commit_graph_chain(struct repository *r, const char *obj_dir
 			break;
 		}
 
-		graph_name = get_split_graph_filename(obj_dir, line.buf);
-		g = load_commit_graph_one(graph_name);
-		free(graph_name);
+		for (odb = r->objects->odb; odb; odb = odb->next) {
+			char *graph_name = get_split_graph_filename(odb->path, line.buf);
+			struct commit_graph *g = load_commit_graph_one(graph_name);
 
-		if (g && add_graph_to_chain(g, r->objects->commit_graph, oids, i))
-			r->objects->commit_graph = g;
-		else
-			valid = 0;
+			free(graph_name);
+
+			if (g) {
+				g->obj_dir = odb->path;
+
+				if (add_graph_to_chain(g, r->objects->commit_graph, oids, i))
+					r->objects->commit_graph = g;
+				else
+					valid = 0;
+
+				break;
+			}
+		}
 	}
 
 	free(oids);
@@ -1397,7 +1408,7 @@ static int write_commit_graph_file(struct write_commit_graph_context *ctx)
 
 	if (ctx->split && ctx->base_graph_name && ctx->num_commit_graphs_after > 1) {
 		char *new_base_hash = xstrdup(oid_to_hex(&ctx->new_base_graph->oid));
-		char *new_base_name = get_split_graph_filename(ctx->obj_dir, new_base_hash);
+		char *new_base_name = get_split_graph_filename(ctx->new_base_graph->obj_dir, new_base_hash);
 
 		free(ctx->commit_graph_filenames_after[ctx->num_commit_graphs_after - 2]);
 		free(ctx->commit_graph_hash_after[ctx->num_commit_graphs_after - 2]);
@@ -1468,6 +1479,9 @@ static void split_graph_merge_strategy(struct write_commit_graph_context *ctx)
 
 	while (g && (g->num_commits <= split_strategy_size_mult * num_commits ||
 		     num_commits > split_strategy_max_commits)) {
+		if (strcmp(g->obj_dir, ctx->obj_dir))
+			break;
+
 		num_commits += g->num_commits;
 		g = g->base_graph;
 
@@ -1475,6 +1489,18 @@ static void split_graph_merge_strategy(struct write_commit_graph_context *ctx)
 	}
 
 	ctx->new_base_graph = g;
+
+	if (ctx->num_commit_graphs_after == 2) {
+		char *old_graph_name = get_commit_graph_filename(g->obj_dir);
+
+		if (!strcmp(g->filename, old_graph_name) &&
+		    strcmp(g->obj_dir, ctx->obj_dir)) {
+			ctx->num_commit_graphs_after = 1;
+			ctx->new_base_graph = NULL;
+		}
+
+		free(old_graph_name);
+	}
 
 	ALLOC_ARRAY(ctx->commit_graph_filenames_after, ctx->num_commit_graphs_after);
 	ALLOC_ARRAY(ctx->commit_graph_hash_after, ctx->num_commit_graphs_after);
