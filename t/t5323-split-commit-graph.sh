@@ -132,4 +132,23 @@ test_expect_success 'add four commits, write a merged graph' '
 
 graph_git_behavior 'merged commit-graph: commit 14 vs 6' commits/14 commits/6
 
+test_expect_success 'create fork and chain across alternate' '
+	git clone . fork &&
+	(
+		cd fork &&
+		git config core.commitGraph true &&
+		rm -rf $graphdir &&
+		echo "$TRASH_DIRECTORY/.git/objects" >.git/objects/info/alternates &&
+		test_commit 15 &&
+		git commit-graph write --reachable --split &&
+		test_path_is_file $graphdir/commit-graph-chain &&
+		test_line_count = 4 $graphdir/commit-graph-chain &&
+		ls $graphdir/graph-*.graph >graph-files &&
+		test_line_count = 1 graph-files	&&
+		git -c core.commitGraph=true  rev-list HEAD >expect &&
+		git -c core.commitGraph=false rev-list HEAD >actual &&
+		test_cmp expect actual
+	)
+'
+
 test_done
