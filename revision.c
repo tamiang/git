@@ -3263,6 +3263,9 @@ static void expand_topo_walk(struct rev_info *revs, struct commit *commit)
 		struct commit *parent = p->item;
 		int *pi;
 
+		if (parent->object.flags & UNINTERESTING)
+			continue;
+
 		if (parse_commit_gently(parent, 1) < 0)
 			continue;
 
