@@ -717,14 +717,16 @@ int compare_commits_by_author_date(const void *a_, const void *b_,
 int compare_commits_by_gen_then_commit_date(const void *a_, const void *b_, void *unused)
 {
 	const struct commit *a = a_, *b = b_;
+	timestamp_t reach_index_a = get_reachability_index(a);
+	timestamp_t reach_index_b = get_reachability_index(b);
 
 	/* newer commits first */
-	if (a->generation < b->generation)
+	if (reach_index_a < reach_index_b)
 		return 1;
-	else if (a->generation > b->generation)
+	else if (reach_index_a > reach_index_b)
 		return -1;
 
-	/* use date as a heuristic when generations are equal */
+	/* use date as a heuristic when reach indices are equal */
 	if (a->date < b->date)
 		return 1;
 	else if (a->date > b->date)

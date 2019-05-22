@@ -37,7 +37,6 @@ struct commit {
 	 */
 	struct tree *maybe_tree;
 	uint32_t graph_pos;
-	uint32_t generation;
 	unsigned int index;
 };
 

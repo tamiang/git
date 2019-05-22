@@ -16,6 +16,7 @@
 #include "hashmap.h"
 #include "replace-object.h"
 #include "progress.h"
+#include "commit-slab-impl.h"
 
 #define GRAPH_SIGNATURE 0x43475048 /* "CGPH" */
 #define GRAPH_CHUNKID_OIDFANOUT 0x4f494446 /* "OIDF" */
@@ -39,6 +40,10 @@
 #define GRAPH_CHUNKLOOKUP_WIDTH 12
 #define GRAPH_MIN_SIZE (GRAPH_HEADER_SIZE + 4 * GRAPH_CHUNKLOOKUP_WIDTH \
 			+ GRAPH_FANOUT_SIZE + the_hash_algo->rawsz)
+
+implement_static_commit_slab(reach_index_slab, timestamp_t);
+
+struct reach_index_slab reach_index;
 
 char *get_commit_graph_filename(const char *obj_dir)
 {
@@ -193,6 +198,7 @@ struct commit_graph *parse_commit_graph(void *graph_map, int fd,
 	graph->graph_fd = fd;
 	graph->data = graph_map;
 	graph->data_len = graph_size;
+	graph->reach_index_version = 1;
 
 	last_chunk_id = 0;
 	last_chunk_offset = 8;
@@ -340,7 +346,13 @@ static int prepare_commit_graph(struct repository *r)
 	     !r->objects->commit_graph && odb;
 	     odb = odb->next)
 		prepare_commit_graph_one(r, odb->path);
-	return !!r->objects->commit_graph;
+
+	if (r->objects->commit_graph) {
+		init_reach_index_slab(&reach_index);
+		return 0;
+	}
+
+	return 1;
 }
 
 int generation_numbers_enabled(struct repository *r)
@@ -392,11 +404,41 @@ static struct commit_list **insert_parent_or_die(struct repository *r,
 	return &commit_list_insert(c, pptr)->next;
 }
 
+timestamp_t get_reachability_index(const struct commit *c)
+{
+	timestamp_t *rip;
+	uint32_t offset;
+	const unsigned char *commit_data;
+
+	rip = reach_index_slab_at(&reach_index, c);
+
+	if (*rip)
+		return *rip;
+
+	if (c->graph_pos == COMMIT_NOT_FROM_GRAPH) {
+		*rip = GENERATION_NUMBER_INFINITY;
+		return *rip;
+	}
+
+	commit_data = g->chunk_commit_data + GRAPH_DATA_WIDTH * c->graph_pos;
+	offset = get_be32(commit_data + g->hash_len + 8) >> 2;
+
+	switch (g->reach_index_version) {
+	case 1:
+		*rip = offset;
+		break;
+
+	case 2:
+		*rip = offset + c->date;
+		break;
+	}
+
+	return *rip;
+}
+
 static void fill_commit_graph_info(struct commit *item, struct commit_graph *g, uint32_t pos)
 {
-	const unsigned char *commit_data = g->chunk_commit_data + GRAPH_DATA_WIDTH * pos;
 	item->graph_pos = pos;
-	item->generation = get_be32(commit_data + g->hash_len + 8) >> 2;
 }
 
 static inline void set_commit_tree(struct commit *c, struct tree *t)
@@ -422,8 +464,6 @@ static int fill_commit_in_graph(struct repository *r,
 	date_high = get_be32(commit_data + g->hash_len + 8) & 0x3;
 	date_low = get_be32(commit_data + g->hash_len + 12);
 	item->date = (timestamp_t)((date_high << 32) | date_low);
-
-	item->generation = get_be32(commit_data + g->hash_len + 8) >> 2;
 
 	pptr = &item->parents;
 
@@ -639,7 +679,8 @@ static void write_graph_chunk_data(struct hashfile *f, int hash_len,
 		else
 			packedDate[0] = 0;
 
-		packedDate[0] |= htonl((*list)->generation << 2);
+		/* TODO: change this calculation for corrected commit date */
+		packedDate[0] |= htonl(get_reachability_index(*list) << 2);
 
 		packedDate[1] = htonl((*list)->date);
 		hashwrite(f, packedDate, 8);
@@ -1301,5 +1342,6 @@ void free_commit_graph(struct commit_graph *g)
 		g->data = NULL;
 		close(g->graph_fd);
 	}
+	clear_reach_index_slab(&reach_index);
 	free(g);
 }

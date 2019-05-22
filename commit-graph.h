@@ -5,6 +5,7 @@
 #include "repository.h"
 #include "string-list.h"
 #include "cache.h"
+#include "commit-slab.h"
 
 #define GIT_TEST_COMMIT_GRAPH "GIT_TEST_COMMIT_GRAPH"
 #define GIT_TEST_COMMIT_GRAPH_DIE_ON_LOAD "GIT_TEST_COMMIT_GRAPH_DIE_ON_LOAD"
@@ -37,11 +38,18 @@ void load_commit_graph_info(struct repository *r, struct commit *item);
 struct tree *get_commit_tree_in_graph(struct repository *r,
 				      const struct commit *c);
 
+declare_commit_slab(reach_index_slab, timestamp_t);
+
+timestamp_t get_reachability_index(const struct commit *);
+
 struct commit_graph {
 	int graph_fd;
 
 	const unsigned char *data;
 	size_t data_len;
+
+	struct reach_index_slab reach_index_slab;
+	int reach_index_version;
 
 	unsigned char hash_len;
 	unsigned char num_chunks;
