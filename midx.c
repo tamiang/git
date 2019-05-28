@@ -801,8 +801,7 @@ static size_t write_midx_large_offsets(struct hashfile *f, uint32_t nr_large_off
 	return written;
 }
 
-static int write_midx_internal(const char *object_dir, struct multi_pack_index *m,
-			       struct string_list *packs_to_drop)
+int write_midx_file(const char *object_dir)
 {
 	unsigned char cur_chunk, num_chunks = 0;
 	char *midx_name;
@@ -816,7 +815,6 @@ static int write_midx_internal(const char *object_dir, struct multi_pack_index *
 	uint32_t nr_entries, num_large_offsets = 0;
 	struct pack_midx_entry *entries = NULL;
 	int large_offsets_needed = 0;
-	int result = 0;
 
 	midx_name = get_midx_filename(object_dir);
 	if (safe_create_leading_directories(midx_name)) {
@@ -825,10 +823,7 @@ static int write_midx_internal(const char *object_dir, struct multi_pack_index *
 			  midx_name);
 	}
 
-	if (m)
-		packs.m = m;
-	else
-		packs.m = load_multi_pack_index(object_dir, 1);
+	packs.m = load_multi_pack_index(object_dir, 1);
 
 	packs.nr = 0;
 	packs.alloc_list = packs.m ? packs.m->num_packs : 16;
@@ -842,25 +837,7 @@ static int write_midx_internal(const char *object_dir, struct multi_pack_index *
 	ALLOC_ARRAY(packs.perm, packs.alloc_perm);
 
 	if (packs.m) {
-		int drop_index = 0, missing_drops = 0;
 		for (i = 0; i < packs.m->num_packs; i++) {
-			if (packs_to_drop && drop_index < packs_to_drop->nr) {
-				int cmp = strcmp(packs.m->pack_names[i],
-						 packs_to_drop->items[drop_index].string);
-
-				if (!cmp) {
-					drop_index++;
-					continue;
-				} else if (cmp > 0) {
-					error(_("did not see pack-file %s to drop"),
-					      packs_to_drop->items[drop_index].string);
-					drop_index++;
-					i--;
-					missing_drops++;
-					continue;
-				}
-			}
-
 			ALLOC_GROW(packs.list, packs.nr + 1, packs.alloc_list);
 			ALLOC_GROW(packs.names, packs.nr + 1, packs.alloc_names);
 			ALLOC_GROW(packs.perm, packs.nr + 1, packs.alloc_perm);
@@ -870,12 +847,6 @@ static int write_midx_internal(const char *object_dir, struct multi_pack_index *
 			packs.names[packs.nr] = xstrdup(packs.m->pack_names[i]);
 			packs.pack_name_concat_len += strlen(packs.names[packs.nr]) + 1;
 			packs.nr++;
-		}
-
-		if (packs_to_drop && (drop_index < packs_to_drop->nr || missing_drops)) {
-			error(_("did not see all pack-files to drop"));
-			result = 1;
-			goto cleanup;
 		}
 	}
 
@@ -1011,12 +982,7 @@ cleanup:
 	free(packs.perm);
 	free(entries);
 	free(midx_name);
-	return result;
-}
-
-int write_midx_file(const char *object_dir)
-{
-	return write_midx_internal(object_dir, NULL, NULL);
+	return 0;
 }
 
 void clear_midx_file(struct repository *r)
@@ -1183,44 +1149,5 @@ int verify_midx_file(struct repository *r, const char *object_dir)
 
 int expire_midx_packs(struct repository *r, const char *object_dir)
 {
-	uint32_t i, *count, result = 0;
-	struct string_list packs_to_drop = STRING_LIST_INIT_DUP;
-	struct multi_pack_index *m = load_multi_pack_index(object_dir, 1);
-
-	if (!m)
-		return 0;
-
-	count = xcalloc(m->num_packs, sizeof(uint32_t));
-	for (i = 0; i < m->num_objects; i++) {
-		int pack_int_id = nth_midxed_pack_int_id(m, i);
-		count[pack_int_id]++;
-	}
-
-	for (i = 0; i < m->num_packs; i++) {
-		char *pack_name;
-
-		if (count[i])
-			continue;
-
-		if (prepare_midx_pack(r, m, i))
-			continue;
-
-		if (m->packs[i]->pack_keep)
-			continue;
-
-		pack_name = xstrdup(m->packs[i]->pack_name);
-		close_pack(m->packs[i]);
-
-		string_list_insert(&packs_to_drop, m->pack_names[i]);
-		unlink_pack_path(pack_name, 0);
-		free(pack_name);
-	}
-
-	free(count);
-
-	if (packs_to_drop.nr)
-		result = write_midx_internal(object_dir, m, &packs_to_drop);
-
-	string_list_clear(&packs_to_drop, 0);
-	return result;
+	return 0;
 }
