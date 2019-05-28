@@ -10,7 +10,6 @@
 #include "progress.h"
 #include "trace2.h"
 #include "run-command.h"
-#include "trace2.h"
 
 #define MIDX_SIGNATURE 0x4d494458 /* "MIDX" */
 #define MIDX_VERSION 1
