@@ -9,7 +9,7 @@ git-multi-pack-index - Write and verify multi-pack-indexes
 SYNOPSIS
 --------
 [verse]
-'git multi-pack-index' [--object-dir=<dir>] <subcommand>
+'git multi-pack-index' [--object-dir=<dir>] <verb>
 
 DESCRIPTION
 -----------
@@ -23,13 +23,13 @@ OPTIONS
 	`<dir>/packs/multi-pack-index` for the current MIDX file, and
 	`<dir>/packs` for the pack-files to index.
 
-The following subcommands are available:
-
 write::
-	Write a new MIDX file.
+	When given as the verb, write a new MIDX file to
+	`<dir>/packs/multi-pack-index`.
 
 verify::
-	Verify the contents of the MIDX file.
+	When given as the verb, verify the contents of the MIDX file
+	at `<dir>/packs/multi-pack-index`.
 
 
 EXAMPLES
