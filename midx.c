@@ -1140,8 +1140,3 @@ int verify_midx_file(struct repository *r, const char *object_dir)
 
 	return verify_midx_error;
 }
-
-int expire_midx_packs(struct repository *r, const char *object_dir)
-{
-	return 0;
-}
