@@ -1059,6 +1059,9 @@ int match_pathname(const char *pathname, int pathlen,
 				 WM_PATHNAME) == 0;
 }
 
+long last_exclude_num = 0;
+long last_exclude_ns = 0;
+
 /*
  * Scan the given exclude list in reverse to see whether pathname
  * should be ignored.  The first match (i.e. the last on the list), if
@@ -1074,6 +1077,7 @@ static struct exclude *last_exclude_matching_from_list(const char *pathname,
 {
 	struct exclude *exc = NULL; /* undecided */
 	int i;
+	long starttime = getnanotime();
 
 	if (!el->nr)
 		return NULL;	/* undefined */
@@ -1109,6 +1113,10 @@ static struct exclude *last_exclude_matching_from_list(const char *pathname,
 			break;
 		}
 	}
+
+	last_exclude_num++;
+	last_exclude_ns += getnanotime() - starttime;
+
 	return exc;
 }
 

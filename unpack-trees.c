@@ -1404,6 +1404,9 @@ static int clear_ce_flags_1(struct index_state *istate,
 	return nr - (cache_end - cache);
 }
 
+extern long last_exclude_num;
+extern long last_exclude_ns;
+
 static int clear_ce_flags(struct index_state *istate,
 			  int select_mask, int clear_mask,
 			  struct exclude_list *el)
@@ -1411,6 +1414,9 @@ static int clear_ce_flags(struct index_state *istate,
 	static struct strbuf prefix = STRBUF_INIT;
 	char label[100];
 	int rval;
+
+	last_exclude_num = 0;
+	last_exclude_ns = 0;
 
 	strbuf_reset(&prefix);
 
@@ -1423,6 +1429,9 @@ static int clear_ce_flags(struct index_state *istate,
 				&prefix,
 				select_mask, clear_mask,
 				el, 0);
+	trace2_data_intmax("exp", the_repository, "last_exclude_num", last_exclude_num);
+	trace2_data_intmax("exp", the_repository, "last_exclude_ns", last_exclude_ns);
+
 	trace2_region_leave("exp", label, the_repository);
 
 	return rval;
