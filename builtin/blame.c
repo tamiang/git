@@ -725,6 +725,8 @@ static int git_blame_config(const char *var, const char *value, void *cb)
 		return -1;
 	if (userdiff_config(var, value) < 0)
 		return -1;
+	if (git_diff_ui_config(var, value, cb))
+		return -1;
 
 	return git_default_config(var, value, cb);
 }
