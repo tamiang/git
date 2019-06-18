@@ -76,7 +76,7 @@ static void copy_templates_1(struct strbuf *path, struct strbuf *template_path,
 			if (strbuf_readlink(&lnk, template_path->buf,
 					    st_template.st_size) < 0)
 				die_errno(_("cannot readlink '%s'"), template_path->buf);
-			if (symlink(lnk.buf, path->buf))
+			if (create_symlink(NULL, lnk.buf, path->buf))
 				die_errno(_("cannot symlink '%s' '%s'"),
 					  lnk.buf, path->buf);
 			strbuf_release(&lnk);
@@ -96,7 +96,7 @@ static void copy_templates(const char *template_dir)
 	struct strbuf path = STRBUF_INIT;
 	struct strbuf template_path = STRBUF_INIT;
 	size_t template_len;
-	struct repository_format template_format;
+	struct repository_format template_format = REPOSITORY_FORMAT_INIT;
 	struct strbuf err = STRBUF_INIT;
 	DIR *dir;
 	char *to_free = NULL;
@@ -148,12 +148,16 @@ free_return:
 	free(to_free);
 	strbuf_release(&path);
 	strbuf_release(&template_path);
+	clear_repository_format(&template_format);
 }
 
 static int git_init_db_config(const char *k, const char *v, void *cb)
 {
 	if (!strcmp(k, "init.templatedir"))
 		return git_config_pathname(&init_db_template_dir, k, v);
+
+	if (starts_with(k, "core."))
+		return platform_core_config(k, v, cb);
 
 	return 0;
 }
@@ -185,6 +189,7 @@ static int create_default_files(const char *template_path,
 	struct strbuf err = STRBUF_INIT;
 
 	/* Just look for `init.templatedir` */
+	init_db_template_dir = NULL; /* re-set in case it was set before */
 	git_config(git_init_db_config, NULL);
 
 	/*
@@ -275,7 +280,7 @@ static int create_default_files(const char *template_path,
 		path = git_path_buf(&buf, "tXXXXXX");
 		if (!close(xmkstemp(path)) &&
 		    !unlink(path) &&
-		    !symlink("testing", path) &&
+		    !create_symlink(NULL, "testing", path) &&
 		    !lstat(path, &st1) &&
 		    S_ISLNK(st1.st_mode))
 			unlink(path); /* good */
@@ -360,6 +365,9 @@ int init_db(const char *git_dir, const char *real_git_dir,
 		git_dir = get_git_dir();
 	}
 	startup_info->have_repository = 1;
+
+	/* Just look for `core.hidedotfiles` */
+	git_config(git_init_db_config, NULL);
 
 	safe_create_dir(git_dir, 0);
 

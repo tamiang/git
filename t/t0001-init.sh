@@ -93,6 +93,7 @@ test_expect_success 'No extra GIT_* on alias scripts' '
 		sed -n \
 			-e "/^GIT_PREFIX=/d" \
 			-e "/^GIT_TEXTDOMAINDIR=/d" \
+			-e "/^GIT_TRACE2_PARENT/d" \
 			-e "/^GIT_/s/=.*//p" |
 		sort
 	EOF
@@ -307,10 +308,20 @@ test_expect_success 'init prefers command line to GIT_DIR' '
 	test_path_is_missing otherdir/refs
 '
 
+downcase_on_case_insensitive_fs () {
+	test false = "$(git config --get core.filemode)" || return 0
+	for f
+	do
+		tr A-Z a-z <"$f" >"$f".downcased &&
+		mv -f "$f".downcased "$f" || return 1
+	done
+}
+
 test_expect_success 'init with separate gitdir' '
 	rm -rf newdir &&
 	git init --separate-git-dir realgitdir newdir &&
 	echo "gitdir: $(pwd)/realgitdir" >expected &&
+	downcase_on_case_insensitive_fs expected newdir/.git &&
 	test_cmp expected newdir/.git &&
 	test_path_is_dir realgitdir/refs
 '
@@ -365,6 +376,7 @@ test_expect_success 're-init to update git link' '
 	git init --separate-git-dir ../surrealgitdir
 	) &&
 	echo "gitdir: $(pwd)/surrealgitdir" >expected &&
+	downcase_on_case_insensitive_fs expected newdir/.git &&
 	test_cmp expected newdir/.git &&
 	test_path_is_dir surrealgitdir/refs &&
 	test_path_is_missing realgitdir/refs
@@ -378,6 +390,7 @@ test_expect_success 're-init to move gitdir' '
 	git init --separate-git-dir ../realgitdir
 	) &&
 	echo "gitdir: $(pwd)/realgitdir" >expected &&
+	downcase_on_case_insensitive_fs expected newdir/.git &&
 	test_cmp expected newdir/.git &&
 	test_path_is_dir realgitdir/refs
 '
@@ -400,7 +413,7 @@ test_expect_success SYMLINKS 're-init to move gitdir symlink' '
 # Tests for the hidden file attribute on windows
 is_hidden () {
 	# Use the output of `attrib`, ignore the absolute path
-	case "$(attrib "$1")" in *H*?:*) return 0;; esac
+	case "$("$SYSTEMROOT"/system32/attrib "$1")" in *H*?:*) return 0;; esac
 	return 1
 }
 
@@ -453,6 +466,17 @@ test_expect_success 're-init from a linked worktree' '
 	)
 '
 
+test_expect_success MINGW 'core.hidedotfiles = false' '
+	git config --global core.hidedotfiles false &&
+	rm -rf newdir &&
+	mkdir newdir &&
+	(
+		sane_unset GIT_DIR GIT_WORK_TREE GIT_CONFIG &&
+		git -C newdir init
+	) &&
+	! is_hidden newdir/.git
+'
+
 test_expect_success MINGW 'redirect std handles' '
 	GIT_REDIRECT_STDOUT=output.txt git rev-parse --git-dir &&
 	test .git = "$(cat output.txt)" &&
@@ -462,7 +486,8 @@ test_expect_success MINGW 'redirect std handles' '
 		GIT_REDIRECT_STDERR="2>&1" \
 		git rev-parse --git-dir --verify refs/invalid &&
 	printf ".git\nfatal: Needed a single revision\n" >expect &&
-	test_cmp expect output.txt
+	sort <output.txt >output.sorted &&
+	test_cmp expect output.sorted
 '
 
 test_done

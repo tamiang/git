@@ -5,9 +5,10 @@
 #include "cache-tree.h"
 #include "object-store.h"
 #include "replace-object.h"
+#include "gvfs.h"
 
-#ifndef DEBUG
-#define DEBUG 0
+#ifndef DEBUG_CACHE_TREE
+#define DEBUG_CACHE_TREE 0
 #endif
 
 struct cache_tree *cache_tree(void)
@@ -111,7 +112,7 @@ static int do_invalidate_path(struct cache_tree *it, const char *path)
 	int namelen;
 	struct cache_tree_sub *down;
 
-#if DEBUG
+#if DEBUG_CACHE_TREE
 	fprintf(stderr, "cache-tree invalidate <%s>\n", path);
 #endif
 
@@ -243,7 +244,8 @@ static int update_one(struct cache_tree *it,
 		      int flags)
 {
 	struct strbuf buffer;
-	int missing_ok = flags & WRITE_TREE_MISSING_OK;
+	int missing_ok = gvfs_config_is_set(GVFS_MISSING_OK) ?
+		WRITE_TREE_MISSING_OK : (flags & WRITE_TREE_MISSING_OK);
 	int dryrun = flags & WRITE_TREE_DRY_RUN;
 	int repair = flags & WRITE_TREE_REPAIR;
 	int to_invalidate = 0;
@@ -395,10 +397,32 @@ static int update_one(struct cache_tree *it,
 			continue;
 
 		strbuf_grow(&buffer, entlen + 100);
-		strbuf_addf(&buffer, "%o %.*s%c", mode, entlen, path + baselen, '\0');
+
+		switch (mode) {
+		case 0100644:
+			strbuf_add(&buffer, "100644 ", 7);
+			break;
+		case 0100664:
+			strbuf_add(&buffer, "100664 ", 7);
+			break;
+		case 0100755:
+			strbuf_add(&buffer, "100755 ", 7);
+			break;
+		case 0120000:
+			strbuf_add(&buffer, "120000 ", 7);
+			break;
+		case 0160000:
+			strbuf_add(&buffer, "160000 ", 7);
+			break;
+		default:
+			strbuf_addf(&buffer, "%o ", mode);
+			break;
+		}
+		strbuf_add(&buffer, path + baselen, entlen);
+		strbuf_addch(&buffer, '\0');
 		strbuf_add(&buffer, oid->hash, the_hash_algo->rawsz);
 
-#if DEBUG
+#if DEBUG_CACHE_TREE
 		fprintf(stderr, "cache-tree update-one %o %.*s\n",
 			mode, entlen, path + baselen);
 #endif
@@ -421,7 +445,7 @@ static int update_one(struct cache_tree *it,
 
 	strbuf_release(&buffer);
 	it->entry_count = to_invalidate ? -1 : i - *skip_count;
-#if DEBUG
+#if DEBUG_CACHE_TREE
 	fprintf(stderr, "cache-tree update-one (%d ent, %d subtree) %s\n",
 		it->entry_count, it->subtree_nr,
 		oid_to_hex(&it->oid));
@@ -462,7 +486,7 @@ static void write_one(struct strbuf *buffer, struct cache_tree *it,
 	strbuf_add(buffer, path, pathlen);
 	strbuf_addf(buffer, "%c%d %d\n", 0, it->entry_count, it->subtree_nr);
 
-#if DEBUG
+#if DEBUG_CACHE_TREE
 	if (0 <= it->entry_count)
 		fprintf(stderr, "cache-tree <%.*s> (%d ent, %d subtree) %s\n",
 			pathlen, path, it->entry_count, it->subtree_nr,
@@ -536,7 +560,7 @@ static struct cache_tree *read_one(const char **buffer, unsigned long *size_p)
 		size -= rawsz;
 	}
 
-#if DEBUG
+#if DEBUG_CACHE_TREE
 	if (0 <= it->entry_count)
 		fprintf(stderr, "cache-tree <%s> (%d ent, %d subtree) %s\n",
 			*buffer, it->entry_count, subtree_nr,

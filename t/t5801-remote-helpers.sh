@@ -8,6 +8,8 @@ test_description='Test remote-helper import and export commands'
 . ./test-lib.sh
 . "$TEST_DIRECTORY"/lib-gpg.sh
 
+PATH="$TEST_DIRECTORY/t5801:$PATH"
+
 compare_refs() {
 	git --git-dir="$1/.git" rev-parse --verify $2 >expect &&
 	git --git-dir="$3/.git" rev-parse --verify $4 >actual &&
@@ -228,7 +230,7 @@ test_expect_success 'push update refs failure' '
 	echo "update fail" >>file &&
 	git commit -a -m "update fail" &&
 	git rev-parse --verify testgit/origin/heads/update >expect &&
-	test_expect_code 1 env GIT_REMOTE_TESTGIT_FAILURE="non-fast forward" \
+	test_must_fail env GIT_REMOTE_TESTGIT_FAILURE="non-fast forward" \
 		git push origin update &&
 	git rev-parse --verify testgit/origin/heads/update >actual &&
 	test_cmp expect actual

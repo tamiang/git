@@ -56,6 +56,10 @@ static int parse_whitespace_option(struct apply_state *state, const char *option
 		state->ws_error_action = correct_ws_error;
 		return 0;
 	}
+	/*
+	 * Please update $__git_whitespacelist in git-completion.bash
+	 * when you add new options.
+	 */
 	return error(_("unrecognized whitespace option '%s'"), option);
 }
 
@@ -2677,6 +2681,16 @@ static int find_pos(struct apply_state *state,
 	int backwards_lno, forwards_lno, current_lno;
 
 	/*
+	 * When running with --allow-overlap, it is possible that a hunk is
+	 * seen that pretends to start at the beginning (but no longer does),
+	 * and that *still* needs to match the end. So trust `match_end` more
+	 * than `match_beginning`.
+	 */
+	if (state->allow_overlap && match_beginning && match_end &&
+	    img->nr - preimage->nr != 0)
+		match_beginning = 0;
+
+	/*
 	 * If match_beginning or match_end is specified, there is no
 	 * point starting from a wrong line that will never match and
 	 * wander around and wait for a match at the specified end.
@@ -3348,6 +3362,24 @@ static int checkout_target(struct index_state *istate,
 			   struct cache_entry *ce, struct stat *st)
 {
 	struct checkout costate = CHECKOUT_INIT;
+
+	/*
+	 * Do not checkout the entry if the skipworktree bit is set
+	 *
+	 * Both callers of this method (check_preimage and load_current)
+	 * check for the existance of the file before calling this
+	 * method so we know that the file doesn't exist at this point
+	 * and we don't need to perform that check again here.
+	 * We just need to check the skip-worktree and return.
+	 *
+	 * This is to prevent git from creating a file in the
+	 * working directory that has the skip-worktree bit on,
+	 * then updating the index from the patch and not keeping
+	 * the working directory version up to date with what it
+	 * changed the index version to be.
+	 */
+	if (ce_skip_worktree(ce))
+		return 0;
 
 	costate.refresh_cache = 1;
 	costate.istate = istate;
@@ -4306,7 +4338,7 @@ static int add_index_file(struct apply_state *state,
 						     "created file '%s'"),
 						   path);
 			}
-			fill_stat_cache_info(ce, &st);
+			fill_stat_cache_info(state->repo->index, ce, &st);
 		}
 		if (write_object_file(buf, size, blob_type, &ce->oid) < 0) {
 			discard_cache_entry(ce);
@@ -4346,7 +4378,7 @@ static int try_create_file(struct apply_state *state, const char *path,
 		/* Although buf:size is counted string, it also is NUL
 		 * terminated.
 		 */
-		return !!symlink(buf, path);
+		return !!create_symlink(state && state->repo ? state->repo->index : NULL, buf, path);
 
 	fd = open(path, O_CREAT | O_EXCL | O_WRONLY, (mode & 0100) ? 0777 : 0666);
 	if (fd < 0)

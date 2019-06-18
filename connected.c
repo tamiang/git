@@ -1,9 +1,11 @@
 #include "cache.h"
+#include "object-store.h"
 #include "run-command.h"
 #include "sigchain.h"
 #include "connected.h"
 #include "transport.h"
 #include "packfile.h"
+#include "gvfs.h"
 
 /*
  * If we feed all the commits we want to verify to this command
@@ -28,6 +30,26 @@ int check_connected(oid_iterate_fn fn, void *cb_data,
 	struct transport *transport;
 	size_t base_len;
 
+	/*
+	 * Running a virtual file system there will be objects that are
+	 * missing locally and we don't want to download a bunch of
+	 * commits, trees, and blobs just to make sure everything is
+	 * reachable locally so this option will skip reachablility
+	 * checks below that use rev-list.  This will stop the check
+	 * before uploadpack runs to determine if there is anything to
+	 * fetch.  Returning zero for the first check will also prevent the
+	 * uploadpack from happening.  It will also skip the check after
+	 * the fetch is finished to make sure all the objects where
+	 * downloaded in the pack file.  This will allow the fetch to
+	 * run and get all the latest tip commit ids for all the branches
+	 * in the fetch but not pull down commits, trees, or blobs via
+	 * upload pack.
+	 */
+	if (gvfs_config_is_set(GVFS_FETCH_SKIP_REACHABILITY_AND_UPLOADPACK))
+		return 0;
+	if (core_virtualize_objects)
+		return 0;
+
 	if (!opt)
 		opt = &defaults;
 	transport = opt->transport;
@@ -47,6 +69,22 @@ int check_connected(oid_iterate_fn fn, void *cb_data,
 		strbuf_addstr(&idx_file, ".idx");
 		new_pack = add_packed_git(idx_file.buf, idx_file.len, 1);
 		strbuf_release(&idx_file);
+	}
+
+	if (opt->check_refs_only) {
+		/*
+		 * For partial clones, we don't want to have to do a regular
+		 * connectivity check because we have to enumerate and exclude
+		 * all promisor objects (slow), and then the connectivity check
+		 * itself becomes a no-op because in a partial clone every
+		 * object is a promisor object. Instead, just make sure we
+		 * received the objects pointed to by each wanted ref.
+		 */
+		do {
+			if (!repo_has_object_file(the_repository, &oid))
+				return 1;
+		} while (!fn(cb_data, &oid));
+		return 0;
 	}
 
 	if (opt->shallow_file) {

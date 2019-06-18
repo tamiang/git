@@ -11,6 +11,7 @@
 #include "path.h"
 #include "packfile.h"
 #include "object-store.h"
+#include "exec-cmd.h"
 
 static int get_st_mode_bits(const char *path, int *mode)
 {
@@ -115,10 +116,13 @@ static struct common_dir common_list[] = {
 	{ 1, 1, 0, "logs" },
 	{ 1, 1, 1, "logs/HEAD" },
 	{ 0, 1, 1, "logs/refs/bisect" },
+	{ 0, 1, 1, "logs/refs/rewritten" },
+	{ 0, 1, 1, "logs/refs/worktree" },
 	{ 0, 1, 0, "lost-found" },
 	{ 0, 1, 0, "objects" },
 	{ 0, 1, 0, "refs" },
 	{ 0, 1, 1, "refs/bisect" },
+	{ 0, 1, 1, "refs/rewritten" },
 	{ 0, 1, 1, "refs/worktree" },
 	{ 0, 1, 0, "remotes" },
 	{ 0, 1, 0, "worktrees" },
@@ -711,6 +715,10 @@ char *expand_user_path(const char *path, int real_home)
 
 	if (path == NULL)
 		goto return_null;
+#ifdef __MINGW32__
+	if (path[0] == '/')
+		return system_path(path + 1);
+#endif
 	if (path[0] == '~') {
 		const char *first_slash = strchrnul(path, '/');
 		const char *username = path + 1;

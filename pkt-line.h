@@ -25,11 +25,13 @@ void packet_delim(int fd);
 void packet_write_fmt(int fd, const char *fmt, ...) __attribute__((format (printf, 2, 3)));
 void packet_buf_flush(struct strbuf *buf);
 void packet_buf_delim(struct strbuf *buf);
+void set_packet_header(char *buf, int size);
 void packet_write(int fd_out, const char *buf, size_t size);
 void packet_buf_write(struct strbuf *buf, const char *fmt, ...) __attribute__((format (printf, 2, 3)));
 void packet_buf_write_len(struct strbuf *buf, const char *data, size_t len);
 int packet_flush_gently(int fd);
 int packet_write_fmt_gently(int fd, const char *fmt, ...) __attribute__((format (printf, 2, 3)));
+int packet_write_gently(const int fd_out, const char *buf, size_t size);
 int write_packetized_from_fd(int fd_in, int fd_out);
 int write_packetized_from_buf(const char *src_in, size_t len, int fd_out);
 
@@ -171,9 +173,9 @@ struct packet_reader {
  * Initialize a 'struct packet_reader' object which is an
  * abstraction around the 'packet_read_with_status()' function.
  */
-extern void packet_reader_init(struct packet_reader *reader, int fd,
-			       char *src_buffer, size_t src_len,
-			       int options);
+void packet_reader_init(struct packet_reader *reader, int fd,
+			char *src_buffer, size_t src_len,
+			int options);
 
 /*
  * Perform a packet read and return the status of the read.
@@ -185,7 +187,7 @@ extern void packet_reader_init(struct packet_reader *reader, int fd,
  *		       'line' is set to point at the read line
  * PACKET_READ_FLUSH: 'pktlen' is set to '0' and 'line' is set to NULL
  */
-extern enum packet_read_status packet_reader_read(struct packet_reader *reader);
+enum packet_read_status packet_reader_read(struct packet_reader *reader);
 
 /*
  * Peek the next packet line without consuming it and return the status.
@@ -195,7 +197,7 @@ extern enum packet_read_status packet_reader_read(struct packet_reader *reader);
  * Peeking multiple times without calling 'packet_reader_read()' will return
  * the same result.
  */
-extern enum packet_read_status packet_reader_peek(struct packet_reader *reader);
+enum packet_read_status packet_reader_peek(struct packet_reader *reader);
 
 #define DEFAULT_PACKET_MAX 1000
 #define LARGE_PACKET_MAX 65520

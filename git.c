@@ -4,6 +4,8 @@
 #include "help.h"
 #include "run-command.h"
 #include "alias.h"
+#include "dir.h"
+#include "gvfs.h"
 
 #define RUN_SETUP		(1<<0)
 #define RUN_SETUP_GENTLY	(1<<1)
@@ -16,6 +18,7 @@
 #define SUPPORT_SUPER_PREFIX	(1<<4)
 #define DELAY_PAGER_CONFIG	(1<<5)
 #define NO_PARSEOPT		(1<<6) /* parse-options is not used */
+#define BLOCK_ON_GVFS_REPO	(1<<7) /* command not allowed in GVFS repos */
 
 struct cmd_struct {
 	const char *cmd;
@@ -62,6 +65,13 @@ static int list_cmds(const char *spec)
 {
 	struct string_list list = STRING_LIST_INIT_DUP;
 	int i;
+	int nongit;
+
+	/*
+	* Set up the repository so we can pick up any repo-level config (like
+	* completion.commands).
+	*/
+	setup_git_directory_gently(&nongit);
 
 	while (*spec) {
 		const char *sep = strchrnul(spec, ',');
@@ -147,16 +157,20 @@ static int handle_options(const char ***argv, int *argc, int *envchanged)
 				git_set_exec_path(cmd + 1);
 			else {
 				puts(git_exec_path());
+				trace2_cmd_name("_query_");
 				exit(0);
 			}
 		} else if (!strcmp(cmd, "--html-path")) {
 			puts(system_path(GIT_HTML_PATH));
+			trace2_cmd_name("_query_");
 			exit(0);
 		} else if (!strcmp(cmd, "--man-path")) {
 			puts(system_path(GIT_MAN_PATH));
+			trace2_cmd_name("_query_");
 			exit(0);
 		} else if (!strcmp(cmd, "--info-path")) {
 			puts(system_path(GIT_INFO_PATH));
+			trace2_cmd_name("_query_");
 			exit(0);
 		} else if (!strcmp(cmd, "-p") || !strcmp(cmd, "--paginate")) {
 			use_pager = 1;
@@ -285,6 +299,7 @@ static int handle_options(const char ***argv, int *argc, int *envchanged)
 			(*argv)++;
 			(*argc)--;
 		} else if (skip_prefix(cmd, "--list-cmds=", &cmd)) {
+			trace2_cmd_name("_query_");
 			if (!strcmp(cmd, "parseopt")) {
 				struct string_list list = STRING_LIST_INIT_DUP;
 				int i;
@@ -332,8 +347,13 @@ static int handle_alias(int *argcp, const char ***argv)
 			commit_pager_choice();
 
 			child.use_shell = 1;
+			child.trace2_child_class = "shell_alias";
 			argv_array_push(&child.args, alias_string + 1);
 			argv_array_pushv(&child.args, (*argv) + 1);
+
+			trace2_cmd_alias(alias_command, child.args.argv);
+			trace2_cmd_list_config();
+			trace2_cmd_name("_run_shell_alias_");
 
 			ret = run_command(&child);
 			if (ret >= 0)   /* normal exit */
@@ -369,6 +389,9 @@ static int handle_alias(int *argcp, const char ***argv)
 		/* insert after command name */
 		memcpy(new_argv + count, *argv + 1, sizeof(char *) * *argcp);
 
+		trace2_cmd_alias(alias_command, new_argv);
+		trace2_cmd_list_config();
+
 		*argv = new_argv;
 		*argcp += count - 1;
 
@@ -378,6 +401,64 @@ static int handle_alias(int *argcp, const char ***argv)
 	errno = saved_errno;
 
 	return ret;
+}
+
+/* Runs pre/post-command hook */
+static struct argv_array sargv = ARGV_ARRAY_INIT;
+static int run_post_hook = 0;
+static int exit_code = -1;
+
+static int run_pre_command_hook(const char **argv)
+{
+	char *lock;
+	int ret = 0;
+
+	/*
+	 * Ensure the global pre/post command hook is only called for
+	 * the outer command and not when git is called recursively
+	 * or spawns multiple commands (like with the alias command)
+	 */
+	lock = getenv("COMMAND_HOOK_LOCK");
+	if (lock && !strcmp(lock, "true"))
+		return 0;
+	setenv("COMMAND_HOOK_LOCK", "true", 1);
+
+	/* call the hook proc */
+	argv_array_pushv(&sargv, argv);
+	argv_array_pushf(&sargv, "--git-pid=%"PRIuMAX, (uintmax_t)getpid());
+	ret = run_hook_argv(NULL, "pre-command", sargv.argv);
+
+	if (!ret)
+		run_post_hook = 1;
+	return ret;
+}
+
+static int run_post_command_hook(void)
+{
+	char *lock;
+	int ret = 0;
+
+	/*
+	 * Only run post_command if pre_command succeeded in this process
+	 */
+	if (!run_post_hook)
+		return 0;
+	lock = getenv("COMMAND_HOOK_LOCK");
+	if (!lock || strcmp(lock, "true"))
+		return 0;
+
+	argv_array_pushf(&sargv, "--exit_code=%u", exit_code);
+	ret = run_hook_argv(NULL, "post-command", sargv.argv);
+
+	run_post_hook = 0;
+	argv_array_clear(&sargv);
+	setenv("COMMAND_HOOK_LOCK", "false", 1);
+	return ret;
+}
+
+static void post_command_hook_atexit(void)
+{
+	run_post_command_hook();
 }
 
 static int run_builtin(struct cmd_struct *p, int argc, const char **argv)
@@ -416,14 +497,24 @@ static int run_builtin(struct cmd_struct *p, int argc, const char **argv)
 	if (!help && p->option & NEED_WORK_TREE)
 		setup_work_tree();
 
+	if (!help && p->option & BLOCK_ON_GVFS_REPO && gvfs_config_is_set(GVFS_BLOCK_COMMANDS))
+		die("'git %s' is not supported on a GVFS repo", p->cmd);
+
+	if (run_pre_command_hook(argv))
+		die("pre-command hook aborted command");
+
 	trace_argv_printf(argv, "trace: built-in: git");
+	trace2_cmd_name(p->cmd);
+	trace2_cmd_list_config();
 
 	validate_cache_entries(the_repository->index);
-	status = p->fn(argc, argv, prefix);
+	exit_code = status = p->fn(argc, argv, prefix);
 	validate_cache_entries(the_repository->index);
 
 	if (status)
 		return status;
+
+	run_post_command_hook();
 
 	/* Somebody closed stdout? */
 	if (fstat(fileno(stdout), &st))
@@ -476,14 +567,14 @@ static struct cmd_struct commands[] = {
 	{ "diff-files", cmd_diff_files, RUN_SETUP | NEED_WORK_TREE | NO_PARSEOPT },
 	{ "diff-index", cmd_diff_index, RUN_SETUP | NO_PARSEOPT },
 	{ "diff-tree", cmd_diff_tree, RUN_SETUP | NO_PARSEOPT },
-	{ "difftool", cmd_difftool, RUN_SETUP | NEED_WORK_TREE },
+	{ "difftool", cmd_difftool, RUN_SETUP_GENTLY },
 	{ "fast-export", cmd_fast_export, RUN_SETUP },
 	{ "fetch", cmd_fetch, RUN_SETUP },
 	{ "fetch-pack", cmd_fetch_pack, RUN_SETUP | NO_PARSEOPT },
 	{ "fmt-merge-msg", cmd_fmt_merge_msg, RUN_SETUP },
 	{ "for-each-ref", cmd_for_each_ref, RUN_SETUP },
 	{ "format-patch", cmd_format_patch, RUN_SETUP },
-	{ "fsck", cmd_fsck, RUN_SETUP },
+	{ "fsck", cmd_fsck, RUN_SETUP | BLOCK_ON_GVFS_REPO},
 	{ "fsck-objects", cmd_fsck, RUN_SETUP },
 	{ "gc", cmd_gc, RUN_SETUP },
 	{ "get-tar-commit-id", cmd_get_tar_commit_id, NO_PARSEOPT },
@@ -521,7 +612,7 @@ static struct cmd_struct commands[] = {
 	{ "pack-refs", cmd_pack_refs, RUN_SETUP },
 	{ "patch-id", cmd_patch_id, RUN_SETUP_GENTLY | NO_PARSEOPT },
 	{ "pickaxe", cmd_blame, RUN_SETUP },
-	{ "prune", cmd_prune, RUN_SETUP },
+	{ "prune", cmd_prune, RUN_SETUP | BLOCK_ON_GVFS_REPO},
 	{ "prune-packed", cmd_prune_packed, RUN_SETUP },
 	{ "pull", cmd_pull, RUN_SETUP | NEED_WORK_TREE },
 	{ "push", cmd_push, RUN_SETUP },
@@ -539,7 +630,7 @@ static struct cmd_struct commands[] = {
 	{ "remote", cmd_remote, RUN_SETUP },
 	{ "remote-ext", cmd_remote_ext, NO_PARSEOPT },
 	{ "remote-fd", cmd_remote_fd, NO_PARSEOPT },
-	{ "repack", cmd_repack, RUN_SETUP },
+	{ "repack", cmd_repack, RUN_SETUP | BLOCK_ON_GVFS_REPO },
 	{ "replace", cmd_replace, RUN_SETUP },
 	{ "rerere", cmd_rerere, RUN_SETUP },
 	{ "reset", cmd_reset, RUN_SETUP },
@@ -548,16 +639,21 @@ static struct cmd_struct commands[] = {
 	{ "revert", cmd_revert, RUN_SETUP | NEED_WORK_TREE },
 	{ "rm", cmd_rm, RUN_SETUP },
 	{ "send-pack", cmd_send_pack, RUN_SETUP },
-	{ "serve", cmd_serve, RUN_SETUP },
 	{ "shortlog", cmd_shortlog, RUN_SETUP_GENTLY | USE_PAGER },
 	{ "show", cmd_show, RUN_SETUP },
 	{ "show-branch", cmd_show_branch, RUN_SETUP },
 	{ "show-index", cmd_show_index },
 	{ "show-ref", cmd_show_ref, RUN_SETUP },
 	{ "stage", cmd_add, RUN_SETUP | NEED_WORK_TREE },
+	/*
+	 * NEEDSWORK: Until the builtin stash is thoroughly robust and no
+	 * longer needs redirection to the stash shell script this is kept as
+	 * is, then should be changed to RUN_SETUP | NEED_WORK_TREE
+	 */
+	{ "stash", cmd_stash },
 	{ "status", cmd_status, RUN_SETUP | NEED_WORK_TREE },
 	{ "stripspace", cmd_stripspace },
-	{ "submodule--helper", cmd_submodule__helper, RUN_SETUP | SUPPORT_SUPER_PREFIX | NO_PARSEOPT },
+	{ "submodule--helper", cmd_submodule__helper, RUN_SETUP | SUPPORT_SUPER_PREFIX | NO_PARSEOPT | BLOCK_ON_GVFS_REPO },
 	{ "symbolic-ref", cmd_symbolic_ref, RUN_SETUP },
 	{ "tag", cmd_tag, RUN_SETUP | DELAY_PAGER_CONFIG },
 	{ "unpack-file", cmd_unpack_file, RUN_SETUP | NO_PARSEOPT },
@@ -574,7 +670,7 @@ static struct cmd_struct commands[] = {
 	{ "verify-tag", cmd_verify_tag, RUN_SETUP },
 	{ "version", cmd_version },
 	{ "whatchanged", cmd_whatchanged, RUN_SETUP },
-	{ "worktree", cmd_worktree, RUN_SETUP | NO_PARSEOPT },
+	{ "worktree", cmd_worktree, RUN_SETUP | NO_PARSEOPT | BLOCK_ON_GVFS_REPO },
 	{ "write-tree", cmd_write_tree, RUN_SETUP },
 };
 
@@ -666,8 +762,18 @@ static void execv_dashed_external(const char **argv)
 	cmd.clean_on_exit = 1;
 	cmd.wait_after_clean = 1;
 	cmd.silent_exec_failure = 1;
+	cmd.trace2_child_class = "dashed";
 
+	trace2_cmd_name("_run_dashed_");
+
+	/*
+	 * The code in run_command() logs trace2 child_start/child_exit
+	 * events, so we do not need to report exec/exec_result events here.
+	 */
 	trace_argv_printf(cmd.args.argv, "trace: exec:");
+
+	if (run_pre_command_hook(cmd.args.argv))
+		die("pre-command hook aborted command");
 
 	/*
 	 * If we fail because the command is not found, it is
@@ -675,11 +781,19 @@ static void execv_dashed_external(const char **argv)
 	 * or our usual generic code if we were not even able to exec
 	 * the program.
 	 */
-	status = run_command(&cmd);
+	exit_code = status = run_command(&cmd);
+
+	/*
+	 * If the child process ran and we are now going to exit, emit a
+	 * generic string as our trace2 command verb to indicate that we
+	 * launched a dashed command.
+	 */
 	if (status >= 0)
 		exit(status);
 	else if (errno != ENOENT)
 		exit(128);
+
+	run_post_command_hook();
 }
 
 static int run_argv(int *argcp, const char ***argv)
@@ -700,6 +814,68 @@ static int run_argv(int *argcp, const char ***argv)
 		 */
 		if (!done_alias)
 			handle_builtin(*argcp, *argv);
+		else if (get_builtin(**argv)) {
+			struct argv_array args = ARGV_ARRAY_INIT;
+			int i;
+
+			if (get_super_prefix())
+				die("%s doesn't support --super-prefix", **argv);
+
+			commit_pager_choice();
+
+			argv_array_push(&args, "git");
+			for (i = 0; i < *argcp; i++)
+				argv_array_push(&args, (*argv)[i]);
+
+			trace_argv_printf(args.argv, "trace: exec:");
+
+			/*
+			 * if we fail because the command is not found, it is
+			 * OK to return. Otherwise, we just pass along the status code.
+			 */
+			i = run_command_v_opt(args.argv, RUN_SILENT_EXEC_FAILURE |
+					      RUN_CLEAN_ON_EXIT);
+			if (i >= 0 || errno != ENOENT)
+				exit(i);
+			die("could not execute builtin %s", **argv);
+		}
+
+#if 0 // TODO In GFW, need to amend a7924b655e940b06cb547c235d6bed9767929673 to include trace2_ and _tr2 lines.
+		else if (get_builtin(**argv)) {
+			struct argv_array args = ARGV_ARRAY_INIT;
+			int i;
+
+			/*
+			 * The current process is committed to launching a
+			 * child process to run the command named in (**argv)
+			 * and exiting.  Log a generic string as the trace2
+			 * command verb to indicate this.  Note that the child
+			 * process will log the actual verb when it runs.
+			 */
+			trace2_cmd_name("_run_git_alias_");
+
+			if (get_super_prefix())
+				die("%s doesn't support --super-prefix", **argv);
+
+			commit_pager_choice();
+
+			argv_array_push(&args, "git");
+			for (i = 0; i < *argcp; i++)
+				argv_array_push(&args, (*argv)[i]);
+
+			trace_argv_printf(args.argv, "trace: exec:");
+
+			/*
+			 * if we fail because the command is not found, it is
+			 * OK to return. Otherwise, we just pass along the status code.
+			 */
+			i = run_command_v_opt_tr2(args.argv, RUN_SILENT_EXEC_FAILURE |
+						  RUN_CLEAN_ON_EXIT, "git_alias");
+			if (i >= 0 || errno != ENOENT)
+				exit(i);
+			die("could not execute builtin %s", **argv);
+		}
+#endif // a7924b655e940b06cb547c235d6bed9767929673
 
 		/* .. then try the external ones */
 		execv_dashed_external(*argv);
@@ -753,6 +929,7 @@ int cmd_main(int argc, const char **argv)
 	}
 
 	trace_command_performance(argv);
+	atexit(post_command_hook_atexit);
 
 	/*
 	 * "git-xxxx" is the same as "git xxxx", but we obviously:
@@ -780,10 +957,14 @@ int cmd_main(int argc, const char **argv)
 	} else {
 		/* The user didn't specify a command; give them help */
 		commit_pager_choice();
+		if (run_pre_command_hook(argv))
+			die("pre-command hook aborted command");
 		printf(_("usage: %s\n\n"), git_usage_string);
 		list_common_cmds_help();
 		printf("\n%s\n", _(git_more_info_string));
-		exit(1);
+		exit_code = 1;
+		run_post_command_hook();
+		exit(exit_code);
 	}
 	cmd = argv[0];
 

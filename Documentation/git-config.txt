@@ -126,7 +126,7 @@ See also <<FILES>>.
 
 --local::
 	For writing options: write to the repository `.git/config` file.
-	This is	the default behavior.
+	This is the default behavior.
 +
 For reading options: read only from the repository `.git/config` rather than
 from all available files.
@@ -240,7 +240,9 @@ Valid `<type>`'s include:
 	output.  The optional `default` parameter is used instead, if
 	there is no color configured for `name`.
 +
-`--type=color [--default=<default>]` is preferred over `--get-color`.
+`--type=color [--default=<default>]` is preferred over `--get-color`
+(but note that `--get-color` will omit the trailing newline printed by
+`--type=color`).
 
 -e::
 --edit::
@@ -270,8 +272,16 @@ FILES
 If not set explicitly with `--file`, there are four files where
 'git config' will search for configuration options:
 
+$PROGRAMDATA/Git/config::
+	(Windows-only) System-wide configuration file shared with other Git
+	implementations. Typically `$PROGRAMDATA` points to `C:\ProgramData`.
+
 $(prefix)/etc/gitconfig::
 	System-wide configuration file.
+	(Windows-only) This file contains only the settings which are
+	specific for this installation of Git for Windows and which should
+	not be shared with other Git implementations like JGit, libgit2.
+	`--system` will select this file.
 
 $XDG_CONFIG_HOME/git/config::
 	Second user-specific configuration file. If $XDG_CONFIG_HOME is not set

@@ -25,12 +25,16 @@
 #include "cache-tree.h"
 #include "submodule.h"
 #include "submodule-config.h"
+#include "strbuf.h"
+#include "quote.h"
+#include "dir.h"
 
 #define REFRESH_INDEX_DELAY_WARNING_IN_MS (2 * 1000)
 
 static const char * const git_reset_usage[] = {
 	N_("git reset [--mixed | --soft | --hard | --merge | --keep] [-q] [<commit>]"),
 	N_("git reset [-q] [<tree-ish>] [--] <paths>..."),
+	N_("EXPERIMENTAL: git reset [-q] [--stdin [-z]] [<tree-ish>]"),
 	N_("git reset --patch [<tree-ish>] [--] [<paths>...]"),
 	NULL
 };
@@ -96,7 +100,9 @@ static int reset_index(const struct object_id *oid, int reset_type, int quiet)
 
 	if (reset_type == MIXED || reset_type == HARD) {
 		tree = parse_tree_indirect(oid);
+		trace2_region_enter("exp", "prime_cache_tree", the_repository);
 		prime_cache_tree(the_repository, the_repository->index, tree);
+		trace2_region_leave("exp", "prime_cache_tree", the_repository);
 	}
 
 	ret = 0;
@@ -125,12 +131,45 @@ static void update_index_from_diff(struct diff_queue_struct *q,
 		struct diff_options *opt, void *data)
 {
 	int i;
+	int pos;
 	int intent_to_add = *(int *)data;
 
 	for (i = 0; i < q->nr; i++) {
 		struct diff_filespec *one = q->queue[i]->one;
+		struct diff_filespec *two = q->queue[i]->two;
 		int is_missing = !(one->mode && !is_null_oid(&one->oid));
+		int was_missing = !two->mode && is_null_oid(&two->oid);
 		struct cache_entry *ce;
+		struct cache_entry *ceBefore;
+		struct checkout state = CHECKOUT_INIT;
+
+		/*
+		 * When using the sparse-checkout feature the cache entries that are
+		 * added here will not have the skip-worktree bit set.
+		 * Without this code there is data that is lost because the files that
+		 * would normally be in the working directory are not there and show as
+		 * deleted for the next status or in the case of added files just disappear.
+		 * We need to create the previous version of the files in the working
+		 * directory so that they will have the right content and the next
+		 * status call will show modified or untracked files correctly.
+		 */
+		if (core_apply_sparse_checkout && !file_exists(two->path))
+		{
+			pos = cache_name_pos(two->path, strlen(two->path));
+			if ((pos >= 0 && ce_skip_worktree(active_cache[pos])) && (is_missing || !was_missing))
+			{
+				state.force = 1;
+				state.refresh_cache = 1;
+				state.istate = &the_index;
+				ceBefore = make_cache_entry(&the_index, two->mode, &two->oid, two->path,
+					0, 0);
+				if (!ceBefore)
+					die(_("make_cache_entry failed for path '%s'"),
+						two->path);
+
+				checkout_entry(ceBefore, &state, NULL, NULL);
+			}
+		}
 
 		if (is_missing && !intent_to_add) {
 			remove_file_from_cache(one->path);
@@ -284,7 +323,9 @@ static int git_reset_config(const char *var, const char *value, void *cb)
 int cmd_reset(int argc, const char **argv, const char *prefix)
 {
 	int reset_type = NONE, update_ref_status = 0, quiet = 0;
-	int patch_mode = 0, unborn;
+	int patch_mode = 0, nul_term_line = 0, read_from_stdin = 0, unborn;
+	char **stdin_paths = NULL;
+	int stdin_nr = 0, stdin_alloc = 0;
 	const char *rev;
 	struct object_id oid;
 	struct pathspec pathspec;
@@ -306,6 +347,10 @@ int cmd_reset(int argc, const char **argv, const char *prefix)
 		OPT_BOOL('p', "patch", &patch_mode, N_("select hunks interactively")),
 		OPT_BOOL('N', "intent-to-add", &intent_to_add,
 				N_("record only the fact that removed paths will be added later")),
+		OPT_BOOL('z', NULL, &nul_term_line,
+			N_("EXPERIMENTAL: paths are separated with NUL character")),
+		OPT_BOOL(0, "stdin", &read_from_stdin,
+				N_("EXPERIMENTAL: read paths from <stdin>")),
 		OPT_END()
 	};
 
@@ -315,6 +360,42 @@ int cmd_reset(int argc, const char **argv, const char *prefix)
 	argc = parse_options(argc, argv, prefix, options, git_reset_usage,
 						PARSE_OPT_KEEP_DASHDASH);
 	parse_args(&pathspec, argv, prefix, patch_mode, &rev);
+
+	if (read_from_stdin) {
+		strbuf_getline_fn getline_fn = nul_term_line ?
+			strbuf_getline_nul : strbuf_getline;
+		int flags = PATHSPEC_PREFER_FULL;
+		struct strbuf buf = STRBUF_INIT;
+		struct strbuf unquoted = STRBUF_INIT;
+
+		if (patch_mode)
+			die(_("--stdin is incompatible with --patch"));
+
+		if (pathspec.nr)
+			die(_("--stdin is incompatible with path arguments"));
+
+		while (getline_fn(&buf, stdin) != EOF) {
+			if (!nul_term_line && buf.buf[0] == '"') {
+				strbuf_reset(&unquoted);
+				if (unquote_c_style(&unquoted, buf.buf, NULL))
+					die(_("line is badly quoted"));
+				strbuf_swap(&buf, &unquoted);
+			}
+			ALLOC_GROW(stdin_paths, stdin_nr + 1, stdin_alloc);
+			stdin_paths[stdin_nr++] = xstrdup(buf.buf);
+			strbuf_reset(&buf);
+		}
+		strbuf_release(&unquoted);
+		strbuf_release(&buf);
+
+		ALLOC_GROW(stdin_paths, stdin_nr + 1, stdin_alloc);
+		stdin_paths[stdin_nr++] = NULL;
+		flags |= PATHSPEC_LITERAL_PATH;
+		parse_pathspec(&pathspec, 0, flags, prefix,
+			       (const char **)stdin_paths);
+
+	} else if (nul_term_line)
+		die(_("-z requires --stdin"));
 
 	unborn = !strcmp(rev, "HEAD") && get_oid("HEAD", &oid);
 	if (unborn) {
@@ -341,6 +422,7 @@ int cmd_reset(int argc, const char **argv, const char *prefix)
 	if (patch_mode) {
 		if (reset_type != NONE)
 			die(_("--patch is incompatible with --{hard,mixed,soft}"));
+		trace2_cmd_mode("patch-interactive");
 		return run_add_interactive(rev, "--patch=reset", &pathspec);
 	}
 
@@ -356,6 +438,11 @@ int cmd_reset(int argc, const char **argv, const char *prefix)
 	}
 	if (reset_type == NONE)
 		reset_type = MIXED; /* by default */
+
+	if (pathspec.nr)
+		trace2_cmd_mode("path");
+	else
+		trace2_cmd_mode(reset_type_names[reset_type]);
 
 	if (reset_type != SOFT && (reset_type != MIXED || get_git_work_tree()))
 		setup_work_tree();
@@ -380,6 +467,7 @@ int cmd_reset(int argc, const char **argv, const char *prefix)
 			int flags = quiet ? REFRESH_QUIET : REFRESH_IN_PORCELAIN;
 			if (read_from_tree(&pathspec, &oid, intent_to_add))
 				return 1;
+			the_index.updated_skipworktree = 1;
 			if (!quiet && get_git_work_tree()) {
 				uint64_t t_begin, t_delta_in_ms;
 
@@ -415,6 +503,12 @@ int cmd_reset(int argc, const char **argv, const char *prefix)
 	}
 	if (!pathspec.nr)
 		remove_branch_state(the_repository);
+
+	if (stdin_paths) {
+		while (stdin_nr)
+			free(stdin_paths[--stdin_nr]);
+		free(stdin_paths);
+	}
 
 	return update_ref_status;
 }

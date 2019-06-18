@@ -143,6 +143,116 @@ static int opt_parse_porcelain(const struct option *opt, const char *arg, int un
 	return 0;
 }
 
+static int do_serialize = 0;
+static char *serialize_path = NULL;
+
+static int reject_implicit = 0;
+static int do_implicit_deserialize = 0;
+static int do_explicit_deserialize = 0;
+static char *deserialize_path = NULL;
+
+static enum wt_status_deserialize_wait implicit_deserialize_wait = DESERIALIZE_WAIT__UNSET;
+static enum wt_status_deserialize_wait explicit_deserialize_wait = DESERIALIZE_WAIT__UNSET;
+
+/*
+ * --serialize | --serialize=<path>
+ *
+ * Request that we serialize status output rather than or in addition to
+ * printing in any of the established formats.
+ *
+ * Without a path, we write binary serialization data to stdout (and omit
+ * the normal status output).
+ *
+ * With a path, we write binary serialization data to the <path> and then
+ * write normal status output.
+ */
+static int opt_parse_serialize(const struct option *opt, const char *arg, int unset)
+{
+	enum wt_status_format *value = (enum wt_status_format *)opt->value;
+	if (unset || !arg)
+		*value = STATUS_FORMAT_SERIALIZE_V1;
+
+	if (arg) {
+		free(serialize_path);
+		serialize_path = xstrdup(arg);
+	}
+
+	if (do_explicit_deserialize)
+		die("cannot mix --serialize and --deserialize");
+	do_implicit_deserialize = 0;
+
+	do_serialize = 1;
+	return 0;
+}
+
+/*
+ * --deserialize | --deserialize=<path> |
+ * --no-deserialize
+ *
+ * Request that we deserialize status data from some existing resource
+ * rather than performing a status scan.
+ *
+ * The input source can come from stdin or a path given here -- or be
+ * inherited from the config settings.
+ */
+static int opt_parse_deserialize(const struct option *opt, const char *arg, int unset)
+{
+	if (unset) {
+		do_implicit_deserialize = 0;
+		do_explicit_deserialize = 0;
+	} else {
+		if (do_serialize)
+			die("cannot mix --serialize and --deserialize");
+		if (arg) {
+			/* override config or stdin */
+			free(deserialize_path);
+			deserialize_path = xstrdup(arg);
+		}
+		if (deserialize_path && *deserialize_path
+		    && (wt_status_deserialize_access(deserialize_path, R_OK) != 0))
+			die("cannot find serialization file '%s'",
+			    deserialize_path);
+
+		do_explicit_deserialize = 1;
+	}
+
+	return 0;
+}
+
+static enum wt_status_deserialize_wait parse_dw(const char *arg)
+{
+	int tenths;
+
+	if (!strcmp(arg, "fail"))
+		return DESERIALIZE_WAIT__FAIL;
+	else if (!strcmp(arg, "block"))
+		return DESERIALIZE_WAIT__BLOCK;
+	else if (!strcmp(arg, "no"))
+		return DESERIALIZE_WAIT__NO;
+
+	/*
+	 * Otherwise, assume it is a timeout in tenths of a second.
+	 * If it contains a bogus value, atol() will return zero
+	 * which is OK.
+	 */
+	tenths = atol(arg);
+	if (tenths < 0)
+		tenths = DESERIALIZE_WAIT__NO;
+	return tenths;
+}
+
+static int opt_parse_deserialize_wait(const struct option *opt,
+				      const char *arg,
+				      int unset)
+{
+	if (unset)
+		explicit_deserialize_wait = DESERIALIZE_WAIT__UNSET;
+	else
+		explicit_deserialize_wait = parse_dw(arg);
+
+	return 0;
+}
+
 static int opt_parse_m(const struct option *opt, const char *arg, int unset)
 {
 	struct strbuf *buf = opt->value;
@@ -235,7 +345,7 @@ static int commit_index_files(void)
  * and return the paths that match the given pattern in list.
  */
 static int list_paths(struct string_list *list, const char *with_tree,
-		      const char *prefix, const struct pathspec *pattern)
+		      const struct pathspec *pattern)
 {
 	int i, ret;
 	char *m;
@@ -264,7 +374,7 @@ static int list_paths(struct string_list *list, const char *with_tree,
 			item->util = item; /* better a valid pointer than a fake one */
 	}
 
-	ret = report_path_error(m, pattern, prefix);
+	ret = report_path_error(m, pattern);
 	free(m);
 	return ret;
 }
@@ -344,7 +454,7 @@ static const char *prepare_index(int argc, const char **argv, const char *prefix
 		die(_("index file corrupt"));
 
 	if (interactive) {
-		char *old_index_env = NULL;
+		char *old_index_env = NULL, *old_repo_index_file;
 		hold_locked_index(&index_lock, LOCK_DIE_ON_ERROR);
 
 		refresh_cache_or_die(refresh_flags);
@@ -352,12 +462,17 @@ static const char *prepare_index(int argc, const char **argv, const char *prefix
 		if (write_locked_index(&the_index, &index_lock, 0))
 			die(_("unable to create temporary index"));
 
+		old_repo_index_file = the_repository->index_file;
+		the_repository->index_file =
+			(char *)get_lock_file_path(&index_lock);
 		old_index_env = xstrdup_or_null(getenv(INDEX_ENVIRONMENT));
-		setenv(INDEX_ENVIRONMENT, get_lock_file_path(&index_lock), 1);
+		setenv(INDEX_ENVIRONMENT, the_repository->index_file, 1);
 
-		if (interactive_add(argc, argv, prefix, patch_interactive) != 0)
+		if (interactive_add(argc, argv, prefix,
+				    patch_interactive ? "" : NULL) != 0)
 			die(_("interactive add failed"));
 
+		the_repository->index_file = old_repo_index_file;
 		if (old_index_env && *old_index_env)
 			setenv(INDEX_ENVIRONMENT, old_index_env, 1);
 		else
@@ -454,7 +569,7 @@ static const char *prepare_index(int argc, const char **argv, const char *prefix
 			die(_("cannot do a partial commit during a cherry-pick."));
 	}
 
-	if (list_paths(&partial, !current_head ? NULL : "HEAD", prefix, &pathspec))
+	if (list_paths(&partial, !current_head ? NULL : "HEAD", &pathspec))
 		exit(1);
 
 	discard_cache();
@@ -609,7 +724,8 @@ static void determine_author_info(struct strbuf *author_ident)
 		set_ident_var(&date, strbuf_detach(&date_buf, NULL));
 	}
 
-	strbuf_addstr(author_ident, fmt_ident(name, email, date, IDENT_STRICT));
+	strbuf_addstr(author_ident, fmt_ident(name, email, WANT_AUTHOR_IDENT, date,
+				IDENT_STRICT));
 	assert_split_ident(&author, author_ident);
 	export_one("GIT_AUTHOR_NAME", author.name_begin, author.name_end, 0);
 	export_one("GIT_AUTHOR_EMAIL", author.mail_begin, author.mail_end, 0);
@@ -667,6 +783,7 @@ static int prepare_to_commit(const char *index_file, const char *prefix,
 	const char *hook_arg2 = NULL;
 	int clean_message_contents = (cleanup_mode != COMMIT_MSG_CLEANUP_NONE);
 	int old_display_comment_prefix;
+	int merge_contains_scissors = 0;
 
 	/* This checks and barfs if author is badly specified */
 	determine_author_info(author_ident);
@@ -727,6 +844,8 @@ static int prepare_to_commit(const char *index_file, const char *prefix,
 			strbuf_addbuf(&sb, &message);
 		hook_arg1 = "message";
 	} else if (!stat(git_path_merge_msg(the_repository), &statbuf)) {
+		size_t merge_msg_start;
+
 		/*
 		 * prepend SQUASH_MSG here if it exists and a
 		 * "merge --squash" was originally performed
@@ -737,8 +856,16 @@ static int prepare_to_commit(const char *index_file, const char *prefix,
 			hook_arg1 = "squash";
 		} else
 			hook_arg1 = "merge";
+
+		merge_msg_start = sb.len;
 		if (strbuf_read_file(&sb, git_path_merge_msg(the_repository), 0) < 0)
 			die_errno(_("could not read MERGE_MSG"));
+
+		if (cleanup_mode == COMMIT_MSG_CLEANUP_SCISSORS &&
+		    wt_status_locate_end(sb.buf + merge_msg_start,
+					 sb.len - merge_msg_start) <
+				sb.len - merge_msg_start)
+			merge_contains_scissors = 1;
 	} else if (!stat(git_path_squash_msg(the_repository), &statbuf)) {
 		if (strbuf_read_file(&sb, git_path_squash_msg(the_repository), 0) < 0)
 			die_errno(_("could not read SQUASH_MSG"));
@@ -806,7 +933,8 @@ static int prepare_to_commit(const char *index_file, const char *prefix,
 		struct ident_split ci, ai;
 
 		if (whence != FROM_COMMIT) {
-			if (cleanup_mode == COMMIT_MSG_CLEANUP_SCISSORS)
+			if (cleanup_mode == COMMIT_MSG_CLEANUP_SCISSORS &&
+				!merge_contains_scissors)
 				wt_status_add_cut_line(s->fp);
 			status_printf_ln(s, GIT_COLOR_NORMAL,
 			    whence == FROM_MERGE
@@ -831,10 +959,10 @@ static int prepare_to_commit(const char *index_file, const char *prefix,
 				_("Please enter the commit message for your changes."
 				  " Lines starting\nwith '%c' will be ignored, and an empty"
 				  " message aborts the commit.\n"), comment_line_char);
-		else if (cleanup_mode == COMMIT_MSG_CLEANUP_SCISSORS &&
-			 whence == FROM_COMMIT)
-			wt_status_add_cut_line(s->fp);
-		else /* COMMIT_MSG_CLEANUP_SPACE, that is. */
+		else if (cleanup_mode == COMMIT_MSG_CLEANUP_SCISSORS) {
+			if (whence == FROM_COMMIT && !merge_contains_scissors)
+				wt_status_add_cut_line(s->fp);
+		} else /* COMMIT_MSG_CLEANUP_SPACE, that is. */
 			status_printf(s, GIT_COLOR_NORMAL,
 				_("Please enter the commit message for your changes."
 				  " Lines starting\n"
@@ -1038,6 +1166,12 @@ static void handle_untracked_files_arg(struct wt_status *s)
 		s->show_untracked_files = SHOW_NORMAL_UNTRACKED_FILES;
 	else if (!strcmp(untracked_files_arg, "all"))
 		s->show_untracked_files = SHOW_ALL_UNTRACKED_FILES;
+	else if (!strcmp(untracked_files_arg,"complete"))
+		s->show_untracked_files = SHOW_COMPLETE_UNTRACKED_FILES;
+	/*
+	 * Please update $__git_untracked_file_modes in
+	 * git-completion.bash when you add new options
+	 */
 	else
 		die(_("Invalid untracked files mode '%s'"), untracked_files_arg);
 }
@@ -1061,9 +1195,11 @@ static const char *read_commit_message(const char *name)
 static struct status_deferred_config {
 	enum wt_status_format status_format;
 	int show_branch;
+	enum ahead_behind_flags ahead_behind;
 } status_deferred_config = {
 	STATUS_FORMAT_UNSPECIFIED,
-	-1 /* unspecified */
+	-1, /* unspecified */
+	AHEAD_BEHIND_UNSPECIFIED,
 };
 
 static void finalize_deferred_config(struct wt_status *s)
@@ -1089,6 +1225,17 @@ static void finalize_deferred_config(struct wt_status *s)
 		s->show_branch = status_deferred_config.show_branch;
 	if (s->show_branch < 0)
 		s->show_branch = 0;
+
+	/*
+	 * If the user did not give a "--[no]-ahead-behind" command
+	 * line argument *AND* we will print in a human-readable format
+	 * (short, long etc.) then we inherit from the status.aheadbehind
+	 * config setting.  In all other cases (and porcelain V[12] formats
+	 * in particular), we inherit _FULL for backwards compatibility.
+	 */
+	if (use_deferred_config &&
+	    s->ahead_behind_flags == AHEAD_BEHIND_UNSPECIFIED)
+		s->ahead_behind_flags = status_deferred_config.ahead_behind;
 
 	if (s->ahead_behind_flags == AHEAD_BEHIND_UNSPECIFIED)
 		s->ahead_behind_flags = AHEAD_BEHIND_FULL;
@@ -1167,25 +1314,13 @@ static int parse_and_validate_options(int argc, const char *argv[],
 		die(_("Only one of --include/--only/--all/--interactive/--patch can be used."));
 	if (argc == 0 && (also || (only && !amend && !allow_empty)))
 		die(_("No paths with --include/--only does not make sense."));
-	if (!cleanup_arg || !strcmp(cleanup_arg, "default"))
-		cleanup_mode = use_editor ? COMMIT_MSG_CLEANUP_ALL :
-					    COMMIT_MSG_CLEANUP_SPACE;
-	else if (!strcmp(cleanup_arg, "verbatim"))
-		cleanup_mode = COMMIT_MSG_CLEANUP_NONE;
-	else if (!strcmp(cleanup_arg, "whitespace"))
-		cleanup_mode = COMMIT_MSG_CLEANUP_SPACE;
-	else if (!strcmp(cleanup_arg, "strip"))
-		cleanup_mode = COMMIT_MSG_CLEANUP_ALL;
-	else if (!strcmp(cleanup_arg, "scissors"))
-		cleanup_mode = use_editor ? COMMIT_MSG_CLEANUP_SCISSORS :
-					    COMMIT_MSG_CLEANUP_SPACE;
-	else
-		die(_("Invalid cleanup mode %s"), cleanup_arg);
+	cleanup_mode = get_cleanup_mode(cleanup_arg, use_editor);
 
 	handle_untracked_files_arg(s);
 
 	if (all && argc > 0)
-		die(_("Paths with -a does not make sense."));
+		die(_("paths '%s ...' with -a does not make sense"),
+		    argv[0]);
 
 	if (status_format != STATUS_FORMAT_NONE)
 		dry_run = 1;
@@ -1241,6 +1376,10 @@ static int git_status_config(const char *k, const char *v, void *cb)
 		status_deferred_config.show_branch = git_config_bool(k, v);
 		return 0;
 	}
+	if (!strcmp(k, "status.aheadbehind")) {
+		status_deferred_config.ahead_behind = git_config_bool(k, v);
+		return 0;
+	}
 	if (!strcmp(k, "status.showstash")) {
 		s->show_stash = git_config_bool(k, v);
 		return 0;
@@ -1264,6 +1403,28 @@ static int git_status_config(const char *k, const char *v, void *cb)
 	}
 	if (!strcmp(k, "status.relativepaths")) {
 		s->relative_paths = git_config_bool(k, v);
+		return 0;
+	}
+	if (!strcmp(k, "status.deserializepath")) {
+		/*
+		 * Automatically assume deserialization if this is
+		 * set in the config and the file exists.  Do not
+		 * complain if the file does not exist, because we
+		 * silently fall back to normal mode.
+		 */
+		if (v && *v && access(v, R_OK) == 0) {
+			do_implicit_deserialize = 1;
+			deserialize_path = xstrdup(v);
+		} else {
+			reject_implicit = 1;
+		}
+		return 0;
+	}
+	if (!strcmp(k, "status.deserializewait")) {
+		if (!v || !*v)
+			implicit_deserialize_wait = DESERIALIZE_WAIT__UNSET;
+		else
+			implicit_deserialize_wait = parse_dw(v);
 		return 0;
 	}
 	if (!strcmp(k, "status.showuntrackedfiles")) {
@@ -1304,9 +1465,12 @@ int cmd_status(int argc, const char **argv, const char *prefix)
 {
 	static int no_renames = -1;
 	static const char *rename_score_arg = (const char *)-1;
+	static int no_lock_index = 0;
+	static int show_ignored_directory = 0;
 	static struct wt_status s;
 	unsigned int progress_flag = 0;
-	int fd;
+	int try_deserialize;
+	int fd = -1;
 	struct object_id oid;
 	static struct option builtin_status_options[] = {
 		OPT__VERBOSE(&verbose, N_("be verbose")),
@@ -1321,6 +1485,15 @@ int cmd_status(int argc, const char **argv, const char *prefix)
 		{ OPTION_CALLBACK, 0, "porcelain", &status_format,
 		  N_("version"), N_("machine-readable output"),
 		  PARSE_OPT_OPTARG, opt_parse_porcelain },
+		{ OPTION_CALLBACK, 0, "serialize", &status_format,
+		  N_("path"), N_("serialize raw status data to path or stdout"),
+		  PARSE_OPT_OPTARG | PARSE_OPT_NONEG, opt_parse_serialize },
+		{ OPTION_CALLBACK, 0, "deserialize", NULL,
+		  N_("path"), N_("deserialize raw status data from file"),
+		  PARSE_OPT_OPTARG, opt_parse_deserialize },
+		{ OPTION_CALLBACK, 0, "deserialize-wait", NULL,
+		  N_("fail|block|no"), N_("how to wait if status cache file is invalid"),
+		  PARSE_OPT_OPTARG, opt_parse_deserialize_wait },
 		OPT_SET_INT(0, "long", &status_format,
 			    N_("show status in long format (default)"),
 			    STATUS_FORMAT_LONG),
@@ -1342,6 +1515,13 @@ int cmd_status(int argc, const char **argv, const char *prefix)
 		{ OPTION_CALLBACK, 'M', "find-renames", &rename_score_arg,
 		  N_("n"), N_("detect renames, optionally set similarity index"),
 		  PARSE_OPT_OPTARG | PARSE_OPT_NONEG, opt_parse_rename_score },
+		OPT_BOOL(0, "show-ignored-directory", &show_ignored_directory,
+			N_("(DEPRECATED: use --ignore=matching instead) Only "
+			   "show directories that match an ignore pattern "
+			   "name.")),
+		OPT_BOOL(0, "no-lock-index", &no_lock_index,
+			 N_("(DEPRECATED: use `git --no-optional-locks status` "
+			    "instead) Do not lock the index")),
 		OPT_END(),
 	};
 
@@ -1355,6 +1535,18 @@ int cmd_status(int argc, const char **argv, const char *prefix)
 	finalize_colopts(&s.colopts, -1);
 	finalize_deferred_config(&s);
 
+	if (no_lock_index) {
+		warning("--no-lock-index is deprecated, use --no-optional-locks"
+			" instead");
+		setenv(GIT_OPTIONAL_LOCKS_ENVIRONMENT, "false", 1);
+	}
+
+	if (show_ignored_directory) {
+		warning("--show-ignored-directory was deprecated, use "
+			"--ignored=matching instead");
+		ignored_arg = "matching";
+	}
+
 	handle_untracked_files_arg(&s);
 	handle_ignored_arg(&s);
 
@@ -1362,10 +1554,38 @@ int cmd_status(int argc, const char **argv, const char *prefix)
 	    s.show_untracked_files == SHOW_NO_UNTRACKED_FILES)
 		die(_("Unsupported combination of ignored and untracked-files arguments"));
 
+	if (s.show_untracked_files == SHOW_COMPLETE_UNTRACKED_FILES &&
+	    s.show_ignored_mode == SHOW_NO_IGNORED)
+		die(_("Complete Untracked only supported with ignored files"));
+
 	parse_pathspec(&s.pathspec, 0,
 		       PATHSPEC_PREFER_FULL,
 		       prefix, argv);
 
+	/*
+	 * If we want to try to deserialize status data from a cache file,
+	 * we need to re-order the initialization code.  The problem is that
+	 * this makes for a very nasty diff and causes merge conflicts as we
+	 * carry it forward.  And it easy to mess up the merge, so we
+	 * duplicate some code here to hopefully reduce conflicts.
+	 */
+	try_deserialize = (!do_serialize &&
+			   (do_implicit_deserialize || do_explicit_deserialize));
+	if (try_deserialize)
+		goto skip_init;
+	/*
+	 * If we implicitly received a status cache pathname from the config
+	 * and the file does not exist, we silently reject it and do the normal
+	 * status "collect".  Fake up some trace2 messages to reflect this and
+	 * assist post-processors know this case is different.
+	 */
+	if (!do_serialize && reject_implicit) {
+		trace2_cmd_mode("implicit-deserialize");
+		trace2_data_string("status", the_repository, "deserialize/reject",
+				   "status-cache/access");
+	}
+
+	enable_fscache(0);
 	if (status_format != STATUS_FORMAT_PORCELAIN &&
 	    status_format != STATUS_FORMAT_PORCELAIN_V2)
 		progress_flag = REFRESH_PROGRESS;
@@ -1379,6 +1599,7 @@ int cmd_status(int argc, const char **argv, const char *prefix)
 	else
 		fd = -1;
 
+skip_init:
 	s.is_initial = get_oid(s.reference, &oid) ? 1 : 0;
 	if (!s.is_initial)
 		hashcpy(s.sha1_commit, oid.hash);
@@ -1395,6 +1616,36 @@ int cmd_status(int argc, const char **argv, const char *prefix)
 			s.rename_score = parse_rename_score(&rename_score_arg);
 	}
 
+	if (try_deserialize) {
+		int result;
+		enum wt_status_deserialize_wait dw = implicit_deserialize_wait;
+		if (explicit_deserialize_wait != DESERIALIZE_WAIT__UNSET)
+			dw = explicit_deserialize_wait;
+		if (dw == DESERIALIZE_WAIT__UNSET)
+			dw = DESERIALIZE_WAIT__NO;
+
+		if (s.relative_paths)
+			s.prefix = prefix;
+
+		trace2_cmd_mode("deserialize");
+		result = wt_status_deserialize(&s, deserialize_path, dw);
+		if (result == DESERIALIZE_OK)
+			return 0;
+		if (dw == DESERIALIZE_WAIT__FAIL)
+			die(_("Rejected status serialization cache"));
+
+		/* deserialize failed, so force the initialization we skipped above. */
+		enable_fscache(1);
+		read_cache_preload(&s.pathspec);
+		refresh_index(&the_index, REFRESH_QUIET|REFRESH_UNMERGED, &s.pathspec, NULL, NULL);
+
+		if (use_optional_locks())
+			fd = hold_locked_index(&index_lock, 0);
+		else
+			fd = -1;
+	}
+
+	trace2_cmd_mode("collect");
 	wt_status_collect(&s);
 
 	if (0 <= fd)
@@ -1403,9 +1654,21 @@ int cmd_status(int argc, const char **argv, const char *prefix)
 	if (s.relative_paths)
 		s.prefix = prefix;
 
+	if (serialize_path) {
+		int fd_serialize = xopen(serialize_path,
+					 O_WRONLY | O_CREAT | O_TRUNC, 0666);
+		if (fd_serialize < 0)
+			die_errno(_("could not serialize to '%s'"),
+				  serialize_path);
+		trace2_cmd_mode("serialize");
+		wt_status_serialize_v1(fd_serialize, &s);
+		close(fd_serialize);
+	}
+
 	wt_status_print(&s);
 	wt_status_collect_free_buffers(&s);
 
+	disable_fscache();
 	return 0;
 }
 
@@ -1481,7 +1744,7 @@ int cmd_commit(int argc, const char **argv, const char *prefix)
 		OPT_BOOL('s', "signoff", &signoff, N_("add Signed-off-by:")),
 		OPT_FILENAME('t', "template", &template_file, N_("use specified template file")),
 		OPT_BOOL('e', "edit", &edit_flag, N_("force edit of commit")),
-		OPT_STRING(0, "cleanup", &cleanup_arg, N_("default"), N_("how to strip spaces and #comments from message")),
+		OPT_CLEANUP(&cleanup_arg),
 		OPT_BOOL(0, "status", &include_status, N_("include status in commit message template")),
 		{ OPTION_STRING, 'S', "gpg-sign", &sign_commit, N_("key-id"),
 		  N_("GPG sign commit"), PARSE_OPT_OPTARG, NULL, (intptr_t) "" },
@@ -1617,11 +1880,7 @@ int cmd_commit(int argc, const char **argv, const char *prefix)
 		die(_("could not read commit message: %s"), strerror(saved_errno));
 	}
 
-	if (verbose || /* Truncate the message just before the diff, if any. */
-	    cleanup_mode == COMMIT_MSG_CLEANUP_SCISSORS)
-		strbuf_setlen(&sb, wt_status_locate_end(sb.buf, sb.len));
-	if (cleanup_mode != COMMIT_MSG_CLEANUP_NONE)
-		strbuf_stripspace(&sb, cleanup_mode == COMMIT_MSG_CLEANUP_ALL);
+	cleanup_message(&sb, cleanup_mode, verbose);
 
 	if (message_is_empty(&sb, cleanup_mode) && !allow_empty_message) {
 		rollback_index_files();
@@ -1657,8 +1916,7 @@ int cmd_commit(int argc, const char **argv, const char *prefix)
 		die("%s", err.buf);
 	}
 
-	unlink(git_path_cherry_pick_head(the_repository));
-	unlink(git_path_revert_head(the_repository));
+	sequencer_post_commit_cleanup(the_repository);
 	unlink(git_path_merge_head(the_repository));
 	unlink(git_path_merge_msg(the_repository));
 	unlink(git_path_merge_mode(the_repository));

@@ -19,6 +19,7 @@
 #include "utf8.h"
 #include "dir.h"
 #include "color.h"
+#include "gvfs.h"
 
 struct config_source {
 	struct config_source *prev;
@@ -242,7 +243,7 @@ again:
 	}
 
 	ret = !wildmatch(pattern.buf + prefix, text.buf + prefix,
-			 icase ? WM_CASEFOLD : 0);
+			 WM_PATHNAME | (icase ? WM_CASEFOLD : 0));
 
 	if (!ret && !already_tried_absolute) {
 		/*
@@ -1324,8 +1325,17 @@ static int git_default_core_config(const char *var, const char *value, void *cb)
 		return 0;
 	}
 
+	if (!strcmp(var, "core.gvfs")) {
+		gvfs_load_config_value(value);
+		return 0;
+	}
+
 	if (!strcmp(var, "core.sparsecheckout")) {
-		core_apply_sparse_checkout = git_config_bool(var, value);
+		/* virtual file system relies on the sparse checkout logic so force it on */
+		if (core_virtualfilesystem)
+			core_apply_sparse_checkout = 1;
+		else
+			core_apply_sparse_checkout = git_config_bool(var, value);
 		return 0;
 	}
 
@@ -1351,6 +1361,11 @@ static int git_default_core_config(const char *var, const char *value, void *cb)
 
 	if (!strcmp(var, "core.usereplacerefs")) {
 		read_replace_refs = git_config_bool(var, value);
+		return 0;
+	}
+
+	if (!strcmp(var, "core.virtualizeobjects")) {
+		core_virtualize_objects = git_config_bool(var, value);
 		return 0;
 	}
 
@@ -1445,7 +1460,9 @@ int git_default_config(const char *var, const char *value, void *cb)
 	if (starts_with(var, "core."))
 		return git_default_core_config(var, value, cb);
 
-	if (starts_with(var, "user."))
+	if (starts_with(var, "user.") ||
+	    starts_with(var, "author.") ||
+	    starts_with(var, "committer."))
 		return git_ident_config(var, value, cb);
 
 	if (starts_with(var, "i18n."))
@@ -1674,9 +1691,16 @@ static int do_git_config_sequence(const struct config_options *opts,
 		repo_config = NULL;
 
 	current_parsing_scope = CONFIG_SCOPE_SYSTEM;
-	if (git_config_system() && !access_or_die(git_etc_gitconfig(), R_OK, 0))
-		ret += git_config_from_file(fn, git_etc_gitconfig(),
-					    data);
+	if (git_config_system()) {
+		int flags = opts->system_gently ? ACCESS_EACCES_OK : 0;
+		const char *program_data = git_program_data_config();
+		const char *etc = git_etc_gitconfig();
+
+		if (program_data && !access_or_die(program_data, R_OK, flags))
+			ret += git_config_from_file(fn, program_data, data);
+		if (!access_or_die(etc, R_OK, flags))
+			ret += git_config_from_file(fn, etc, data);
+	}
 
 	current_parsing_scope = CONFIG_SCOPE_GLOBAL;
 	if (xdg_config && !access_or_die(xdg_config, R_OK, ACCESS_EACCES_OK))
@@ -1686,14 +1710,15 @@ static int do_git_config_sequence(const struct config_options *opts,
 		ret += git_config_from_file(fn, user_config, data);
 
 	current_parsing_scope = CONFIG_SCOPE_REPO;
-	if (repo_config && !access_or_die(repo_config, R_OK, 0))
+	if (!opts->ignore_repo && repo_config &&
+	    !access_or_die(repo_config, R_OK, 0))
 		ret += git_config_from_file(fn, repo_config, data);
 
 	/*
 	 * Note: this should have a new scope, CONFIG_SCOPE_WORKTREE.
 	 * But let's not complicate things before it's actually needed.
 	 */
-	if (repository_format_worktree_config) {
+	if (!opts->ignore_worktree && repository_format_worktree_config) {
 		char *path = git_pathdup("config.worktree");
 		if (!access_or_die(path, R_OK, 0))
 			ret += git_config_from_file(fn, path, data);
@@ -1701,7 +1726,7 @@ static int do_git_config_sequence(const struct config_options *opts,
 	}
 
 	current_parsing_scope = CONFIG_SCOPE_CMDLINE;
-	if (git_config_from_parameters(fn, data) < 0)
+	if (!opts->ignore_cmdline && git_config_from_parameters(fn, data) < 0)
 		die(_("unable to parse command-line config"));
 
 	current_parsing_scope = CONFIG_SCOPE_UNKNOWN;
@@ -1790,6 +1815,23 @@ void read_early_config(config_fn_t cb, void *data)
 
 	strbuf_release(&commondir);
 	strbuf_release(&gitdir);
+}
+
+/*
+ * Read config but only enumerate system and global settings.
+ * Omit any repo-local, worktree-local, or command-line settings.
+ */
+void read_very_early_config(config_fn_t cb, void *data)
+{
+	struct config_options opts = { 0 };
+
+	opts.respect_includes = 1;
+	opts.ignore_repo = 1;
+	opts.ignore_worktree = 1;
+	opts.ignore_cmdline = 1;
+	opts.system_gently = 1;
+
+	config_with_options(cb, data, NULL, &opts);
 }
 
 static struct config_set_element *configset_find_element(struct config_set *cs, const char *key)
@@ -2009,7 +2051,7 @@ int git_configset_get_pathname(struct config_set *cs, const char *key, const cha
 /* Functions use to read configuration from a repository */
 static void repo_read_config(struct repository *repo)
 {
-	struct config_options opts;
+	struct config_options opts = { 0 };
 
 	opts.respect_includes = 1;
 	opts.commondir = repo->commondir;
@@ -2290,6 +2332,37 @@ int git_config_get_fsmonitor(void)
 
 	if (core_fsmonitor)
 		return 1;
+
+	return 0;
+}
+
+int git_config_get_virtualfilesystem(void)
+{
+	if (git_config_get_pathname("core.virtualfilesystem", &core_virtualfilesystem))
+		core_virtualfilesystem = getenv("GIT_VIRTUALFILESYSTEM_TEST");
+
+	if (core_virtualfilesystem && !*core_virtualfilesystem)
+		core_virtualfilesystem = NULL;
+
+	if (core_virtualfilesystem) {
+		/*
+		 * Some git commands spawn helpers and redirect the index to a different
+		 * location.  These include "difftool -d" and the sequencer
+		 * (i.e. `git rebase -i`, `git cherry-pick` and `git revert`) and others.
+		 * In those instances we don't want to update their temporary index with
+		 * our virtualization data.
+		 */
+		char *default_index_file = xstrfmt("%s/%s", the_repository->gitdir, "index");
+		int should_run_hook = !strcmp(default_index_file, the_repository->index_file);
+
+		free(default_index_file);
+		if (should_run_hook) {
+			/* virtual file system relies on the sparse checkout logic so force it on */
+			core_apply_sparse_checkout = 1;
+			return 1;
+		} 
+		core_virtualfilesystem = NULL;
+	}
 
 	return 0;
 }
@@ -2655,6 +2728,8 @@ int git_config_set_gently(const char *key, const char *value)
 void git_config_set(const char *key, const char *value)
 {
 	git_config_set_multivar(key, value, NULL, 0);
+
+	trace2_cmd_set_config(key, value);
 }
 
 /*

@@ -892,6 +892,7 @@ test_expect_success 'get --expiry-date' '
 	1510348087
 	0
 	EOF
+	: "work around heredoc parsing bug fixed in dash 0.5.7 (in ec2c84d)" &&
 	{
 		echo "$rel_out $(git config --expiry-date date.valid1)"
 		git config --expiry-date date.valid2 &&
@@ -1709,7 +1710,7 @@ test_expect_success '--show-origin getting a single key' '
 	test_cmp expect output
 '
 
-test_expect_success 'set up custom config file' '
+test_expect_success !MINGW 'set up custom config file' '
 	CUSTOM_CONFIG_FILE="file\" (dq) and spaces.conf" &&
 	cat >"$CUSTOM_CONFIG_FILE" <<-\EOF
 		[user]
@@ -1725,7 +1726,7 @@ test_expect_success !MINGW '--show-origin escape special file name characters' '
 	test_cmp expect output
 '
 
-test_expect_success '--show-origin stdin' '
+test_expect_success !MINGW '--show-origin stdin' '
 	cat >expect <<-\EOF &&
 		standard input:	user.custom=true
 	EOF

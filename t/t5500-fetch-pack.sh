@@ -636,7 +636,9 @@ test_expect_success 'fetch-pack cannot fetch a raw sha1 that is not advertised a
 	test_commit -C server 6 &&
 
 	git init client &&
-	test_must_fail git -C client fetch-pack ../server \
+	# Some protocol versions (e.g. 2) support fetching
+	# unadvertised objects, so restrict this test to v0.
+	test_must_fail env GIT_TEST_PROTOCOL_VERSION= git -C client fetch-pack ../server \
 		$(git -C server rev-parse refs/heads/master^) 2>err &&
 	test_i18ngrep "Server does not allow request for unadvertised object" err
 '
@@ -706,12 +708,21 @@ do
 	# file with scheme
 	for p in file
 	do
-		test_expect_success "fetch-pack --diag-url $p://$h/$r" '
+		test_expect_success !MINGW "fetch-pack --diag-url $p://$h/$r" '
 			check_prot_path $p://$h/$r $p "/$r"
 		'
+		test_expect_success MINGW "fetch-pack --diag-url $p://$h/$r" '
+			check_prot_path $p://$h/$r $p "//$h/$r"
+		'
+		test_expect_success MINGW "fetch-pack --diag-url $p:///$r" '
+			check_prot_path $p:///$r $p "/$r"
+		'
 		# No "/~" -> "~" conversion for file
-		test_expect_success "fetch-pack --diag-url $p://$h/~$r" '
+		test_expect_success !MINGW "fetch-pack --diag-url $p://$h/~$r" '
 			check_prot_path $p://$h/~$r $p "/~$r"
+		'
+		test_expect_success MINGW "fetch-pack --diag-url $p://$h/~$r" '
+			check_prot_path $p://$h/~$r $p "//$h/~$r"
 		'
 	done
 	# file without scheme
@@ -917,8 +928,5 @@ start_httpd
 test_expect_success 'fetch with --filter=blob:limit=0 and HTTP' '
 	fetch_filter_blob_limit_zero "$HTTPD_DOCUMENT_ROOT_PATH/server" "$HTTPD_URL/smart/server"
 '
-
-stop_httpd
-
 
 test_done

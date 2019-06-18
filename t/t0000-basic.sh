@@ -825,6 +825,24 @@ test_expect_success 'tests clean up even on failures' "
 	EOF
 "
 
+test_expect_success 'test_atexit is run' "
+	test_must_fail run_sub_test_lib_test \
+		atexit-cleanup 'Run atexit commands' -i <<-\\EOF &&
+	test_expect_success 'tests clean up even after a failure' '
+		> ../../clean-atexit &&
+		test_atexit rm ../../clean-atexit &&
+		> ../../also-clean-atexit &&
+		test_atexit rm ../../also-clean-atexit &&
+		> ../../dont-clean-atexit &&
+		(exit 1)
+	'
+	test_done
+	EOF
+	test_path_is_file dont-clean-atexit &&
+	test_path_is_missing clean-atexit &&
+	test_path_is_missing also-clean-atexit
+"
+
 test_expect_success 'test_oid setup' '
 	test_oid_init
 '
@@ -1077,6 +1095,11 @@ test_expect_success 'writing this tree without --missing-ok' '
 
 test_expect_success 'writing this tree with --missing-ok' '
 	git write-tree --missing-ok
+'
+
+test_expect_success 'writing this tree with missing ok config value' '
+	git config core.gvfs 4 &&
+	git write-tree
 '
 
 
