@@ -299,27 +299,31 @@ test_expect_success 'multi-pack-index and pack-bitmap' '
 '
 
 test_expect_success 'multi-pack-index and alternates' '
-	git init --bare alt.git &&
-	echo $(pwd)/alt.git/objects >.git/objects/info/alternates &&
-	echo content1 >file1 &&
-	altblob=$(GIT_DIR=alt.git git hash-object -w file1) &&
-	git cat-file blob $altblob &&
-	git rev-list --all
+	git clone . alt &&
+	echo "$(pwd)/.git/objects" >alt/.git/objects/info/alternates &&
+	rm -rf alt/.git/objects/pack &&
+	(
+		cd alt &&
+		git config core.multiPackIndex true &&
+		echo content1 >file1 &&
+		altblob=$(git hash-object -w file1) &&
+		git cat-file blob $altblob &&
+		git rev-list --all &&
+		test_commit to_pack &&
+		head=$(git rev-parse HEAD) &&
+		prev=$(git rev-parse HEAD~1) &&
+		cat <<-EOF >revs &&
+			$head
+			^$prev
+		EOF
+		git pack-objects --revs .git/objects/pack/pack <revs &&
+		git multi-pack-index write &&
+		midx_read_expect 1 3 4 .git/objects &&
+		git rev-list --all
+	)
 '
 
 compare_results_with_midx "with alternate (local midx)"
-
-test_expect_success 'multi-pack-index in an alternate' '
-	mv .git/objects/pack/* alt.git/objects/pack &&
-	test_commit add_local_objects &&
-	git repack --local &&
-	git multi-pack-index write &&
-	midx_read_expect 1 3 4 $objdir &&
-	git reset --hard HEAD~1 &&
-	rm -f .git/objects/pack/*
-'
-
-compare_results_with_midx "with alternate (remote midx)"
 
 # usage: corrupt_data <file> <pos> [<data>]
 corrupt_data () {
