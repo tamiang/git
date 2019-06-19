@@ -1026,8 +1026,11 @@ void clear_midx_file(struct repository *r)
 {
 	char *midx = get_midx_filename(r->objects->odb->path);
 
-	if (r->objects && r->objects->multi_pack_index) {
-		close_midx(r->objects->multi_pack_index);
+	if (r->objects) {
+		struct multi_pack_index *m;
+
+		for (m = r->objects->multi_pack_index; m; m = m->next)
+			close_midx(m);
 		r->objects->multi_pack_index = NULL;
 	}
 

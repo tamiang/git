@@ -339,6 +339,7 @@ void close_pack(struct packed_git *p)
 void close_all_packs(struct raw_object_store *o)
 {
 	struct packed_git *p;
+	struct multi_pack_index *m;
 
 	for (p = o->packed_git; p; p = p->next)
 		if (p->do_not_close)
@@ -346,10 +347,10 @@ void close_all_packs(struct raw_object_store *o)
 		else
 			close_pack(p);
 
-	if (o->multi_pack_index) {
-		close_midx(o->multi_pack_index);
-		o->multi_pack_index = NULL;
-	}
+	for (m = o->multi_pack_index; m; m = m->next)
+		close_midx(m);
+
+	o->multi_pack_index = NULL;
 }
 
 void unlink_pack_path(const char *pack_name, int force_delete)
