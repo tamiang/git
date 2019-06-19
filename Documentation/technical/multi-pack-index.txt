@@ -57,6 +57,61 @@ Design Details
 - The MIDX file format uses a chunk-based approach (similar to the
   commit-graph file) that allows optional data to be added.
 
+Multi-pack-index Chains
+-----------------------
+
+Typically, repos grow with near-constant velocity (objects per day).
+Over time, the number of objects added by a fetch operation is much
+smaller than the number of objects already on disk. By creating a
+"chain" of multi-pack-indexes, we enable fast writes of new pack data
+without rewriting the entire multi-pack-index information -- at least,
+most of the time.
+
+## File Layout
+
+A multi-pack-index chain uses multiple files, and we use a fixed
+naming convention to organize these files. Each multi-pack-index file
+has a name `$OBJDIR/pack/midx-{hash}.midx` where `{hash}` is the hex-
+valued has stored in the footer of that file (which is a hash of the
+file's contents before that hash). For a chain of multi-pack-index
+files, a plain-text file at `$OBJDIR/pack/multi-pack-index-chain`
+contains the hashes for the files in order from "lowest" to "highest".
+
+For example, if the `multi-pack-index-chain` file contains the lines
+
+```
+	{hash0}
+	{hash1}
+	{hash2}
+```
+
+then the multi-pack-index chain looks like the following diagram:
+
+ +---------------------+
+ |  midx-{hash2}.midx  |
+ +---------------------+
+	 |
+ +---------------------+
+ |                     |
+ |  midx-{hash1}.midx  |
+ |                     |
+ +---------------------+
+	 |
+ +---------------------+
+ |                     |
+ |                     |
+ |                     |
+ |  midx-{hash0}.midx  |
+ |                     |
+ |                     |
+ |                     |
+ +---------------------+
+
+Since a multi-pack-index file only provides performance benefits
+when it covers multiple pack-files, we will not write a second
+multi-pack-index file unless it will include objects from at
+least two pack-files.
+
 Future Work
 -----------
 
