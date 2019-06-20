@@ -1166,8 +1166,8 @@ endif
 # Set CFLAGS, LDFLAGS and other *FLAGS variables. These might be
 # tweaked by config.* below as well as the command-line, both of
 # which'll override these defaults.
-CFLAGS = -g -O2 -Wall
-LDFLAGS =
+CFLAGS = -g -O2 -Wall -pg
+LDFLAGS = -pg
 BASIC_CFLAGS = -I.
 BASIC_LDFLAGS =
 
