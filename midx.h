@@ -12,6 +12,10 @@ struct repository;
 struct multi_pack_index {
 	struct multi_pack_index *next;
 
+	struct multi_pack_index *base;
+	uint32_t num_objects_in_base;
+	char *filename;
+
 	int fd;
 
 	const unsigned char *data;

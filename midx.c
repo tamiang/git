@@ -86,6 +86,7 @@ struct multi_pack_index *load_multi_pack_index(const char *object_dir, int local
 	m->data = midx_map;
 	m->data_len = midx_size;
 	m->local = local;
+	m->filename = midx_name;
 
 	m->signature = get_be32(m->data);
 	if (m->signature != MIDX_SIGNATURE)
@@ -207,6 +208,7 @@ void close_midx(struct multi_pack_index *m)
 	}
 	FREE_AND_NULL(m->packs);
 	FREE_AND_NULL(m->pack_names);
+	FREE_AND_NULL(m->filename);
 }
 
 int prepare_midx_pack(struct repository *r, struct multi_pack_index *m, uint32_t pack_int_id)
@@ -912,7 +914,6 @@ static int write_midx_internal(const char *object_dir, struct multi_pack_index *
 
 	hold_lock_file_for_update(&lk, midx_name, LOCK_DIE_ON_ERROR);
 	f = hashfd(lk.tempfile->fd, lk.tempfile->filename.buf);
-	FREE_AND_NULL(midx_name);
 
 	if (packs.m)
 		close_midx(packs.m);
