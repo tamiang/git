@@ -686,4 +686,8 @@ char *xstrvfmt(const char *fmt, va_list ap);
 __attribute__((format (printf, 1, 2)))
 char *xstrfmt(const char *fmt, ...);
 
+/* Normalize the string as a path afterwards */
+__attribute__((format (printf, 1, 2)))
+char *xstrfmt_normalized_path(const char *fmt, ...);
+
 #endif /* STRBUF_H */

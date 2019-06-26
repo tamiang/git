@@ -39,7 +39,7 @@
 
 static char *get_midx_filename(const char *object_dir)
 {
-	return xstrfmt("%s/pack/multi-pack-index", object_dir);
+	return xstrfmt_normalized_path("%s/pack/multi-pack-index", object_dir);
 }
 
 struct multi_pack_index *load_multi_pack_index(const char *object_dir, int local)

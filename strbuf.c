@@ -933,6 +933,22 @@ char *xstrfmt(const char *fmt, ...)
 	return ret;
 }
 
+char *xstrfmt_normalized_path(const char *fmt, ...)
+{
+	va_list ap;
+	char *ret, *before;
+
+	va_start(ap, fmt);
+	before = xstrvfmt(fmt, ap);
+	va_end(ap);
+
+	ret = xmalloc(strlen(before) + 1);
+	normalize_path_copy(ret, before);
+	free(before);
+
+	return ret;
+}
+
 void strbuf_addftime(struct strbuf *sb, const char *fmt, const struct tm *tm,
 		     int tz_offset, int suppress_tz_name)
 {
