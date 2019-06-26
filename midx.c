@@ -53,6 +53,7 @@ struct multi_pack_index *load_multi_pack_index(const char *object_dir, int local
 	char *midx_name = get_midx_filename(object_dir);
 	uint32_t i;
 	const char *cur_pack_name;
+	char *normalized_object_dir;
 
 	fd = git_open(midx_name);
 
@@ -74,7 +75,13 @@ struct multi_pack_index *load_multi_pack_index(const char *object_dir, int local
 
 	midx_map = xmmap(NULL, midx_size, PROT_READ, MAP_PRIVATE, fd, 0);
 
-	FLEX_ALLOC_STR(m, object_dir, object_dir);
+	normalized_object_dir = xmalloc(strlen(object_dir) + 1);
+	normalize_path_copy(normalized_object_dir, object_dir);
+
+	FLEX_ALLOC_STR(m, object_dir, normalized_object_dir);
+
+	free(normalized_object_dir);
+
 	m->fd = fd;
 	m->data = midx_map;
 	m->data_len = midx_size;
