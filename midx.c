@@ -42,7 +42,7 @@ static char *get_midx_filename(const char *object_dir)
 	return xstrfmt_normalized_path("%s/pack/multi-pack-index", object_dir);
 }
 
-struct multi_pack_index *load_multi_pack_index(const char *object_dir, int local)
+static struct multi_pack_index *load_midx_file(const char *object_dir, const char *midx_name, int local)
 {
 	struct multi_pack_index *m = NULL;
 	int fd;
@@ -50,7 +50,6 @@ struct multi_pack_index *load_multi_pack_index(const char *object_dir, int local
 	size_t midx_size;
 	void *midx_map = NULL;
 	uint32_t hash_version;
-	char *midx_name = get_midx_filename(object_dir);
 	uint32_t i;
 	const char *cur_pack_name;
 	char *normalized_object_dir;
@@ -71,8 +70,6 @@ struct multi_pack_index *load_multi_pack_index(const char *object_dir, int local
 		goto cleanup_fail;
 	}
 
-	FREE_AND_NULL(midx_name);
-
 	midx_map = xmmap(NULL, midx_size, PROT_READ, MAP_PRIVATE, fd, 0);
 
 	normalized_object_dir = xmalloc(strlen(object_dir) + 1);
@@ -86,7 +83,9 @@ struct multi_pack_index *load_multi_pack_index(const char *object_dir, int local
 	m->data = midx_map;
 	m->data_len = midx_size;
 	m->local = local;
-	m->filename = midx_name;
+
+	m->filename = xmalloc(strlen(midx_name) + 1);
+	normalize_path_copy(m->filename, midx_name);
 
 	m->signature = get_be32(m->data);
 	if (m->signature != MIDX_SIGNATURE)
@@ -183,12 +182,21 @@ struct multi_pack_index *load_multi_pack_index(const char *object_dir, int local
 
 cleanup_fail:
 	free(m);
-	free(midx_name);
 	if (midx_map)
 		munmap(midx_map, midx_size);
 	if (0 <= fd)
 		close(fd);
 	return NULL;
+}
+
+struct multi_pack_index *load_multi_pack_index(const char *object_dir, int local)
+{
+	char *midx_name = get_midx_filename(object_dir);
+	struct multi_pack_index *m = load_midx_file(object_dir, midx_name, local);
+	
+	free(midx_name);
+
+	return m;
 }
 
 void close_midx(struct multi_pack_index *m)
