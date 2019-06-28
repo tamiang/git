@@ -233,6 +233,137 @@ test_merge () {
 	git tag "$1"
 }
 
+# Similar to test_commit, but efficiently create <nr> commits, each with a
+# unique number $n (from 1 to <nr> by default) in the commit message.
+#
+# Usage: test_commit_bulk [options] <nr>
+#   -C <dir>:
+#	Run all git commands in directory <dir>
+#   --ref=<n>:
+#	ref on which to create commits (default: HEAD)
+#   --start=<n>:
+#	number commit messages from <n> (default: 1)
+#   --message=<msg>:
+#	use <msg> as the commit mesasge (default: "commit $n")
+#   --filename=<fn>:
+#	modify <fn> in each commit (default: $n.t)
+#   --contents=<string>:
+#	place <string> in each file (default: "content $n")
+#   --id=<string>:
+#	shorthand to use <string> and $n in message, filename, and contents
+#
+# The message, filename, and contents strings are evaluated by the shell inside
+# double-quotes, with $n set to the current commit number. So you can do:
+#
+#   test_commit_bulk --filename=file --contents='modification $n'
+#
+# to have every commit touch the same file, but with unique content. Spaces are
+# OK, but you must escape any metacharacters (like backslashes or
+# double-quotes) you do not want expanded.
+#
+test_commit_bulk () {
+	indir=
+	ref=HEAD
+	n=1
+	message='commit $n'
+	filename='$n.t'
+	contents='content $n'
+	while test $# -gt 0
+	do
+		case "$1" in
+		-C)
+			indir=$2
+			shift
+			;;
+		--ref=*)
+			ref=${1#--*=}
+			;;
+		--start=*)
+			n=${1#--*=}
+			;;
+		--message=*)
+			message=${1#--*=}
+			;;
+		--filename=*)
+			filename=${1#--*=}
+			;;
+		--contents=*)
+			contents=${1#--*=}
+			;;
+		--id=*)
+			message="${1#--*=} \$n"
+			filename="${1#--*=}-\$n.t"
+			contents="${1#--*=} \$n"
+			;;
+		-*)
+			BUG "invalid test_commit_bulk option: $1"
+			;;
+		*)
+			break
+			;;
+		esac
+		shift
+	done
+	total=$1
+
+	in_dir=${indir:+-C "$indir"}
+
+	# Any test_tick calls inside the loop will not affect our outer
+	# timestamp, since it's on the left-hand side of a pipe. So start with
+	# a known value now, increment in the loop, and then do the matching
+	# math here. The final test_tick updates the $GIT_* variables
+	test_tick
+	cur_time=$test_tick
+	test_tick=$((test_tick + total))
+	test_tick
+
+
+	{
+		# A "reset ... from" instructs fastimport to build on an
+		# existing branch tip rather than trying to overwrite.
+		if tip=$(git ${indir:+ -C "$indir"} \
+			 rev-parse --verify "$ref" 2>/dev/null)
+		then
+			echo "reset $ref"
+			echo "from $tip"
+		fi
+
+		while test "$total" -gt 0
+		do
+			echo "commit $ref" &&
+			printf 'author %s <%s> %s\n' \
+				"$GIT_AUTHOR_NAME" \
+				"$GIT_AUTHOR_EMAIL" \
+				"$cur_time -0700" &&
+			printf 'committer %s <%s> %s\n' \
+				"$GIT_COMMITTER_NAME" \
+				"$GIT_COMMITTER_EMAIL" \
+				"$cur_time -0700" &&
+			echo "data <<EOF" &&
+			eval "echo \"$message\"" &&
+			echo "EOF" &&
+			eval "echo \"M 644 inline $filename\"" &&
+			echo "data <<EOF" &&
+			eval "echo \"$contents\"" &&
+			echo "EOF" &&
+			echo &&
+			n=$((n + 1)) &&
+			cur_time=$((cur_time + 1)) &&
+			total=$((total - 1)) ||
+			echo "poison fast-import stream"
+		done
+	} | git ${indir:+ -C "$indir"} \
+		-c fastimport.unpacklimit=0 \
+		fast-import || return 1
+
+	# If we updated HEAD, then be nice and update the index and working
+	# tree, too.
+	if test "$ref" = "HEAD"
+	then
+		git ${indir:+ -C "$indir"} checkout -f HEAD || return 1
+	fi
+}
+
 # This function helps systems where core.filemode=false is set.
 # Use it instead of plain 'chmod +x' to set or unset the executable bit
 # of a file in the working directory and add it to the index.
