@@ -197,6 +197,7 @@ int cmd_name_rev(int argc, const char **argv, const char *prefix);
 int cmd_notes(int argc, const char **argv, const char *prefix);
 int cmd_pack_objects(int argc, const char **argv, const char *prefix);
 int cmd_pack_redundant(int argc, const char **argv, const char *prefix);
+int cmd_partial_checkout(int argc, const char **argv, const char *prefix);
 int cmd_patch_id(int argc, const char **argv, const char *prefix);
 int cmd_prune(int argc, const char **argv, const char *prefix);
 int cmd_prune_packed(int argc, const char **argv, const char *prefix);
