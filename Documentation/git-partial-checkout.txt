@@ -1,0 +1,122 @@
+git-partial-checkout(1)
+=======================
+
+NAME
+----
+git-partial-checkout - Initialize and modify the partial-checkout
+configuration, which reduces the checkout to a set of directories
+given by a list of prefixes.
+
+
+SYNOPSIS
+--------
+[verse]
+'git partial-clone [init|add|remove|list]'
+
+
+DESCRIPTION
+-----------
+
+Initialize and modify the partial-checkout configuration, which reduces
+the checkout to a set of directories given by a list of prefixes.
+
+
+COMMANDS
+--------
+'init'::
+
+
+'add'::
+	Given a list of paths over stdin, add those paths to the
+	partial-checkout file. Refresh the index and working directory to
+	place the necessary files on disk.
+
+'remove'::
+	Given a list of paths over stdin, remove those paths from the
+	partial-checkout file. Refresh the index and working directory to
+	remove the unnecessary files on disk.
+
+'list'::
+	Provide a list of the contents in the partial-checkout file.
+
+
+PARTIAL CHECKOUT
+----------------
+
+The partial-checkout feature provides simple way to reduce the "cone" of files
+in the working directory which are populated by Git. The partial-checkout file
+specifies a list of directories from the working directory root, and the list
+of paths included are as follows:
+
+1. Any path that is contained in a folder listed in the partial-checkout file.
+   For example, if `A/B/C` is in the partial-checkout file, then `A/B/C/D/e.txt`
+   will exist in the working directory.
+
+2. Any path whose immediate parent folder is an ancestor of a folder listed in
+   the partial-checkout file. For example, all files in the root directory are
+   included -- even if the partial-checkout file is empty. As another example,
+   if `A/B/C` is in the partial-checkout file, then `A/foo.txt` and `A/B/bar.c`
+   would be included. Note that `A/F/xyz.h` would not be included, as its
+   immediate parent (`A/F`) is not a prefix of `A/B/C`.
+
+Note that the pattern matching in the partial-checkout feature is very restricted,
+unlike the sparse-checkout feature. The partial-checkout and sparse-checkout
+features both use the skip-worktree bits in the index file to interact with
+other features in Git, but otherwise are incompatible. Creating a sparse-checkout
+file to include files according to the rules above is difficult, and the
+pattern matching required by the sparse-checkout feature leads to quadratic
+growth: for N patterns and M index entries, we must check O(N * M) patterns.
+
+Conversely, the partial-checkout feature does not allow negative patterns or
+file-name based patterns. If you want to exclude all files ending in ".exe"
+you could include the line `!*.exe` in the sparse-checkout file. This is not
+available in the partial-checkout feature.
+
+To use the partial-checkout feature, you must enable the `core.partialCheckout`
+config setting. This setting will override the `core.sparseCheckout` setting,
+so any values in the sparse-checkout file will be ignored.
+
+To initialize an existing repo to use the partial-checkout feature, run
+`git partial-checkout init`. This will enable `core.partialCheckout`, remove
+all directories in the root of the working directory, and then update the
+working directory to contain the folders that may already exist in the
+partial-checkout file. In the usual case, the partial-checkout file will be
+empty and you will only see files in the working directory root.
+
+To add folders to the partial-checkout file, run the `add` subcommand, and
+provide the list over standard-in:
+
+```
+$git partial-checkout add
+A/B/C
+Docs
+tests
+^D
+```
+
+Since these folders do not exist in your working directory, you can use
+`git ls-tree HEAD -- <path>` to help discover folders that exist in your
+repo.
+
+After adding the folders to the partial-checkout file, Git will update the index
+and run `git reset --hard` to place the files on disk. Due to the use of
+`git reset --hard`, the command will halt with an error before doing any work
+if you do not have a clean `git status`.
+
+If you wish to reduce your working directory, you can use the
+`git partial-checkout remove` subcommand. It takes a list of folders from
+standard in, removes them from the partial-checkout file and deletes them from
+your working directory, then runs `git reset --hard` to ensure the index is
+up to date.
+
+To check which folders are included in the partial-checkout file, run the
+`git partial-checkout list` subcommand.
+
+SEE ALSO
+--------
+
+linkgit:git-read-tree[1]
+
+GIT
+---
+Part of the linkgit:git[1] suite

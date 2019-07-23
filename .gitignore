@@ -113,6 +113,7 @@
 /git-pack-objects
 /git-pack-refs
 /git-parse-remote
+/git-partial-checkout
 /git-patch-id
 /git-prune
 /git-prune-packed
