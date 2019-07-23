@@ -17,9 +17,13 @@
 #include "fsmonitor.h"
 #include "object-store.h"
 #include "fetch-object.h"
+<<<<<<< HEAD
 #include "gvfs.h"
 #include "virtualfilesystem.h"
 #include "packfile.h"
+=======
+#include "partial-checkout.h"
+>>>>>>> partial-checkout: integrate with reset and checkout
 
 /*
  * Error messages expected by scripts out of plumbing commands such as
@@ -1282,9 +1286,18 @@ static int clear_ce_flags_dir(struct index_state *istate,
 {
 	struct cache_entry **cache_end;
 	int dtype = DT_DIR;
-	int ret = is_excluded_from_list(prefix->buf, prefix->len,
-					basename, &dtype, el, istate);
+	int ret;
 	int rc;
+	
+	if (use_partial_checkout(the_repository)) {
+		struct strbuf buf = STRBUF_INIT;
+		strbuf_add(&buf, prefix->buf, prefix->len);
+		ret = !is_included_in_partial_checkout(the_repository, prefix->buf, prefix->len);
+		strbuf_release(&buf);
+	} else {
+		ret = is_excluded_from_list(prefix->buf, prefix->len,
+					basename, &dtype, el, istate);
+	}
 
 	strbuf_addch(prefix, '/');
 
@@ -1334,6 +1347,7 @@ static int clear_ce_flags_1(struct index_state *istate,
 			    int select_mask, int clear_mask,
 			    struct exclude_list *el, int defval)
 {
+	struct repository *r = the_repository;
 	struct cache_entry **cache_end = cache + nr;
 
 	/*
@@ -1394,8 +1408,15 @@ static int clear_ce_flags_1(struct index_state *istate,
 
 		/* Non-directory */
 		dtype = ce_to_dtype(ce);
-		ret = is_excluded_from_list(ce->name, ce_namelen(ce),
-					    name, &dtype, el, istate);
+		if (use_partial_checkout(the_repository)) {
+			struct strbuf buf = STRBUF_INIT;
+			strbuf_add(&buf, ce->name, ce_namelen(ce));
+			ret = is_included_in_partial_checkout(r, ce->name, ce_namelen(ce));
+			strbuf_release(&buf);
+		} else {
+			ret = is_excluded_from_list(ce->name, ce_namelen(ce),
+						name, &dtype, el, istate);
+		}
 		if (ret < 0)
 			ret = defval;
 		if (ret > 0)
@@ -1488,7 +1509,11 @@ int unpack_trees(unsigned len, struct tree_desc *t, struct unpack_trees_options 
 	if (!core_apply_sparse_checkout || !o->update)
 		o->skip_sparse_checkout = 1;
 	if (!o->skip_sparse_checkout) {
+<<<<<<< HEAD
 		if (core_virtualfilesystem) {
+=======
+		if (use_partial_checkout(the_repository)) {
+>>>>>>> partial-checkout: integrate with reset and checkout
 			o->el = &el;
 		} else {
 			char *sparse = git_pathdup("info/sparse-checkout");

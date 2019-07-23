@@ -27,6 +27,7 @@
 #include "progress.h"
 #include "virtualfilesystem.h"
 #include "gvfs.h"
+#include "partial-checkout.h"
 
 /* Mask for the name length in ce_flags in the on-disk index */
 
@@ -1888,6 +1889,7 @@ static void post_read_index_from(struct index_state *istate)
 	tweak_split_index(istate);
 	tweak_fsmonitor(istate);
 	apply_virtualfilesystem(istate);
+	apply_partial_checkout(the_repository, istate);
 }
 
 static size_t estimate_cache_size_from_compressed(unsigned int entries)
