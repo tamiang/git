@@ -24,7 +24,10 @@ the checkout to a set of directories given by a list of prefixes.
 COMMANDS
 --------
 'init'::
-
+	Enable the `core.partialCheckout` setting and clear all folders not
+	included by the partial-checkout file. Typically, no partial-checkout
+	file will exist when this command is run, so all directories in the
+	working directory will be removed.
 
 'add'::
 	Given a list of paths over stdin, add those paths to the

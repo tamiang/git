@@ -6,6 +6,7 @@
 #include "run-command.h"
 #include "partial-checkout.h"
 
+static int pc_initialized = 0;
 static struct strbuf partial_checkout_data = STRBUF_INIT;
 
 /*
@@ -239,12 +240,11 @@ int is_included_in_partial_checkout(struct repository *r,
 	if (!core_partial_checkout)
 		return -1;
 
-	if (!pc_recursive_hashmap.tablesize && partial_checkout_data.len) {
+	if (!pc_initialized) {
 		initialize_includes_hashmap(&pc_recursive_hashmap, &partial_checkout_data);
 		initialize_parents_hashmap(&pc_parents_hashmap, &partial_checkout_data);
+		pc_initialized = 1;
 	}
-	if (!pc_recursive_hashmap.tablesize)
-		return -1;
 	
 	result = check_recursive_hashmap(&pc_recursive_hashmap, pathname, pathlen);
 
@@ -276,10 +276,11 @@ void apply_partial_checkout(struct repository *r, struct index_state *istate)
 	for (i = 0; i < istate->cache_nr; i++) {
 		if (is_included_in_partial_checkout(r,
 						    istate->cache[i]->name,
-						    istate->cache[i]->ce_namelen))
+						    istate->cache[i]->ce_namelen)) {
 			istate->cache[i]->ce_flags &= ~CE_SKIP_WORKTREE;
-		else
+	} 	else {
 			istate->cache[i]->ce_flags |= CE_SKIP_WORKTREE;
+	}
 	}
 }
 

@@ -17,13 +17,10 @@
 #include "fsmonitor.h"
 #include "object-store.h"
 #include "fetch-object.h"
-<<<<<<< HEAD
 #include "gvfs.h"
 #include "virtualfilesystem.h"
 #include "packfile.h"
-=======
 #include "partial-checkout.h"
->>>>>>> partial-checkout: integrate with reset and checkout
 
 /*
  * Error messages expected by scripts out of plumbing commands such as
@@ -1506,14 +1503,10 @@ int unpack_trees(unsigned len, struct tree_desc *t, struct unpack_trees_options 
 
 	trace_performance_enter();
 	memset(&el, 0, sizeof(el));
-	if (!core_apply_sparse_checkout || !o->update)
+	if ((!core_apply_sparse_checkout && !use_partial_checkout(the_repository)) || !o->update)
 		o->skip_sparse_checkout = 1;
 	if (!o->skip_sparse_checkout) {
-<<<<<<< HEAD
-		if (core_virtualfilesystem) {
-=======
-		if (use_partial_checkout(the_repository)) {
->>>>>>> partial-checkout: integrate with reset and checkout
+		if (core_virtualfilesystem || use_partial_checkout(the_repository)) {
 			o->el = &el;
 		} else {
 			char *sparse = git_pathdup("info/sparse-checkout");

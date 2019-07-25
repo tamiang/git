@@ -3,13 +3,14 @@
 #include "dir.h"
 #include "parse-options.h"
 #include "partial-checkout.h"
+#include "pathspec.h"
 #include "repository.h"
 #include "run-command.h"
 #include "strbuf.h"
 #include "string-list.h"
 
 static char const * const builtin_partial_checkout_usage[] = {
-	N_("git partial-checkout [add|remove|list]"),
+	N_("git partial-checkout [init|add|remove|list]"),
 	NULL
 };
 
@@ -60,6 +61,71 @@ static int pc_reset_hard(void)
 
 	argv_array_clear(&argv);
 	return result;
+}
+
+static int pc_enable_config(void)
+{
+	struct argv_array argv = ARGV_ARRAY_INIT;
+	int result = 0;
+	argv_array_pushl(&argv, "config", "--add", "core.partialCheckout", "true", NULL);
+
+	if (run_command_v_opt(argv.argv, RUN_GIT_CMD)) {
+		error(_("failed to enable core.partialCheckout"));
+		result = 1;
+	}
+
+	argv_array_clear(&argv);
+	return result;
+}
+
+static int delete_directory(const struct object_id *oid, struct strbuf *base,
+		const char *pathname, unsigned mode, int stage, void *context)
+{
+	struct strbuf dirname = STRBUF_INIT;
+	struct stat sb;
+
+	strbuf_addstr(&dirname, the_repository->worktree);
+	strbuf_addch(&dirname, '/');
+	strbuf_addstr(&dirname, pathname);
+
+	if (stat(dirname.buf, &sb) || !(sb.st_mode & S_IFDIR))
+		return 0;
+
+	if (remove_dir_recursively(&dirname, 0))
+		warning(_("failed to remove directory '%s'"),
+			dirname.buf);
+
+	strbuf_release(&dirname);
+	return 0;
+}
+
+static int partial_checkout_init(int argc, const char **argv)
+{
+	struct tree *t;
+	struct object_id oid;
+	static struct pathspec pathspec;
+
+	if (check_clean_status())
+		return 1;
+
+	if (pc_enable_config())
+		return 1;
+
+	/* remove all directories in the root, if tracked by Git */
+	if (get_oid("HEAD", &oid))
+		/* assume we are in a fresh repo */
+		return 0;
+	t = parse_tree_indirect(&oid);
+
+	parse_pathspec(&pathspec, PATHSPEC_ALL_MAGIC &
+				  ~(PATHSPEC_FROMTOP | PATHSPEC_LITERAL),
+		       PATHSPEC_PREFER_CWD,
+		       "", NULL);
+
+	if (read_tree_recursive(the_repository, t, "", 0, 0, &pathspec,
+				delete_directory, NULL));
+
+	return pc_read_tree() || pc_reset_hard();
 }
 
 static int partial_checkout_add(int argc, const char **argv)
@@ -213,6 +279,8 @@ int cmd_partial_checkout(int argc, const char **argv, const char *prefix)
 			     PARSE_OPT_STOP_AT_NON_OPTION);
 
 	if (argc > 0) {
+		if (!strcmp(argv[0], "init"))
+			return partial_checkout_init(argc, argv);
 		if (!strcmp(argv[0], "add"))
 			return partial_checkout_add(argc, argv);
 		if (!strcmp(argv[0], "remove"))
