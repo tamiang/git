@@ -599,6 +599,124 @@ void parse_exclude_pattern(const char **pattern,
 	*patternlen = len;
 }
 
+static int el_hashmap_cmp(const void *unused_cmp_data,
+			  const void *a, const void *b, const void *key)
+{
+	const struct exclude_entry *ee1 = a;
+	const struct exclude_entry *ee2 = b;
+
+	return strncmp(ee1->pattern, ee2->pattern, ee1->patternlen);
+}
+
+void insert_recursive_pattern(struct exclude_list *el, struct strbuf *path)
+{
+	struct exclude_entry *e = xmalloc(sizeof(struct exclude_entry));
+	e->patternlen = path->len;
+	e->pattern = strbuf_detach(path, NULL);
+	hashmap_entry_init(e, memhash(e->pattern, e->patternlen));
+
+	hashmap_add(&el->recursive_hashmap, e);
+
+	while (e->patternlen) {
+		char *slash = strrchr(e->pattern, '/');
+		char *oldpattern = e->pattern;
+		size_t newlen;
+
+		if (!slash)
+			break;
+
+		newlen = slash - e->pattern;
+		e = xmalloc(sizeof(struct exclude_entry));
+		e->patternlen = newlen;
+		e->pattern = xstrndup(oldpattern, newlen);
+		hashmap_entry_init(e, memhash(e->pattern, e->patternlen));
+
+		if (!hashmap_get(&el->parent_hashmap, e, NULL))
+			hashmap_add(&el->parent_hashmap, e);
+	}
+}
+
+static void add_exclude_to_hashsets(struct exclude_list *el, struct exclude *x)
+{
+	struct exclude_entry *e;
+	char *truncated;
+	char *data = NULL;
+
+	if (!el->use_restricted_patterns)
+		return;
+
+	if (x->patternlen >= 4 &&
+	    !strcmp(x->pattern + x->patternlen - 4, "/*/*")) {
+		if (!(x->flags & EXC_FLAG_NEGATIVE)) {
+			/* Not a restricted pattern. */
+			el->use_restricted_patterns = 0;
+			warning(_("unrecognized pattern: '%s'"), x->pattern);
+			goto clear_hashmaps;
+		}
+
+		truncated = xstrdup(x->pattern);
+		truncated[x->patternlen - 3] = 0;
+
+		e = xmalloc(sizeof(struct exclude_entry));
+		e->pattern = truncated;
+		e->patternlen = x->patternlen - 3;
+		hashmap_entry_init(e, memhash(e->pattern, e->patternlen));
+
+		if (!hashmap_get(&el->recursive_hashmap, e, NULL)) {
+			/* We did not see the "parent" included */
+			warning(_("unrecognized negative pattern: '%s'"), x->pattern);
+			free(truncated);
+			goto clear_hashmaps;
+		}
+
+		hashmap_add(&el->parent_hashmap, e);
+		hashmap_remove(&el->recursive_hashmap, e, &data);
+		free(data);
+		return;
+	}
+
+	if (x->patternlen >= 2 &&
+	    !strcmp(x->pattern + x->patternlen - 2, "/*")) {
+		if (x->flags & EXC_FLAG_NEGATIVE)
+			goto clear_hashmaps;
+
+		e = xmalloc(sizeof(struct exclude_entry));
+
+		truncated = xstrdup(x->pattern);
+		truncated[x->patternlen - 1] = 0;
+		e->pattern = truncated;
+		e->patternlen = x->patternlen - 1;
+		hashmap_entry_init(e, memhash(e->pattern, e->patternlen));
+
+		hashmap_add(&el->recursive_hashmap, e);
+
+		if (hashmap_get(&el->parent_hashmap, e, NULL)) {
+			/* we already included this at the parent level */
+			warning(_("your sparse-checkout file may have issues: pattern '%s' is repeated"),
+				x->pattern);
+			hashmap_remove(&el->parent_hashmap, e, &data);
+			free(data);
+		}
+		return;
+	}
+
+clear_hashmaps:
+	hashmap_free(&el->parent_hashmap, 1);
+	hashmap_free(&el->recursive_hashmap, 1);
+	el->use_restricted_patterns = 0;
+}
+
+int is_recursive_pattern(struct exclude_list *el, char *path)
+{
+	struct exclude_entry e;
+
+	e.pattern = path;
+	e.patternlen = strlen(path);
+	hashmap_entry_init(&e, memhash(e.pattern, e.patternlen));
+
+	return !!hashmap_get(&el->recursive_hashmap, &e, NULL);
+}
+
 void add_exclude(const char *string, const char *base,
 		 int baselen, struct exclude_list *el, int srcpos)
 {
@@ -623,6 +741,8 @@ void add_exclude(const char *string, const char *base,
 	ALLOC_GROW(el->excludes, el->nr + 1, el->alloc);
 	el->excludes[el->nr++] = x;
 	x->el = el;
+
+	add_exclude_to_hashsets(el, x);
 }
 
 static int read_skip_worktree_file_from_index(const struct index_state *istate,
@@ -847,6 +967,10 @@ static int add_excludes_from_buffer(char *buf, size_t size,
 {
 	int i, lineno = 1;
 	char *entry;
+
+	el->use_restricted_patterns = 1;
+	hashmap_init(&el->recursive_hashmap, el_hashmap_cmp, NULL, 0);
+	hashmap_init(&el->parent_hashmap, el_hashmap_cmp, NULL, 0);
 
 	el->filebuf = buf;
 

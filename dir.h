@@ -5,6 +5,7 @@
 
 #include "cache.h"
 #include "strbuf.h"
+#include "hashmap.h"
 
 struct dir_entry {
 	unsigned int len;
@@ -37,6 +38,12 @@ struct exclude {
 	int srcpos;
 };
 
+struct exclude_entry {
+	struct hashmap_entry ent;
+	char *pattern;
+	size_t patternlen;
+};
+
 /*
  * Each excludes file will be parsed into a fresh exclude_list which
  * is appended to the relevant exclude_list_group (either EXC_DIRS or
@@ -55,6 +62,25 @@ struct exclude_list {
 	const char *src;
 
 	struct exclude **excludes;
+
+	/*
+	 * While scanning the excludes, we attempt to match the patterns
+	 * with a more restricted set that allows us to use hashsets for
+	 * matching logic, which is faster than the linear lookup in the
+	 * excludes array above. If non-zero, that check succeeded.
+	 */
+	unsigned use_restricted_patterns;
+
+	/*
+	 * Stores paths where everything starting with those paths
+	 * is included.
+	 */
+	struct hashmap recursive_hashmap;
+
+	/*
+	 * Used to check single-level parents of blobs.
+	 */
+	struct hashmap parent_hashmap;
 };
 
 /*
@@ -380,4 +406,8 @@ void connect_work_tree_and_git_dir(const char *work_tree,
 void relocate_gitdir(const char *path,
 		     const char *old_git_dir,
 		     const char *new_git_dir);
+
+void insert_recursive_pattern(struct exclude_list *el, struct strbuf *path);
+int is_recursive_pattern(struct exclude_list *el, char *path);
+
 #endif
