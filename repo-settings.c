@@ -51,6 +51,7 @@ void prepare_repo_settings(struct repository *r)
 	}
 	if (!repo_config_get_bool(r, "feature.experimental", &value) && value) {
 		UPDATE_DEFAULT_BOOL(r->settings.pack_use_sparse, 1);
+		UPDATE_DEFAULT_BOOL(r->settings.merge_directory_renames, MERGE_DIRECTORY_RENAMES_TRUE);
 		UPDATE_DEFAULT_BOOL(r->settings.fetch_negotiation_algorithm, FETCH_NEGOTIATION_SKIPPING);
 	}
 
@@ -61,4 +62,13 @@ void prepare_repo_settings(struct repository *r)
 		UPDATE_DEFAULT_BOOL(r->settings.core_untracked_cache, UNTRACKED_CACHE_KEEP);
 
 	UPDATE_DEFAULT_BOOL(r->settings.fetch_negotiation_algorithm, FETCH_NEGOTIATION_DEFAULT);
+
+	if (!repo_config_get_maybe_bool(r, "merge.directoryrenames", &value))
+		r->settings.merge_directory_renames = value ? MERGE_DIRECTORY_RENAMES_TRUE
+							    : MERGE_DIRECTORY_RENAMES_NONE;
+	else if (!repo_config_get_string(r, "merge.directoryrenames", &strval)) {
+		if (!strcasecmp(strval, "conflict"))
+			r->settings.merge_directory_renames = MERGE_DIRECTORY_RENAMES_CONFLICT;
+	}
+	UPDATE_DEFAULT_BOOL(r->settings.merge_directory_renames, MERGE_DIRECTORY_RENAMES_CONFLICT);
 }
