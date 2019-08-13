@@ -88,6 +88,7 @@ int protect_hfs = PROTECT_HFS_DEFAULT;
 #endif
 int protect_ntfs = PROTECT_NTFS_DEFAULT;
 const char *core_fsmonitor;
+int core_use_gvfs_helper;
 
 /*
  * The character that begins a commented line in user-editable file

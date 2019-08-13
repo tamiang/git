@@ -27,6 +27,7 @@
 #include "wt-status.h"
 #include "xdiff-interface.h"
 #include "packfile.h"
+#include "gvfs-helper-client.h"
 
 static const char * const checkout_usage[] = {
 	N_("git checkout [<options>] <branch>"),
@@ -1032,6 +1033,13 @@ static int switch_branches(const struct checkout_opts *opts,
 	struct object_id rev;
 	int flag, writeout_error = 0;
 	int do_merge = 1;
+
+#if 0
+	ghc__pre_checkout_commit(the_repository,
+				 new_branch_info->commit,
+				 opts->show_progress);
+	exit(1);
+#endif
 
 	trace2_cmd_mode("branch");
 

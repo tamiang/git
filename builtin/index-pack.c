@@ -1352,7 +1352,7 @@ static void fix_unresolved_deltas(struct hashfile *f)
 		sorted_by_pos[i] = &ref_deltas[i];
 	QSORT(sorted_by_pos, nr_ref_deltas, delta_pos_compare);
 
-	if (repository_format_partial_clone) {
+	if (repository_format_partial_clone || core_use_gvfs_helper) {
 		/*
 		 * Prefetch the delta bases.
 		 */
