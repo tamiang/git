@@ -6504,7 +6504,8 @@ static void add_if_missing(struct repository *r,
 
 void diffcore_std(struct diff_options *options)
 {
-	if (options->repo == the_repository && has_promisor_remote()) {
+	if (options->repo == the_repository &&
+	    (has_promisor_remote() || core_use_gvfs_helper)) {
 		/*
 		 * Prefetch the diff pairs that are about to be flushed.
 		 */
