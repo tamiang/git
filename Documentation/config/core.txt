@@ -659,6 +659,9 @@ core.gvfs::
 		flag just blocks them from occurring at all.
 --
 
+core.useGvfsHelper::
+	TODO
+
 core.sparseCheckout::
 	Enable "sparse checkout" feature. If "false", then sparse-checkout
 	is disabled. If "true", then sparse-checkout is enabled with the full

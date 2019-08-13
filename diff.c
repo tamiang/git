@@ -6499,7 +6499,7 @@ static void add_if_missing(struct repository *r,
 void diffcore_std(struct diff_options *options)
 {
 	if (options->repo == the_repository &&
-	    repository_format_partial_clone) {
+	    (repository_format_partial_clone || core_use_gvfs_helper)) {
 		/*
 		 * Prefetch the diff pairs that are about to be flushed.
 		 */

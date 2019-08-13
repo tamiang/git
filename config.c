@@ -21,6 +21,7 @@
 #include "color.h"
 #include "refs.h"
 #include "gvfs.h"
+#include "transport.h"
 
 struct config_source {
 	struct config_source *prev;
@@ -1365,6 +1366,11 @@ static int git_default_core_config(const char *var, const char *value, void *cb)
 		return 0;
 	}
 
+	if (!strcmp(var, "core.usegvfshelper")) {
+		core_use_gvfs_helper = git_config_bool(var, value);
+		return 0;
+	}
+
 	if (!strcmp(var, "core.sparsecheckout")) {
 		/* virtual file system relies on the sparse checkout logic so force it on */
 		if (core_virtualfilesystem)
@@ -1495,6 +1501,25 @@ static int git_default_mailmap_config(const char *var, const char *value)
 	return 0;
 }
 
+static int git_default_gvfs_config(const char *var, const char *value)
+{
+	if (!strcmp(var, "gvfs.cache-server")) {
+		const char *v2 = NULL;
+
+		if (!git_config_string(&v2, var, value) && v2 && *v2)
+			gvfs_cache_server_url = transport_anonymize_url(v2);
+		free((char*)v2);
+		return 0;
+	}
+
+	if (!strcmp(var, "gvfs.sharedcache") && value && *value) {
+		git_config_string(&gvfs_shared_cache_pathname, var, value);
+		return 0;
+	}
+
+	return 0;
+}
+
 int git_default_config(const char *var, const char *value, void *cb)
 {
 	if (starts_with(var, "core."))
@@ -1540,6 +1565,9 @@ int git_default_config(const char *var, const char *value, void *cb)
 		pack_compression_seen = 1;
 		return 0;
 	}
+
+	if (starts_with(var, "gvfs."))
+		return git_default_gvfs_config(var, value);
 
 	/* Add other config variables here and to Documentation/config.txt. */
 	return 0;

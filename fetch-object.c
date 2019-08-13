@@ -4,6 +4,7 @@
 #include "strbuf.h"
 #include "transport.h"
 #include "fetch-object.h"
+#include "gvfs-helper-client.h"
 
 static void fetch_refs(const char *remote_name, struct ref *ref)
 {
@@ -28,6 +29,14 @@ void fetch_objects(const char *remote_name, const struct object_id *oids,
 {
 	struct ref *ref = NULL;
 	int i;
+
+	if (core_use_gvfs_helper) {
+		enum ghc__created ghc = GHC__CREATED__NOTHING;
+
+		ghc__queue_oid_array(oids, oid_nr);
+		ghc__drain_queue(&ghc);
+		return;
+	}
 
 	for (i = 0; i < oid_nr; i++) {
 		struct ref *new_ref = alloc_ref(oid_to_hex(&oids[i]));
