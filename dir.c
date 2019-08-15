@@ -655,11 +655,11 @@ static void add_exclude_to_hashsets(struct exclude_list *el, struct exclude *x)
 		}
 
 		truncated = xstrdup(x->pattern);
-		truncated[x->patternlen - 3] = 0;
+		truncated[x->patternlen - 4] = 0;
 
 		e = xmalloc(sizeof(struct exclude_entry));
 		e->pattern = truncated;
-		e->patternlen = x->patternlen - 3;
+		e->patternlen = x->patternlen - 4;
 		hashmap_entry_init(e, memhash(e->pattern, e->patternlen));
 
 		if (!hashmap_get(&el->recursive_hashmap, e, NULL)) {
@@ -683,9 +683,9 @@ static void add_exclude_to_hashsets(struct exclude_list *el, struct exclude *x)
 		e = xmalloc(sizeof(struct exclude_entry));
 
 		truncated = xstrdup(x->pattern);
-		truncated[x->patternlen - 1] = 0;
+		truncated[x->patternlen - 2] = 0;
 		e->pattern = truncated;
-		e->patternlen = x->patternlen - 1;
+		e->patternlen = x->patternlen - 2;
 		hashmap_entry_init(e, memhash(e->pattern, e->patternlen));
 
 		hashmap_add(&el->recursive_hashmap, e);
@@ -708,13 +708,21 @@ clear_hashmaps:
 
 int is_recursive_pattern(struct exclude_list *el, char *path)
 {
+	struct strbuf formatted_path = STRBUF_INIT;
 	struct exclude_entry e;
+	int result;
 
-	e.pattern = path;
-	e.patternlen = strlen(path);
+	strbuf_addstr(&formatted_path, path);
+	if (formatted_path.len && formatted_path.buf[formatted_path.len - 1] == '/')
+		strbuf_setlen(&formatted_path, formatted_path.len - 1);
+	e.pattern = formatted_path.buf;
+	e.patternlen = formatted_path.len;
 	hashmap_entry_init(&e, memhash(e.pattern, e.patternlen));
 
-	return !!hashmap_get(&el->recursive_hashmap, &e, NULL);
+	result = !!hashmap_get(&el->recursive_hashmap, &e, NULL);
+
+	strbuf_release(&formatted_path);
+	return result;
 }
 
 void add_exclude(const char *string, const char *base,
@@ -1192,6 +1200,18 @@ static struct exclude *last_exclude_matching_from_list(const char *pathname,
 	return exc;
 }
 
+static int hashmap_contains_path(struct hashmap *map,
+				 struct strbuf *pattern)
+{
+	struct exclude_entry e;
+
+	/* Check straight mapping */
+	e.pattern = pattern->buf;
+	e.patternlen = pattern->len;
+	hashmap_entry_init(&e, memhash(e.pattern, e.patternlen));
+	return !!hashmap_get(map, &e, NULL);
+}
+
 /*
  * Scan the list and let the last match determine the fate.
  * Return 1 for exclude, 0 for include and -1 for undecided.
@@ -1201,11 +1221,54 @@ int is_excluded_from_list(const char *pathname,
 			  struct exclude_list *el, struct index_state *istate)
 {
 	struct exclude *exclude;
-	exclude = last_exclude_matching_from_list(pathname, pathlen, basename,
-						  dtype, el, istate);
-	if (exclude)
-		return exclude->flags & EXC_FLAG_NEGATIVE ? 0 : 1;
-	return -1; /* undecided */
+	struct strbuf parent_pathname = STRBUF_INIT;
+	int excluded = 0;
+	const char *slash_pos;
+
+	if (!el->use_restricted_patterns) {
+		exclude = last_exclude_matching_from_list(pathname, pathlen, basename,
+								dtype, el, istate);
+
+		if (exclude)
+			return exclude->flags & EXC_FLAG_NEGATIVE ? 0 : 1;
+
+		return -1; /* undecided */
+	}
+
+	strbuf_addch(&parent_pathname, '/');
+	strbuf_add(&parent_pathname, pathname, pathlen);
+	slash_pos = strrchr(parent_pathname.buf, '/');
+
+	if (slash_pos == parent_pathname.buf) {
+		/* include every file in root */
+		excluded = 1;
+		goto done;
+	}
+
+	strbuf_setlen(&parent_pathname, slash_pos - parent_pathname.buf);
+
+	if (hashmap_contains_path(&el->parent_hashmap, &parent_pathname)) {
+		excluded = 1;
+		goto done;
+	}
+
+	while (parent_pathname.len) {
+		if (hashmap_contains_path(&el->recursive_hashmap,
+					  &parent_pathname)) {
+			excluded = -1;
+			goto done;
+		}
+
+		slash_pos = strrchr(parent_pathname.buf, '/');
+		if (slash_pos == parent_pathname.buf)
+			break;
+
+		strbuf_setlen(&parent_pathname, slash_pos - parent_pathname.buf);
+	}
+
+done:
+	strbuf_release(&parent_pathname);
+	return excluded;
 }
 
 static struct exclude *last_exclude_matching_from_lists(struct dir_struct *dir,
