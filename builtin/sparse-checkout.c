@@ -24,20 +24,6 @@ static char *get_sparse_checkout_filename(void)
 	return git_pathdup("info/sparse-checkout");
 }
 
-static int check_clean_status(void)
-{
-/*
-	struct strbuf sb = STRBUF_INIT;
-
-	if (repo_index_has_changes(the_repository, NULL, &sb)) {
-		error(_("You have local changes that could be overwritten by a reset:\n %s"),
-		      sb.buf);
-		return 1;
-	}
-*/
-	return 0;
-}
-
 static int sc_read_tree(void)
 {
 	struct argv_array argv = ARGV_ARRAY_INIT;
@@ -98,9 +84,6 @@ static int sparse_checkout_init(int argc, const char **argv)
 	char *sparse_filename;
 	FILE *fp;
 
-	if (check_clean_status())
-		return 1;
-
 	if (sc_enable_config())
 		return 1;
 
@@ -150,9 +133,6 @@ static int sparse_checkout_add(int argc, const char **argv)
 	struct exclude_entry *entry;
 	struct string_list sl = STRING_LIST_INIT_DUP;
 	int i;
-
-	if (check_clean_status())
-		return 1;
 
 	memset(&el, 0, sizeof(el));
 	sparse_filename = get_sparse_checkout_filename();
