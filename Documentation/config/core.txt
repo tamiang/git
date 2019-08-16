@@ -660,7 +660,9 @@ core.gvfs::
 --
 
 core.sparseCheckout::
-	Enable "sparse checkout" feature. See section "Sparse checkout" in
+	Enable "sparse checkout" feature. Use "true" to enable the full pattern
+	set, or "cone" to enable the restricted cone-based patterns. Defaults to
+	"false", where the feature is disabled. See section "Sparse checkout" in
 	linkgit:git-read-tree[1] for more information.
 
 core.abbrev::

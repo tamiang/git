@@ -889,7 +889,14 @@ extern char *git_replace_ref_base;
 
 extern int fsync_object_files;
 extern int core_preload_index;
-extern int core_apply_sparse_checkout;
+
+enum sparse_checkout_options {
+	SPARSE_CHECKOUT_NONE = 0,
+	SPARSE_CHECKOUT_FULL = 1,
+	SPARSE_CHECKOUT_CONE = 2
+};
+
+extern enum sparse_checkout_options core_apply_sparse_checkout;
 extern const char *core_virtualfilesystem;
 extern int core_gvfs;
 extern int precomposed_unicode;
