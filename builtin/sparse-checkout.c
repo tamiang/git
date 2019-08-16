@@ -5,7 +5,6 @@
 #include "pathspec.h"
 #include "repository.h"
 #include "run-command.h"
-#include "sparse-checkout.h"
 #include "strbuf.h"
 #include "string-list.h"
 
@@ -43,7 +42,7 @@ static int sc_enable_config(void)
 {
 	struct argv_array argv = ARGV_ARRAY_INIT;
 	int result = 0;
-	argv_array_pushl(&argv, "config", "--add", "core.sparseCheckout", "true", NULL);
+	argv_array_pushl(&argv, "config", "--add", "core.sparseCheckout", "cone", NULL);
 
 	if (run_command_v_opt(argv.argv, RUN_GIT_CMD)) {
 		error(_("failed to enable core.sparseCheckout"));
@@ -80,7 +79,6 @@ static int sparse_checkout_init(int argc, const char **argv)
 	struct tree *t;
 	struct object_id oid;
 	static struct pathspec pathspec;
-	struct exclude_list el;
 	char *sparse_filename;
 	FILE *fp;
 
@@ -88,11 +86,6 @@ static int sparse_checkout_init(int argc, const char **argv)
 		return 1;
 
 	sparse_filename = get_sparse_checkout_filename();
-
-	if (!get_sparse_checkout_data(sparse_filename, &el)) {
-		/* Check for existing data */
-		goto reset;
-	}
 
 	/* initial mode: all blobs at root */
 	fp = fopen(sparse_filename, "w");
@@ -118,7 +111,6 @@ static int sparse_checkout_init(int argc, const char **argv)
 				delete_directory, NULL))
 		return 1;
 
-reset:
 	free(sparse_filename);
 	return sc_read_tree();
 }
@@ -136,9 +128,12 @@ static int sparse_checkout_add(int argc, const char **argv)
 
 	memset(&el, 0, sizeof(el));
 	sparse_filename = get_sparse_checkout_filename();
-	get_sparse_checkout_data(sparse_filename, &el);
 
-	if (!excludes_are_strict(&el))
+	if (add_excludes_from_file_to_list(sparse_filename, "", 0, &el, NULL) < 0)
+		return 0;
+	free(sparse_filename);
+
+	if (!el.use_restricted_patterns)
 		die(_("The sparse-checkout file has incompatible patterns. It may have been edited manually."));
 
 	strbuf_init(&line, PATH_MAX);
@@ -221,7 +216,9 @@ static int sparse_checkout_list(int argc, const char **argv)
 	memset(&el, 0, sizeof(el));
 
 	sparse_filename = get_sparse_checkout_filename();
-	get_sparse_checkout_data(sparse_filename, &el);
+
+	if (add_excludes_from_file_to_list(sparse_filename, "", 0, &el, NULL) < 0)
+		return 0;
 	free(sparse_filename);
 
 	if (!el.use_restricted_patterns)

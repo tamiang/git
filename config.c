@@ -1325,8 +1325,15 @@ static int git_default_core_config(const char *var, const char *value, void *cb)
 	}
 
 	if (!strcmp(var, "core.sparsecheckout")) {
-		core_apply_sparse_checkout = git_config_bool(var, value);
-		return 0;
+		int result = git_parse_maybe_bool(value);
+
+		if (result < 0) {
+			core_apply_sparse_checkout = SPARSE_CHECKOUT_NONE;
+
+			if (!strcasecmp(value, "cone"))
+				core_apply_sparse_checkout = SPARSE_CHECKOUT_CONE;
+		} else
+			core_apply_sparse_checkout = result;
 	}
 
 	if (!strcmp(var, "core.precomposeunicode")) {

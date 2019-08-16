@@ -33,7 +33,7 @@ test_expect_success 'git sparse-checkout init' '
 	EOF
 	test_cmp test-output/expect .git/info/sparse-checkout &&
 	git config --list >test-output/config &&
-	test_i18ngrep "core.sparsecheckout=true" test-output/config &&
+	test_i18ngrep "core.sparsecheckout=cone" test-output/config &&
 	ls >test-output/dir  &&
 	cat >test-output/expect <<-EOF &&
 		a

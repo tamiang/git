@@ -976,7 +976,8 @@ static int add_excludes_from_buffer(char *buf, size_t size,
 	int i, lineno = 1;
 	char *entry;
 
-	el->use_restricted_patterns = 1;
+fprintf(stderr, "core_apply_sparse_checkout = %d\n", core_apply_sparse_checkout);
+	el->use_restricted_patterns = core_apply_sparse_checkout == SPARSE_CHECKOUT_CONE ? 1 : 0;
 	hashmap_init(&el->recursive_hashmap, el_hashmap_cmp, NULL, 0);
 	hashmap_init(&el->parent_hashmap, el_hashmap_cmp, NULL, 0);
 
