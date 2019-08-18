@@ -99,6 +99,7 @@ static int sparse_checkout_init(int argc, const char **argv)
 	char *sparse_filename;
 	FILE *fp;
 	int res;
+	struct object_id oid;
 
 	if (sc_enable_config())
 		return 1;
@@ -119,6 +120,11 @@ static int sparse_checkout_init(int argc, const char **argv)
 	free(sparse_filename);
 	fprintf(fp, "/*\n!/*/*\n");
 	fclose(fp);
+
+	if (get_oid("HEAD", &oid)) {
+		/* assume we are in a fresh repo */
+		return 0;
+	}
 
 reset_dir:
 	return update_working_directory();
