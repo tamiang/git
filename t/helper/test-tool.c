@@ -15,6 +15,7 @@ struct test_cmd {
 
 static struct test_cmd cmds[] = {
 	{ "chmtime", cmd__chmtime },
+	{ "cmp", cmd__cmp },
 	{ "config", cmd__config },
 	{ "ctype", cmd__ctype },
 	{ "date", cmd__date },
@@ -30,6 +31,7 @@ static struct test_cmd cmds[] = {
 	{ "genzeros", cmd__genzeros },
 	{ "hashmap", cmd__hashmap },
 	{ "hash-speed", cmd__hash_speed },
+	{ "iconv", cmd__iconv },
 	{ "index-version", cmd__index_version },
 	{ "json-writer", cmd__json_writer },
 	{ "lazy-init-name-hash", cmd__lazy_init_name_hash },
@@ -41,6 +43,7 @@ static struct test_cmd cmds[] = {
 	{ "parse-options", cmd__parse_options },
 	{ "path-utils", cmd__path_utils },
 	{ "pkt-line", cmd__pkt_line },
+	{ "prefix-map", cmd__prefix_map },
 	{ "prio-queue", cmd__prio_queue },
 	{ "reach", cmd__reach },
 	{ "read-cache", cmd__read_cache },

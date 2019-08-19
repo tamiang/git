@@ -25,6 +25,8 @@
 #include "fsmonitor.h"
 #include "thread-utils.h"
 #include "progress.h"
+#include "virtualfilesystem.h"
+#include "gvfs.h"
 
 /* Mask for the name length in ce_flags in the on-disk index */
 
@@ -1276,7 +1278,7 @@ static int add_index_entry_with_check(struct index_state *istate, struct cache_e
 	 */
 	if (istate->cache_nr > 0 &&
 		strcmp(ce->name, istate->cache[istate->cache_nr - 1]->name) > 0)
-		pos = -istate->cache_nr - 1;
+		pos = -1 - istate->cache_nr;
 	else
 		pos = index_name_stage_pos(istate, ce->name, ce_namelen(ce), ce_stage(ce));
 
@@ -1505,6 +1507,7 @@ int refresh_index(struct index_state *istate, unsigned int flags,
 	typechange_fmt = in_porcelain ? "T\t%s\n" : "%s: needs update\n";
 	added_fmt      = in_porcelain ? "A\t%s\n" : "%s: needs update\n";
 	unmerged_fmt   = in_porcelain ? "U\t%s\n" : "%s: needs merge\n";
+	enable_fscache(0);
 	/*
 	 * Use the multi-threaded preload_index() to refresh most of the
 	 * cache entries quickly then in the single threaded loop below,
@@ -1582,6 +1585,7 @@ int refresh_index(struct index_state *istate, unsigned int flags,
 		stop_progress(&progress);
 	}
 	trace_performance_leave("refresh index");
+	disable_fscache();
 	return has_errors;
 }
 
@@ -1697,7 +1701,10 @@ static int read_index_extension(struct index_state *istate,
 {
 	switch (CACHE_EXT(ext)) {
 	case CACHE_EXT_TREE:
+		trace2_region_enter("index", "read/extension/cache_tree", NULL);
 		istate->cache_tree = cache_tree_read(data, sz);
+		trace2_data_intmax("index", NULL, "read/extension/cache_tree/bytes", (intmax_t)sz);
+		trace2_region_leave("index", "read/extension/cache_tree", NULL);
 		break;
 	case CACHE_EXT_RESOLVE_UNDO:
 		istate->resolve_undo = resolve_undo_read(data, sz);
@@ -1880,6 +1887,7 @@ static void post_read_index_from(struct index_state *istate)
 	tweak_untracked_cache(istate);
 	tweak_split_index(istate);
 	tweak_fsmonitor(istate);
+	apply_virtualfilesystem(istate);
 }
 
 static size_t estimate_cache_size_from_compressed(unsigned int entries)
@@ -1894,7 +1902,7 @@ static size_t estimate_cache_size(size_t ondisk_size, unsigned int entries)
 	/*
 	 * Account for potential alignment differences.
 	 */
-	per_entry += align_padding_size(sizeof(struct cache_entry), -sizeof(struct ondisk_cache_entry));
+	per_entry += align_padding_size(per_entry, 0);
 	return ondisk_size + entries * per_entry;
 }
 
@@ -1950,6 +1958,17 @@ static void *load_index_extensions(void *_data)
 	}
 
 	return NULL;
+}
+
+static void *load_index_extensions_threadproc(void *_data)
+{
+	void *result;
+
+	trace2_thread_start("load_index_extensions");
+	result = load_index_extensions(_data);
+	trace2_thread_exit();
+
+	return result;
 }
 
 /*
@@ -2027,12 +2046,17 @@ static void *load_cache_entries_thread(void *_data)
 	struct load_cache_entries_thread_data *p = _data;
 	int i;
 
+	trace2_thread_start("load_cache_entries");
+
 	/* iterate across all ieot blocks assigned to this thread */
 	for (i = p->ieot_start; i < p->ieot_start + p->ieot_blocks; i++) {
 		p->consumed += load_cache_entry_block(p->istate, p->ce_mem_pool,
 			p->offset, p->ieot->entries[i].nr, p->mmap, p->ieot->entries[i].offset, NULL);
 		p->offset += p->ieot->entries[i].nr;
 	}
+
+	trace2_thread_exit();
+
 	return NULL;
 }
 
@@ -2182,7 +2206,7 @@ int do_read_index(struct index_state *istate, const char *path, int must_exist)
 			int err;
 
 			p.src_offset = extension_offset;
-			err = pthread_create(&p.pthread, NULL, load_index_extensions, &p);
+			err = pthread_create(&p.pthread, NULL, load_index_extensions_threadproc, &p);
 			if (err)
 				die(_("unable to create load_index_extensions thread: %s"), strerror(err));
 
@@ -2427,7 +2451,9 @@ static int ce_write_flush(git_hash_ctx *context, int fd)
 {
 	unsigned int buffered = write_buffer_len;
 	if (buffered) {
-		the_hash_algo->update_fn(context, write_buffer, buffered);
+		if (!gvfs_config_is_set(GVFS_SKIP_SHA_ON_INDEX))
+			the_hash_algo->update_fn(context, write_buffer,
+						 buffered);
 		if (write_in_full(fd, write_buffer, buffered) < 0)
 			return -1;
 		write_buffer_len = 0;
@@ -2476,7 +2502,8 @@ static int ce_flush(git_hash_ctx *context, int fd, unsigned char *hash)
 
 	if (left) {
 		write_buffer_len = 0;
-		the_hash_algo->update_fn(context, write_buffer, left);
+		if (!gvfs_config_is_set(GVFS_SKIP_SHA_ON_INDEX))
+			the_hash_algo->update_fn(context, write_buffer, left);
 	}
 
 	/* Flush first if not enough space for hash signature */
@@ -2487,7 +2514,8 @@ static int ce_flush(git_hash_ctx *context, int fd, unsigned char *hash)
 	}
 
 	/* Append the hash signature at the end */
-	the_hash_algo->final_fn(write_buffer + left, context);
+	if (!gvfs_config_is_set(GVFS_SKIP_SHA_ON_INDEX))
+		the_hash_algo->final_fn(write_buffer + left, context);
 	hashcpy(hash, write_buffer + left);
 	left += the_hash_algo->rawsz;
 	return (write_in_full(fd, write_buffer, left) < 0) ? -1 : 0;
@@ -2926,9 +2954,13 @@ static int do_write_index(struct index_state *istate, struct tempfile *tempfile,
 	if (!strip_extensions && !drop_cache_tree && istate->cache_tree) {
 		struct strbuf sb = STRBUF_INIT;
 
+		trace2_region_enter("index", "write/extension/cache_tree", NULL);
 		cache_tree_write(&sb, istate->cache_tree);
 		err = write_index_ext_header(&c, &eoie_c, newfd, CACHE_EXT_TREE, sb.len) < 0
 			|| ce_write(&c, newfd, sb.buf, sb.len) < 0;
+		trace2_data_intmax("index", NULL, "write/extension/cache_tree/bytes", (intmax_t)sb.len);
+		trace2_region_leave("index", "write/extension/cache_tree", NULL);
+
 		strbuf_release(&sb);
 		if (err)
 			return -1;

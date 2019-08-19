@@ -993,9 +993,9 @@ static int stash_patch(struct stash_info *info, const struct pathspec *ps,
 {
 	int ret = 0;
 	struct child_process cp_read_tree = CHILD_PROCESS_INIT;
-	struct child_process cp_add_i = CHILD_PROCESS_INIT;
 	struct child_process cp_diff_tree = CHILD_PROCESS_INIT;
 	struct index_state istate = { NULL };
+	char *old_index_env = NULL, *old_repo_index_file;
 
 	remove_path(stash_index_path.buf);
 
@@ -1009,16 +1009,19 @@ static int stash_patch(struct stash_info *info, const struct pathspec *ps,
 	}
 
 	/* Find out what the user wants. */
-	cp_add_i.git_cmd = 1;
-	argv_array_pushl(&cp_add_i.args, "add--interactive", "--patch=stash",
-			 "--", NULL);
-	add_pathspecs(&cp_add_i.args, ps);
-	argv_array_pushf(&cp_add_i.env_array, "GIT_INDEX_FILE=%s",
-			 stash_index_path.buf);
-	if (run_command(&cp_add_i)) {
-		ret = -1;
-		goto done;
-	}
+	old_repo_index_file = the_repository->index_file;
+	the_repository->index_file = stash_index_path.buf;
+	old_index_env = xstrdup_or_null(getenv(INDEX_ENVIRONMENT));
+	setenv(INDEX_ENVIRONMENT, the_repository->index_file, 1);
+
+	ret = run_add_interactive(NULL, "--patch=stash", ps);
+
+	the_repository->index_file = old_repo_index_file;
+	if (old_index_env && *old_index_env)
+		setenv(INDEX_ENVIRONMENT, old_index_env, 1);
+	else
+		unsetenv(INDEX_ENVIRONMENT);
+	FREE_AND_NULL(old_index_env);
 
 	/* State of the working tree. */
 	if (write_index_as_tree(&info->w_tree, &istate, stash_index_path.buf, 0,
@@ -1028,7 +1031,7 @@ static int stash_patch(struct stash_info *info, const struct pathspec *ps,
 	}
 
 	cp_diff_tree.git_cmd = 1;
-	argv_array_pushl(&cp_diff_tree.args, "diff-tree", "-p", "HEAD",
+	argv_array_pushl(&cp_diff_tree.args, "diff-tree", "-p", "-U1", "HEAD",
 			 oid_to_hex(&info->w_tree), "--", NULL);
 	if (pipe_command(&cp_diff_tree, NULL, 0, out_patch, 0, NULL, 0)) {
 		ret = -1;
@@ -1548,13 +1551,17 @@ int cmd_stash(int argc, const char **argv, const char *prefix)
 	};
 
 	if (!use_builtin_stash()) {
-		const char *path = mkpath("%s/git-legacy-stash",
-					  git_exec_path());
+		struct argv_array args = ARGV_ARRAY_INIT;
+		int code;
 
-		if (sane_execvp(path, (char **)argv) < 0)
-			die_errno(_("could not exec %s"), path);
-		else
-			BUG("sane_execvp() returned???");
+		argv_array_push(&args, mkpath("%s/git-legacy-stash",
+					      git_exec_path()));
+		argv_array_pushv(&args, argv + 1);
+		code = run_command_v_opt(args.argv, 0);
+		if (code < 0)
+			die_errno(_("could not exec %s"), args.argv[0]);
+		argv_array_clear(&args);
+		exit(code);
 	}
 
 	prefix = setup_git_directory();

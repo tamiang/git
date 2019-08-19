@@ -200,9 +200,13 @@ const char *skip_blank_lines(const char *msg);
 
 /** Removes the first commit from a list sorted by date, and adds all
  * of its parents.
+ *
+ * The parents are not added if their generation number is strictly
+ * lower than min_generation.
  **/
 struct commit *pop_most_recent_commit(struct commit_list **list,
-				      unsigned int mark);
+				      unsigned int mark,
+				      uint32_t min_generation);
 
 struct commit *pop_commit(struct commit_list **stack);
 
@@ -295,7 +299,8 @@ int delayed_reachability_test(struct shallow_info *si, int c);
 void prune_shallow(unsigned options);
 extern struct trace_key trace_shallow;
 
-int interactive_add(int argc, const char **argv, const char *prefix, int patch);
+int interactive_add(int argc, const char **argv, const char *prefix,
+		    const char *patch_mode);
 int run_add_interactive(const char *revision, const char *patch_mode,
 			const struct pathspec *pathspec);
 
