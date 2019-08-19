@@ -34,6 +34,11 @@ COMMANDS
 	by Git. Add patterns to the sparse-checkout file to
 	repopulate the working directory.
 
+'set'::
+	Write a set of patterns to the sparse-checkout file, as given as
+	a list of arguments following the 'set' subcommand. Update the
+	working directory to match the new patterns.
+
 SPARSE CHECKOUT
 ----------------
 
