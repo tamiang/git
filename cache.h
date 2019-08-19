@@ -866,6 +866,8 @@ extern char *git_replace_ref_base;
 extern int fsync_object_files;
 extern int core_preload_index;
 extern int core_apply_sparse_checkout;
+extern const char *core_virtualfilesystem;
+extern int core_gvfs;
 extern int precomposed_unicode;
 extern int protect_hfs;
 extern int protect_ntfs;
@@ -890,6 +892,8 @@ int use_optional_locks(void);
  */
 extern char comment_line_char;
 extern int auto_comment_line_char;
+
+extern int core_virtualize_objects;
 
 enum log_refs_config {
 	LOG_REFS_UNSET = -1,
@@ -1243,6 +1247,7 @@ int normalize_path_copy_len(char *dst, const char *src, int *prefix_len);
 int normalize_path_copy(char *dst, const char *src);
 int longest_ancestor_length(const char *path, struct string_list *prefixes);
 char *strip_path_suffix(const char *path, const char *suffix);
+int is_mount_point_via_stat(struct strbuf *path);
 int daemon_avoid_alias(const char *path);
 
 /*

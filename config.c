@@ -20,6 +20,7 @@
 #include "dir.h"
 #include "color.h"
 #include "refs.h"
+#include "gvfs.h"
 
 struct config_source {
 	struct config_source *prev;
@@ -1359,8 +1360,17 @@ static int git_default_core_config(const char *var, const char *value, void *cb)
 		return 0;
 	}
 
+	if (!strcmp(var, "core.gvfs")) {
+		gvfs_load_config_value(value);
+		return 0;
+	}
+
 	if (!strcmp(var, "core.sparsecheckout")) {
-		core_apply_sparse_checkout = git_config_bool(var, value);
+		/* virtual file system relies on the sparse checkout logic so force it on */
+		if (core_virtualfilesystem)
+			core_apply_sparse_checkout = 1;
+		else
+			core_apply_sparse_checkout = git_config_bool(var, value);
 		return 0;
 	}
 
@@ -1386,6 +1396,11 @@ static int git_default_core_config(const char *var, const char *value, void *cb)
 
 	if (!strcmp(var, "core.usereplacerefs")) {
 		read_replace_refs = git_config_bool(var, value);
+		return 0;
+	}
+
+	if (!strcmp(var, "core.virtualizeobjects")) {
+		core_virtualize_objects = git_config_bool(var, value);
 		return 0;
 	}
 
@@ -1711,11 +1726,16 @@ static int do_git_config_sequence(const struct config_options *opts,
 		repo_config = NULL;
 
 	current_parsing_scope = CONFIG_SCOPE_SYSTEM;
-	if (git_config_system() && !access_or_die(git_etc_gitconfig(), R_OK,
-						  opts->system_gently ?
-						  ACCESS_EACCES_OK : 0))
-		ret += git_config_from_file(fn, git_etc_gitconfig(),
-					    data);
+	if (git_config_system()) {
+		int flags = opts->system_gently ? ACCESS_EACCES_OK : 0;
+		const char *program_data = git_program_data_config();
+		const char *etc = git_etc_gitconfig();
+
+		if (program_data && !access_or_die(program_data, R_OK, flags))
+			ret += git_config_from_file(fn, program_data, data);
+		if (!access_or_die(etc, R_OK, flags))
+			ret += git_config_from_file(fn, etc, data);
+	}
 
 	current_parsing_scope = CONFIG_SCOPE_GLOBAL;
 	if (xdg_config && !access_or_die(xdg_config, R_OK, ACCESS_EACCES_OK))
@@ -2347,6 +2367,37 @@ int git_config_get_fsmonitor(void)
 
 	if (core_fsmonitor)
 		return 1;
+
+	return 0;
+}
+
+int git_config_get_virtualfilesystem(void)
+{
+	if (git_config_get_pathname("core.virtualfilesystem", &core_virtualfilesystem))
+		core_virtualfilesystem = getenv("GIT_VIRTUALFILESYSTEM_TEST");
+
+	if (core_virtualfilesystem && !*core_virtualfilesystem)
+		core_virtualfilesystem = NULL;
+
+	if (core_virtualfilesystem) {
+		/*
+		 * Some git commands spawn helpers and redirect the index to a different
+		 * location.  These include "difftool -d" and the sequencer
+		 * (i.e. `git rebase -i`, `git cherry-pick` and `git revert`) and others.
+		 * In those instances we don't want to update their temporary index with
+		 * our virtualization data.
+		 */
+		char *default_index_file = xstrfmt("%s/%s", the_repository->gitdir, "index");
+		int should_run_hook = !strcmp(default_index_file, the_repository->index_file);
+
+		free(default_index_file);
+		if (should_run_hook) {
+			/* virtual file system relies on the sparse checkout logic so force it on */
+			core_apply_sparse_checkout = 1;
+			return 1;
+		} 
+		core_virtualfilesystem = NULL;
+	}
 
 	return 0;
 }

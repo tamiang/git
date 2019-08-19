@@ -208,9 +208,11 @@
 /* pull in Windows compatibility stuff */
 #include "compat/win32/path-utils.h"
 #include "compat/mingw.h"
+#include "compat/win32/fscache.h"
 #elif defined(_MSC_VER)
 #include "compat/win32/path-utils.h"
 #include "compat/msvc.h"
+#include "compat/win32/fscache.h"
 #else
 #include <sys/utsname.h>
 #include <sys/wait.h>
@@ -404,6 +406,19 @@ static inline char *git_find_last_dir_sep(const char *path)
 #define find_last_dir_sep git_find_last_dir_sep
 #endif
 
+#ifndef is_mount_point
+#define is_mount_point is_mount_point_via_stat
+#endif
+
+#ifndef create_symlink
+struct index_state;
+static inline int git_create_symlink(struct index_state *index, const char *target, const char *link)
+{
+	return symlink(target, link);
+}
+#define create_symlink git_create_symlink
+#endif
+
 #ifndef query_user_email
 #define query_user_email() NULL
 #endif
@@ -419,6 +434,10 @@ static inline char *git_find_last_dir_sep(const char *path)
  */
 # define NSIG 100
 #endif
+#endif
+
+#ifndef git_program_data_config
+#define git_program_data_config() NULL
 #endif
 
 #if defined(__HP_cc) && (__HP_cc >= 61000)
@@ -1276,6 +1295,45 @@ static inline int is_missing_file_error(int errno_)
 {
 	return (errno_ == ENOENT || errno_ == ENOTDIR);
 }
+
+/*
+ * Enable/disable a read-only cache for file system data on platforms that
+ * support it.
+ *
+ * Implementing a live-cache is complicated and requires special platform
+ * support (inotify, ReadDirectoryChangesW...). enable_fscache shall be used
+ * to mark sections of git code that extensively read from the file system
+ * without modifying anything. Implementations can use this to cache e.g. stat
+ * data or even file content without the need to synchronize with the file
+ * system.
+ */
+
+ /* opaque fscache structure */
+struct fscache;
+
+#ifndef enable_fscache
+#define enable_fscache(x) /* noop */
+#endif
+
+#ifndef disable_fscache
+#define disable_fscache() /* noop */
+#endif
+
+#ifndef is_fscache_enabled
+#define is_fscache_enabled(path) (0)
+#endif
+
+#ifndef flush_fscache
+#define flush_fscache() /* noop */
+#endif
+
+#ifndef getcache_fscache
+#define getcache_fscache() (NULL) /* noop */
+#endif
+
+#ifndef merge_fscache
+#define merge_fscache(dest) /* noop */
+#endif
 
 int cmd_main(int, const char **);
 
