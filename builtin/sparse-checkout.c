@@ -74,6 +74,10 @@ static int update_working_directory(void)
 	return result;
 }
 
+#define SPARSE_CHECKOUT_NONE 0
+#define SPARSE_CHECKOUT_FULL 1
+#define SPARSE_CHECKOUT_CONE 2
+
 static int sc_set_config(int mode)
 {
 	struct argv_array argv = ARGV_ARRAY_INIT;
@@ -86,11 +90,15 @@ static int sc_set_config(int mode)
 	argv_array_pushl(&argv, "config", "--worktree", "core.sparseCheckout", NULL);
 
 	switch (mode) {
-	case 1:
+	case SPARSE_CHECKOUT_FULL:
 		argv_array_pushl(&argv, "true", NULL);
 		break;
 
-	case 0:
+	case SPARSE_CHECKOUT_CONE:
+		argv_array_pushl(&argv, "cone", NULL);
+		break;
+
+	case SPARSE_CHECKOUT_NONE:
 		argv_array_pushl(&argv, "false", NULL);
 		break;
 
@@ -114,7 +122,7 @@ static int sparse_checkout_init(int argc, const char **argv)
 	int res;
 	struct object_id oid;
 
-	if (sc_set_config(1))
+	if (sc_set_config(SPARSE_CHECKOUT_FULL))
 		return 1;
 
 	memset(&pl, 0, sizeof(pl));
@@ -213,7 +221,7 @@ static int sparse_checkout_disable(int argc, const char **argv)
 	char *sparse_filename;
 	FILE *fp;
 
-	if (sc_set_config(1))
+	if (sc_set_config(SPARSE_CHECKOUT_FULL))
 		die(_("failed to change config"));
 
 	sparse_filename = get_sparse_checkout_filename();
@@ -227,7 +235,7 @@ static int sparse_checkout_disable(int argc, const char **argv)
 	unlink(sparse_filename);
 	free(sparse_filename);
 
-	return sc_set_config(0);
+	return sc_set_config(SPARSE_CHECKOUT_NONE);
 }
 
 int cmd_sparse_checkout(int argc, const char **argv, const char *prefix)
