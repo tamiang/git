@@ -81,6 +81,7 @@ static int update_working_directory(void)
 static int sc_set_config(int mode)
 {
 	struct argv_array argv = ARGV_ARRAY_INIT;
+	struct argv_array cone_argv = ARGV_ARRAY_INIT;
 	
 	if (git_config_set_gently("extensions.worktreeConfig", "true")) {
 		error(_("failed to set extensions.worktreeConfig setting"));
@@ -91,11 +92,8 @@ static int sc_set_config(int mode)
 
 	switch (mode) {
 	case SPARSE_CHECKOUT_FULL:
-		argv_array_pushl(&argv, "true", NULL);
-		break;
-
 	case SPARSE_CHECKOUT_CONE:
-		argv_array_pushl(&argv, "cone", NULL);
+		argv_array_pushl(&argv, "true", NULL);
 		break;
 
 	case SPARSE_CHECKOUT_NONE:
@@ -111,6 +109,19 @@ static int sc_set_config(int mode)
 		return 1;
 	}
 
+	argv_array_pushl(&cone_argv, "config", "--worktree",
+			 "core.sparseCheckoutCone", NULL);
+
+	if (mode == SPARSE_CHECKOUT_CONE)
+		argv_array_push(&cone_argv, "true");
+	else	
+		argv_array_push(&cone_argv, "false");
+
+	if (run_command_v_opt(cone_argv.argv, RUN_GIT_CMD)) {
+		error(_("failed to enable core.sparseCheckoutCone"));
+		return 1;
+	}
+	
 	return 0;
 }
 
