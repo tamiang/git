@@ -8,7 +8,7 @@
 #include "strbuf.h"
 
 static char const * const builtin_sparse_checkout_usage[] = {
-	N_("git sparse-checkout [init|list|set] <options>"),
+	N_("git sparse-checkout [init|list|set|disable] <options>"),
 	NULL
 };
 
@@ -74,7 +74,7 @@ static int update_working_directory(void)
 	return result;
 }
 
-static int sc_enable_config(void)
+static int sc_set_config(int mode)
 {
 	struct argv_array argv = ARGV_ARRAY_INIT;
 	
@@ -82,8 +82,21 @@ static int sc_enable_config(void)
 		error(_("failed to set extensions.worktreeConfig setting"));
 		return 1;
 	}
- 
- 	argv_array_pushl(&argv, "config", "--worktree", "core.sparseCheckout", "true", NULL);
+
+	argv_array_pushl(&argv, "config", "--worktree", "core.sparseCheckout", NULL);
+
+	switch (mode) {
+	case 1:
+		argv_array_pushl(&argv, "true", NULL);
+		break;
+
+	case 0:
+		argv_array_pushl(&argv, "false", NULL);
+		break;
+
+	default:
+		die(_("invalid config mode"));
+	}
 
 	if (run_command_v_opt(argv.argv, RUN_GIT_CMD)) {
 		error(_("failed to enable core.sparseCheckout"));
@@ -101,7 +114,7 @@ static int sparse_checkout_init(int argc, const char **argv)
 	int res;
 	struct object_id oid;
 
-	if (sc_enable_config())
+	if (sc_set_config(1))
 		return 1;
 
 	memset(&pl, 0, sizeof(pl));
@@ -195,6 +208,28 @@ static int sparse_checkout_set(int argc, const char **argv, const char *prefix)
 	return write_patterns_and_update(&pl);
 }
 
+static int sparse_checkout_disable(int argc, const char **argv)
+{
+	char *sparse_filename;
+	FILE *fp;
+
+	if (sc_set_config(1))
+		die(_("failed to change config"));
+
+	sparse_filename = get_sparse_checkout_filename();
+	fp = fopen(sparse_filename, "w");
+	fprintf(fp, "/*\n");
+	fclose(fp);
+
+	if (update_working_directory())
+		die(_("error while refreshing working directory"));
+
+	unlink(sparse_filename);
+	free(sparse_filename);
+
+	return sc_set_config(0);
+}
+
 int cmd_sparse_checkout(int argc, const char **argv, const char *prefix)
 {
 	static struct option builtin_sparse_checkout_options[] = {
@@ -219,6 +254,8 @@ int cmd_sparse_checkout(int argc, const char **argv, const char *prefix)
 			return sparse_checkout_init(argc, argv);
 		if (!strcmp(argv[0], "set"))
 			return sparse_checkout_set(argc, argv, prefix);
+		if (!strcmp(argv[0], "disable"))
+			return sparse_checkout_disable(argc, argv);
 	}
 
 	usage_with_options(builtin_sparse_checkout_usage,
