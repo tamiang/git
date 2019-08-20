@@ -599,8 +599,8 @@ void parse_path_pattern(const char **pattern,
 	*patternlen = len;
 }
 
-static int pl_hashmap_cmp(const void *unused_cmp_data,
-			  const void *a, const void *b, const void *key)
+int pl_hashmap_cmp(const void *unused_cmp_data,
+		   const void *a, const void *b, const void *key)
 {
 	const struct pattern_entry *ee1 = (const struct pattern_entry *)a;
 	const struct pattern_entry *ee2 = (const struct pattern_entry *)b;
