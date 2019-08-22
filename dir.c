@@ -1215,7 +1215,7 @@ enum pattern_match_result path_matches_pattern_list(
 
 	if (hashmap_contains_path(&pl->recursive_hashmap,
 					&parent_pathname)) {
-		result = MATCHED;
+		result = MATCHED_RECURSIVE;
 		goto done;
 	}
 
@@ -1237,7 +1237,7 @@ enum pattern_match_result path_matches_pattern_list(
 	while (parent_pathname.len) {
 		if (hashmap_contains_path(&pl->recursive_hashmap,
 					  &parent_pathname)) {
-			result = UNDECIDED;
+			result = MATCHED_RECURSIVE;
 			goto done;
 		}
 
