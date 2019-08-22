@@ -1184,13 +1184,11 @@ static int process_ranges_merge_commit(struct rev_info *rev, struct commit *comm
 
 	p = commit->parents;
 	for (i = 0; i < nparents; i++) {
+		int changed;
 		parents[i] = p->item;
 		p = p->next;
 		queue_diffs(range, &rev->diffopt, &diffqueues[i], commit, parents[i]);
-	}
 
-	for (i = 0; i < nparents; i++) {
-		int changed;
 		cand[i] = NULL;
 		changed = process_all_files(&cand[i], rev, &diffqueues[i], range);
 		if (!changed) {
@@ -1203,7 +1201,7 @@ static int process_ranges_merge_commit(struct rev_info *rev, struct commit *comm
 			commit_list_append(parents[i], &commit->parents);
 			free(parents);
 			free(cand);
-			free_diffqueues(nparents, diffqueues);
+			free_diffqueues(i, diffqueues);
 			/* NEEDSWORK leaking like a sieve */
 			return 0;
 		}
