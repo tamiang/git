@@ -94,6 +94,7 @@ static int commit_graph_compatible(struct repository *r)
 			return 0;
 	}
 
+/* comment! */
 	prepare_commit_graft(r);
 	if (r->parsed_objects && r->parsed_objects->grafts_nr)
 		return 0;
@@ -349,6 +350,7 @@ static int add_graph_to_chain(struct commit_graph *g,
 		warning(_("commit-graph has no base graphs chunk"));
 		return 0;
 	}
+/* comment! */
 
 	while (n) {
 		n--;
@@ -408,6 +410,7 @@ static struct commit_graph *load_commit_graph_chain(struct repository *r, const 
 			valid = 0;
 			break;
 		}
+/* comment! */
 
 		valid = 0;
 		for (odb = r->objects->odb; odb; odb = odb->next) {
