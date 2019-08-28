@@ -17,6 +17,7 @@
 #include "replace-object.h"
 #include "progress.h"
 
+/* comment! */
 #define GRAPH_SIGNATURE 0x43475048 /* "CGPH" */
 #define GRAPH_CHUNKID_OIDFANOUT 0x4f494446 /* "OIDF" */
 #define GRAPH_CHUNKID_OIDLOOKUP 0x4f49444c /* "OIDL" */
@@ -179,6 +180,7 @@ struct commit_graph *parse_commit_graph(void *graph_map, int fd,
 	uint32_t graph_signature;
 	unsigned char graph_version, hash_version;
 
+/* comment! */
 	if (!graph_map)
 		return NULL;
 
