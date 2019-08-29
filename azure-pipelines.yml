@@ -385,3 +385,28 @@ jobs:
     displayName: 'ci/test-documentation.sh'
     env:
       GITFILESHAREPWD: $(gitfileshare.pwd)
+
+- job: linux_perf
+  displayName: linux-perf
+  condition: succeeded()
+  pool: Git-LInux
+  steps:
+  - bash: |
+       test "$GITFILESHAREPWD" = '$(gitfileshare.pwd)' || ci/mount-fileshare.sh //gitfileshare.file.core.windows.net/test-cache gitfileshare "$GITFILESHAREPWD" "$HOME/test-cache" || exit 1
+
+       sudo add-apt-repository ppa:ubuntu-toolchain-r/test &&
+       sudo apt-get update &&
+       sudo apt-get -y install git gcc make libssl-dev libcurl4-openssl-dev libexpat-dev tcl tk gettext git-email zlib1g-dev apache2 language-pack-is git-svn gcc-8 || exit 1
+
+       ci/install-dependencies.sh || exit 1
+
+       (
+         cd t/perf
+         git fetch origin $SYSTEM_PULLREQUEST_TARGETBRANCH
+         GIT_PERF_REPO=/_git/linux GIT_PERF_LARGE_REPO=/_git/linux ./run origin/$SYSTEM_PULLREQUEST_TARGETBRANCH HEAD -- p0*.sh
+       )
+
+       test "$GITFILESHAREPWD" = '$(gitfileshare.pwd)' || sudo umount "$HOME/test-cache" || exit 1
+    displayName: 'ci/run-build-and-tests.sh'
+    env:
+      GITFILESHAREPWD: $(gitfileshare.pwd)
