@@ -630,7 +630,8 @@ static void filter_combine__init(
 	filter->finalize_omits_fn = filter_combine__finalize_omits;
 }
 
-typedef void (*filter_init_fn)(
+typedef void *(*filter_init_fn)(
+	struct oidset *omitted,
 	struct list_objects_filter_options *filter_options,
 	struct filter *filter);
 
