@@ -617,12 +617,12 @@ static void add_pattern_to_hashsets(struct pattern_list *pl, struct path_pattern
 	struct pattern_entry *translated;
 	char *truncated;
 	char *data = NULL;
-
+	
 	if (!pl->use_cone_patterns)
 		return;
 
-	if (given->patternlen >= 4 &&
-	    !strcmp(given->pattern + given->patternlen - 4, "/*/*")) {
+	if (given->patternlen > 2 &&
+	    !strcmp(given->pattern + given->patternlen - 2, "/*")) {
 		if (!(given->flags & PATTERN_FLAG_NEGATIVE)) {
 			/* Not a cone pattern. */
 			pl->use_cone_patterns = 0;
@@ -631,11 +631,11 @@ static void add_pattern_to_hashsets(struct pattern_list *pl, struct path_pattern
 		}
 
 		truncated = xstrdup(given->pattern);
-		truncated[given->patternlen - 4] = 0;
+		truncated[given->patternlen - 3] = 0;
 
 		translated = xmalloc(sizeof(struct pattern_entry));
 		translated->pattern = truncated;
-		translated->patternlen = given->patternlen - 4;
+		translated->patternlen = given->patternlen - 3;
 		hashmap_entry_init(translated,
 				   memhash(translated->pattern, translated->patternlen));
 
@@ -654,35 +654,33 @@ static void add_pattern_to_hashsets(struct pattern_list *pl, struct path_pattern
 		return;
 	}
 
-	if (given->patternlen >= 2 &&
-	    !strcmp(given->pattern + given->patternlen - 2, "/*")) {
-		if (given->flags & PATTERN_FLAG_NEGATIVE) {
-			warning(_("unrecognized negative pattern: '%s'"),
-				given->pattern);
-			goto clear_hashmaps;
-		}
-
-		translated = xmalloc(sizeof(struct pattern_entry));
-
-		truncated = xstrdup(given->pattern);
-		truncated[given->patternlen - 2] = 0;
-		translated->pattern = truncated;
-		translated->patternlen = given->patternlen - 2;
-		hashmap_entry_init(translated,
-				   memhash(translated->pattern, translated->patternlen));
-
-		hashmap_add(&pl->recursive_hashmap, translated);
-
-		if (hashmap_get(&pl->parent_hashmap, translated, NULL)) {
-			/* we already included this at the parent level */
-			warning(_("your sparse-checkout file may have issues: pattern '%s' is repeated"),
-				given->pattern);
-			hashmap_remove(&pl->parent_hashmap, translated, &data);
-			free(data);
-			free(translated);
-		}
-		return;
+	if (given->flags & PATTERN_FLAG_NEGATIVE) {
+		warning(_("unrecognized negative pattern: '%s'"),
+			given->pattern);
+		goto clear_hashmaps;
 	}
+
+	translated = xmalloc(sizeof(struct pattern_entry));
+
+	truncated = xstrdup(given->pattern);
+	truncated[given->patternlen - 1] = 0;
+	translated->pattern = truncated;
+	translated->patternlen = given->patternlen - 1;
+	hashmap_entry_init(translated,
+			   memhash(translated->pattern, translated->patternlen));
+
+	hashmap_add(&pl->recursive_hashmap, translated);
+
+	if (hashmap_get(&pl->parent_hashmap, translated, NULL)) {
+		/* we already included this at the parent level */
+		warning(_("your sparse-checkout file may have issues: pattern '%s' is repeated"),
+			given->pattern);
+		hashmap_remove(&pl->parent_hashmap, translated, &data);
+		free(data);
+		free(translated);
+	}
+
+	return;
 
 clear_hashmaps:
 	hashmap_free(&pl->parent_hashmap, 1);

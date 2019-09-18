@@ -173,7 +173,7 @@ static int sparse_checkout_init(int argc, const char **argv)
 	/* initial mode: all blobs at root */
 	fp = fopen(sparse_filename, "w");
 	free(sparse_filename);
-	fprintf(fp, "/*\n!/*/*\n");
+	fprintf(fp, "/*\n!/*/\n");
 	fclose(fp);
 
 	if (get_oid("HEAD", &oid)) {
@@ -235,13 +235,13 @@ static void write_cone_to_file(FILE *fp, struct pattern_list *pl)
 	string_list_sort(&sl);
 	string_list_remove_duplicates(&sl, 0);
 
-	fprintf(fp, "/*\n!/*/*\n");
+	fprintf(fp, "/*\n!/*/\n");
 
 	for (i = 0; i < sl.nr; i++) {
 		char *pattern = sl.items[i].string;
 
 		if (strlen(pattern))
-			fprintf(fp, "/%s/*\n!/%s/*/*\n", pattern, pattern);
+			fprintf(fp, "/%s/\n!/%s/*/\n", pattern, pattern);
 	}
 
 	string_list_clear(&sl, 0);
@@ -263,7 +263,7 @@ static void write_cone_to_file(FILE *fp, struct pattern_list *pl)
 
 	for (i = 0; i < sl.nr; i++) {
 		char *pattern = sl.items[i].string;
-		fprintf(fp, "/%s/*\n", pattern);
+		fprintf(fp, "/%s/\n", pattern);
 	}
 }
 

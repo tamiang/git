@@ -31,19 +31,14 @@ test_expect_success 'git sparse-checkout list (empty)' '
 
 test_expect_success 'git sparse-checkout list (populated)' '
 	test_when_finished rm -f repo/.git/info/sparse-checkout &&
-	cat >repo/.git/info/sparse-checkout <<-EOF &&
-		/folder1/*
-		/deep/
-		**/a
-		!*bin*
-	EOF
-	git -C repo sparse-checkout list >list &&
 	cat >expect <<-EOF &&
-		/folder1/*
+		/folder1/
 		/deep/
 		**/a
 		!*bin*
 	EOF
+	cat expect >repo/.git/info/sparse-checkout &&
+	git -C repo sparse-checkout list >list &&
 	test_cmp expect list
 '
 
@@ -51,7 +46,7 @@ test_expect_success 'git sparse-checkout init' '
 	git -C repo sparse-checkout init &&
 	cat >expect <<-EOF &&
 		/*
-		!/*/*
+		!/*/
 	EOF
 	test_cmp expect repo/.git/info/sparse-checkout &&
 	git -C repo config --list >config &&
@@ -65,18 +60,18 @@ test_expect_success 'git sparse-checkout list after init' '
 	git -C repo sparse-checkout list >actual &&
 	cat >expect <<-EOF &&
 		/*
-		!/*/*
+		!/*/
 	EOF
 	test_cmp expect actual
 '
 
 test_expect_success 'init with existing sparse-checkout' '
-	echo "/folder1/*" >> repo/.git/info/sparse-checkout &&
+	echo "/folder1/" >> repo/.git/info/sparse-checkout &&
 	git -C repo sparse-checkout init &&
 	cat >expect <<-EOF &&
 		/*
-		!/*/*
-		/folder1/*
+		!/*/
+		/folder1/
 	EOF
 	test_cmp expect repo/.git/info/sparse-checkout &&
 	ls repo >dir  &&
@@ -92,7 +87,7 @@ test_expect_success 'clone --sparse' '
 	git -C clone sparse-checkout list >actual &&
 	cat >expect <<-EOF &&
 		/*
-		!/*/*
+		!/*/
 	EOF
 	test_cmp expect actual &&
 	ls clone >dir &&
@@ -101,12 +96,12 @@ test_expect_success 'clone --sparse' '
 '
 
 test_expect_success 'set sparse-checkout using builtin' '
-	git -C repo sparse-checkout set "/*" "!/*/*" "/folder1/*" "/folder2/*" &&
+	git -C repo sparse-checkout set "/*" "!/*/" "/folder1/" "/folder2/" &&
 	cat >expect <<-EOF &&
 		/*
-		!/*/*
-		/folder1/*
-		/folder2/*
+		!/*/
+		/folder1/
+		/folder2/
 	EOF
 	git -C repo sparse-checkout list >actual &&
 	test_cmp expect actual &&
@@ -123,9 +118,9 @@ test_expect_success 'set sparse-checkout using builtin' '
 test_expect_success 'set sparse-checkout using --stdin' '
 	cat >expect <<-EOF &&
 		/*
-		!/*/*
-		/folder1/*
-		/folder2/*
+		!/*/
+		/folder1/
+		/folder2/
 	EOF
 	git -C repo sparse-checkout set --stdin <expect &&
 	git -C repo sparse-checkout list >actual &&
@@ -157,7 +152,7 @@ test_expect_success 'cone mode: match patterns' '
 test_expect_success 'cone mode: warn on bad pattern' '
 	test_when_finished mv sparse-checkout repo/.git/info/ &&
 	cp repo/.git/info/sparse-checkout . &&
-	echo "!/deep/deeper/*" >>repo/.git/info/sparse-checkout &&
+	echo "!/deep/deeper/" >>repo/.git/info/sparse-checkout &&
 	git -C repo read-tree -mu HEAD 2>err &&
 	test_i18ngrep "unrecognized negative pattern" err
 '
@@ -203,14 +198,15 @@ test_expect_success 'cone mode: init and set' '
 	test_cmp expect dir &&
 	cat >expect <<-EOF &&
 		/*
-		!/*/*
-		/deep/*
-		!/deep/*/*
-		/deep/deeper1/*
-		!/deep/deeper1/*/*
-		/deep/deeper1/deepest/*
+		!/*/
+		/deep/
+		!/deep/*/
+		/deep/deeper1/
+		!/deep/deeper1/*/
+		/deep/deeper1/deepest/
 	EOF
 	test_cmp expect repo/.git/info/sparse-checkout
 '
+
 test_done
 
