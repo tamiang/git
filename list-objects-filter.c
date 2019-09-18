@@ -102,6 +102,7 @@ static enum list_objects_filter_result filter_blobs_none(
 }
 
 static void filter_blobs_none__init(
+	struct oidset *omitted,
 	struct list_objects_filter_options *filter_options,
 	struct filter *filter)
 {
@@ -229,6 +230,7 @@ static void filter_trees_free(void *filter_data) {
 }
 
 static void filter_trees_depth__init(
+	struct oidset *omitted,
 	struct list_objects_filter_options *filter_options,
 	struct filter *filter)
 {
@@ -306,6 +308,7 @@ include_it:
 }
 
 static void filter_blobs_limit__init(
+	struct oidset *omitted,
 	struct list_objects_filter_options *filter_options,
 	struct filter *filter)
 {
@@ -479,6 +482,7 @@ static void filter_sparse_free(void *filter_data)
 }
 
 static void filter_sparse_oid__init(
+	struct oidset *omitted,
 	struct list_objects_filter_options *filter_options,
 	struct filter *filter)
 {
@@ -611,6 +615,7 @@ static void filter_combine__finalize_omits(
 }
 
 static void filter_combine__init(
+	struct oidset *omitted,
 	struct list_objects_filter_options *filter_options,
 	struct filter* filter)
 {
@@ -630,7 +635,7 @@ static void filter_combine__init(
 	filter->finalize_omits_fn = filter_combine__finalize_omits;
 }
 
-typedef void *(*filter_init_fn)(
+typedef void (*filter_init_fn)(
 	struct oidset *omitted,
 	struct list_objects_filter_options *filter_options,
 	struct filter *filter);
@@ -666,7 +671,7 @@ struct filter *list_objects_filter__init(
 
 	filter = xcalloc(1, sizeof(*filter));
 	filter->omits = omitted;
-	init_fn(filter_options, filter);
+	init_fn(omitted, filter_options, filter);
 	return filter;
 }
 

@@ -32,14 +32,14 @@ test_expect_success 'git sparse-checkout list (empty)' '
 test_expect_success 'git sparse-checkout list (populated)' '
 	test_when_finished rm -f repo/.git/info/sparse-checkout &&
 	cat >repo/.git/info/sparse-checkout <<-EOF &&
-		/folder1/*
+		/folder1/
 		/deep/
 		**/a
 		!*bin*
 	EOF
 	git -C repo sparse-checkout list >list &&
 	cat >expect <<-EOF &&
-		/folder1/*
+		/folder1/
 		/deep/
 		**/a
 		!*bin*
@@ -71,12 +71,16 @@ test_expect_success 'git sparse-checkout list after init' '
 '
 
 test_expect_success 'init with existing sparse-checkout' '
-	echo "/folder1/*" >> repo/.git/info/sparse-checkout &&
+	cat > repo/.git/info/sparse-checkout <<-EOF &&
+		/*
+		!/*/
+		/folder1/
+	EOF
 	git -C repo sparse-checkout init &&
 	cat >expect <<-EOF &&
 		/*
-		!/*/*
-		/folder1/*
+		!/*/
+		/folder1/
 	EOF
 	test_cmp expect repo/.git/info/sparse-checkout &&
 	ls repo >dir  &&
@@ -101,12 +105,12 @@ test_expect_success 'clone --sparse' '
 '
 
 test_expect_success 'set sparse-checkout using builtin' '
-	git -C repo sparse-checkout set "/*" "!/*/*" "/folder1/*" "/folder2/*" &&
+	git -C repo sparse-checkout set "/*" "!/*/" "/folder1/" "/folder2/" &&
 	cat >expect <<-EOF &&
 		/*
-		!/*/*
-		/folder1/*
-		/folder2/*
+		!/*/
+		/folder1/
+		/folder2/
 	EOF
 	git -C repo sparse-checkout list >actual &&
 	test_cmp expect actual &&
@@ -123,9 +127,9 @@ test_expect_success 'set sparse-checkout using builtin' '
 test_expect_success 'set sparse-checkout using --stdin' '
 	cat >expect <<-EOF &&
 		/*
-		!/*/*
-		/folder1/*
-		/folder2/*
+		!/*/
+		/folder1/
+		/folder2/
 	EOF
 	git -C repo sparse-checkout set --stdin <expect &&
 	git -C repo sparse-checkout list >actual &&
@@ -203,12 +207,12 @@ test_expect_success 'cone mode: init and set' '
 	test_cmp expect dir &&
 	cat >expect <<-EOF &&
 		/*
-		!/*/*
-		/deep/*
-		!/deep/*/*
-		/deep/deeper1/*
-		!/deep/deeper1/*/*
-		/deep/deeper1/deepest/*
+		!/*/
+		/deep/
+		!/deep/*/
+		/deep/deeper1/
+		!/deep/deeper1/*/
+		/deep/deeper1/deepest/
 	EOF
 	test_cmp expect repo/.git/info/sparse-checkout
 '
