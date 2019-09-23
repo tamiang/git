@@ -518,7 +518,10 @@ int cmd_add(int argc, const char **argv, const char *prefix)
 		}
 
 		/* This picks up the paths that are not tracked */
+		trace2_region_enter("add", "fill_directory", NULL);
 		baselen = fill_directory(&dir, &the_index, &pathspec);
+		trace2_region_leave("add", "fill_directory", NULL);
+
 		if (pathspec.nr)
 			seen = prune_directory(&dir, &pathspec, baselen);
 	}
@@ -567,13 +570,21 @@ int cmd_add(int argc, const char **argv, const char *prefix)
 
 	plug_bulk_checkin();
 
-	if (add_renormalize)
+	if (add_renormalize) {
+		trace2_region_enter("add", "renormalize_tracked_files", NULL);
 		exit_status |= renormalize_tracked_files(&pathspec, flags);
-	else
+		trace2_region_leave("add", "renormalize_tracked_files", NULL);
+	} else {
+		trace2_region_enter("add", "add_files_to_cache", NULL);
 		exit_status |= add_files_to_cache(prefix, &pathspec, flags);
+		trace2_region_leave("add", "add_files_to_cache", NULL);
+	}
 
-	if (add_new_files)
+	if (add_new_files) {
+		trace2_region_enter("add", "add_files", NULL);
 		exit_status |= add_files(&dir, flags);
+		trace2_region_leave("add", "add_files", NULL);
+	}
 
 	if (chmod_arg && pathspec.nr)
 		chmod_pathspec(&pathspec, chmod_arg[0]);
