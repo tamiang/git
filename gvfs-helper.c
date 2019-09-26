@@ -33,11 +33,27 @@
 //            fallback to the main Git server.  This option has no effect
 //            if no cache-server is defined.
 //
+//     --cache-server=<use>  // defaults to "verify"
+//
+//            verify   := lookup the set of defined cache-servers using
+//                        "gvfs/config" and confirm that the selected
+//                        cache-server is well-known.  Silently disable the
+//                        cache-server if not.  (See security notes later.)
+//
+//            error    := verify cache-server and abort if not well-known.
+//
+//            trust    := do not verify cache-server.  just use it.
+//
+//            disable  := disable the cache-server and always use the main
+//                        Git server.
+//
 // <sub-command>:
 //
 //     config
 //
 //            Fetch the "gvfs/config" string from the main Git server.
+//            (The cache-server setting is ignored because cache-servers
+//            do not support this REST API.)
 //
 //     get-missing
 //
@@ -58,22 +74,6 @@
 //                       most n objects (not bytes).
 //
 //                 --depth=<depth>       // defaults to "1"
-//
-//                 --cache-server=<use>  // defaults to "verify"
-//
-//                       verify   := lookup the set of defined cache-servers
-//                                   using "gvfs/config" and confirm that the
-//                                   selected cache-server is well-known.
-//                                   Silently disable the cache-server if not.
-//                                   (See security notes later.)
-//
-//                       error    := verify cache-server and abort if not
-//                                   well-known.
-//
-//                       allow    := do not verify cache-server.  just use it.
-//
-//                       disable  := disable the cache-server and always use
-//                                   the main Git server.
 //
 //     server
 //
@@ -184,8 +184,8 @@ enum gh__cache_server_mode {
 	GH__CACHE_SERVER_MODE__VERIFY_ERROR,
 	/* disable the cache-server, if defined */
 	GH__CACHE_SERVER_MODE__DISABLE,
-	/* allow any cache-server */
-	GH__CACHE_SERVER_MODE__ALLOW_WITHOUT_VERIFY,
+	/* trust any cache-server */
+	GH__CACHE_SERVER_MODE__TRUST_WITHOUT_VERIFY,
 };
 
 /*
@@ -623,9 +623,9 @@ static int option_parse_cache_server_mode(const struct option *opt,
 		gh__cmd_opts.cache_server_mode =
 			GH__CACHE_SERVER_MODE__DISABLE;
 
-	else if (!strcmp(arg, "allow"))
+	else if (!strcmp(arg, "trust"))
 		gh__cmd_opts.cache_server_mode =
-			GH__CACHE_SERVER_MODE__ALLOW_WITHOUT_VERIFY;
+			GH__CACHE_SERVER_MODE__TRUST_WITHOUT_VERIFY;
 
 	else
 		return error(_("invalid value for switch '%s'"),
@@ -849,7 +849,7 @@ static void select_cache_server(void)
 	}
 
 	if (gh__cmd_opts.cache_server_mode ==
-	    GH__CACHE_SERVER_MODE__ALLOW_WITHOUT_VERIFY) {
+	    GH__CACHE_SERVER_MODE__TRUST_WITHOUT_VERIFY) {
 		gh__global.cache_server_url = p_url;
 		trace2_data_string("gvfs-helper", NULL, "cache/url", p_url);
 		return;
@@ -2016,10 +2016,6 @@ static enum gh__error_code do_sub_cmd__get_missing(int argc, const char **argv)
 			      N_("number of objects to request at a time")),
 		OPT_INTEGER('d', "depth", &gh__cmd_opts.depth,
 			    N_("Commit depth")),
-		OPT_CALLBACK(0, "cache-server", NULL,
-			     N_("cache-server"),
-			     N_("cache-server=disable|allow|verify|error"),
-			     option_parse_cache_server_mode),
 		OPT_END(),
 	};
 
@@ -2250,10 +2246,6 @@ static enum gh__error_code do_sub_cmd__server(int argc, const char **argv)
 			      N_("number of objects to request at a time")),
 		OPT_INTEGER('d', "depth", &gh__cmd_opts.depth,
 			    N_("Commit depth")),
-		OPT_CALLBACK(0, "cache-server", NULL,
-			     N_("cache-server"),
-			     N_("cache-server=disable|allow|verify|error"),
-			     option_parse_cache_server_mode),
 		OPT_END(),
 	};
 
@@ -2340,6 +2332,10 @@ int cmd_main(int argc, const char **argv)
 			     option_parse_product_mode),
 		OPT_BOOL('f', "fallback", &gh__cmd_opts.try_fallback,
 			 N_("Fallback to Git server if cache-server fails")),
+		OPT_CALLBACK(0, "cache-server", NULL,
+			     N_("cache-server"),
+			     N_("cache-server=disable|trust|verify|error"),
+			     option_parse_cache_server_mode),
 		OPT_BOOL('p', "progress", &gh__cmd_opts.show_progress,
 			 N_("Show progress")),
 		OPT_END(),

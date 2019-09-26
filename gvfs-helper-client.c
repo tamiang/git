@@ -256,8 +256,8 @@ static int ghc__get(enum ghc__created *p_ghc)
 			 "gvfs-helper",
 			 "--mode=scalar",
 			 "--fallback",
+			 "--cache-server=trust",
 			 "server",
-			 "--cache-server=allow",
 			 NULL);
 	sq_quote_argv_pretty(&quoted, argv.argv);
 
