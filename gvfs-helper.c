@@ -409,16 +409,6 @@ static void gh__response_status__release(struct gh__response_status *status)
 	strbuf_release(&status->content_type);
 }
 
-static void gh__response_status__dump(
-	const struct gh__request_params *params,
-	const struct gh__response_status *status)
-{
-	trace2_printf("%s: [curl %ld][http %ld][type '%s'][err '%s']",
-		      params->label.buf,
-		      status->curl_code, status->response_code,
-		      status->content_type.buf, status->error_message.buf);
-}
-
 /*
  * The cache-server sends a somewhat bogus 400 instead of
  * the normal 401 when AUTH is required.  Fixup the status
@@ -574,7 +564,17 @@ static void gh__run_one_slot(struct active_request_slot *slot,
 	if (params->progress)
 		stop_progress(&params->progress);
 
-	gh__response_status__dump(params, status);
+	if (params->b_is_post && status->ec == GH__ERROR_CODE__OK) {
+		long len = -1;
+		if (params->b_write_to_file)
+			len = ftell(params->tempfile->fp);
+		else
+			len = params->buffer->len;
+		if (len != -1)
+			trace2_data_intmax("gvfs-helper", NULL, params->label.buf,
+					   (intmax_t)len);
+	}
+
 	trace2_region_leave("gvfs-helper", params->label.buf, NULL);
 }
 
