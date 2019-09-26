@@ -202,9 +202,6 @@ static struct gh__cmd_opts {
 	const char *scalar_odb_path; /* .scalarCache path */
 	const char *vfs_odb_path;    /* .gvfsCache path */
 
-	int is_core_vfs;
-	int is_core_scalar;
-
 	int try_fallback; /* to git server if cache-server fails */
 	int show_progress;
 
@@ -668,12 +665,6 @@ static int config_cb(const char *k, const char *v, void *data)
 		free((char *)v2);
 	}
 
-	else if (!strcmp(k, "core.gvfs"))
-		gh__cmd_opts.is_core_vfs = 1;
-
-	else if (!strcmp(k, "core.scalar"))
-		gh__cmd_opts.is_core_scalar = 1;
-
 	return git_default_config(k, v, data);
 }
 
@@ -741,11 +732,9 @@ static void choose_product_mode(void)
 	default: /* should not happen, but default to _AUTO. */
 	case GH__PRODUCT_MODE__AUTO:
 	{
-		int b_vfs = (gh__cmd_opts.is_core_vfs ||
-			     gh__cmd_opts.vfs_url ||
+		int b_vfs = (gh__cmd_opts.vfs_url ||
 			     gh__cmd_opts.vfs_odb_path);
-		int b_scalar = (gh__cmd_opts.is_core_scalar ||
-				gh__cmd_opts.scalar_url ||
+		int b_scalar = (gh__cmd_opts.scalar_url ||
 				gh__cmd_opts.scalar_odb_path);
 
 		if (b_vfs && b_scalar)
