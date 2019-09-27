@@ -7,26 +7,6 @@
 //
 //     --remote=<remote-name>         // defaults to "origin"
 //
-//     --mode=<mode>                  // defaults to "auto"
-//
-//            auto    := auto-detect whether repo is VFS4G or Scalar mode.
-//            vfs     := force VFS4G mode.
-//            scalar  := force Scalar mode.
-//            none    := assume neither mode.
-//
-//            The <mode> is used to look for mode-specific config settings:
-//            "<mode>.cache-server" and "core.<mode>".
-//
-//            The <mode> is also used to find the mode-specific ODB:
-//            <home-or-root-dir>/.<mode>Cache".
-//
-//            When <mode> is "auto", we look for the above for both products
-//            and select whichever one we find.  If both products have values
-//            defined, we complain.
-//
-//            When <mode> is "none", we assume no cache-server and use the
-//            ".git/objects" ODB.
-//
 //     --fallback                     // boolean. defaults to off
 //
 //            When a fetch from the cache-server fails, automatically
@@ -166,17 +146,6 @@ enum gh__error_code {
 	GH__ERROR_CODE__SUBPROCESS_SYNTAX = 11,
 };
 
-enum gh__product_mode {
-	/* auto-detect the product mode */
-	GH__PRODUCT_MODE__AUTO = 0,
-	/* force GVFS mode */
-	GH__PRODUCT_MODE__VFS,
-	/* force Scalar mode */
-	GH__PRODUCT_MODE__SCALAR,
-	/* disable product-specific caches */
-	GH__PRODUCT_MODE__NONE,
-};
-
 enum gh__cache_server_mode {
 	/* verify URL. disable if unknown. */
 	GH__CACHE_SERVER_MODE__VERIFY_DISABLE = 0,
@@ -190,17 +159,13 @@ enum gh__cache_server_mode {
 
 /*
  * The set of command line, config, and environment variables
- * that we use as input to decide what product (Scalar or VFS4G)
- * that we are associated with and how we should operate.
+ * that we use as input to decide how we should operate.
  */
 static struct gh__cmd_opts {
 	const char *remote_name;
 
-	const char *scalar_url; /* Scalar cache-server URL */
-	const char *vfs_url;    /* VFS cache-server URL */
-
-	const char *scalar_odb_path; /* Scalar shared cache path */
-	const char *vfs_odb_path;    /* VFS shared cache path */
+	const char *gvfs_url;         /* VFS cache-server URL */
+	const char *gvfs_odb_path;    /* VFS shared cache path */
 
 	int try_fallback; /* to git server if cache-server fails */
 	int show_progress;
@@ -208,7 +173,6 @@ static struct gh__cmd_opts {
 	int depth;
 	int block_size;
 
-	enum gh__product_mode product_mode;
 	enum gh__cache_server_mode cache_server_mode;
 } gh__cmd_opts;
 
@@ -225,8 +189,6 @@ static struct gh__global {
 	const char *cache_server_url;
 
 	struct strbuf buf_odb_path;
-
-	enum gh__product_mode chosen_product_mode; /* excludes _AUTO */
 
 	int http_is_initialized;
 	int cache_server_is_initialized; /* did sub-command look for one */
@@ -598,32 +560,6 @@ static void gh__run_one_slot(struct active_request_slot *slot,
 	trace2_region_leave("gvfs-helper", params->label.buf, NULL);
 }
 
-static int option_parse_product_mode(const struct option *opt,
-				     const char *arg, int unset)
-{
-	if (unset) /* should not happen */
-		return error(_("missing value for switch '%s'"),
-			     opt->long_name);
-
-	else if (!strcmp(arg, "auto"))
-		gh__cmd_opts.product_mode = GH__PRODUCT_MODE__AUTO;
-
-	else if (!strcmp(arg, "vfs"))
-		gh__cmd_opts.product_mode = GH__PRODUCT_MODE__VFS;
-
-	else if (!strcmp(arg, "scalar"))
-		gh__cmd_opts.product_mode = GH__PRODUCT_MODE__SCALAR;
-
-	else if (!strcmp(arg, "none"))
-		gh__cmd_opts.product_mode = GH__PRODUCT_MODE__NONE;
-
-	else
-		return error(_("invalid value for switch '%s'"),
-			     opt->long_name);
-
-	return 0;
-}
-
 static int option_parse_cache_server_mode(const struct option *opt,
 					  const char *arg, int unset)
 {
@@ -674,62 +610,14 @@ static int config_cb(const char *k, const char *v, void *data)
 		const char *v2 = NULL;
 
 		if (!git_config_string(&v2, k, v) && v2 && *v2)
-			gh__cmd_opts.vfs_url = transport_anonymize_url(v2);
-		free((char *)v2);
-	}
-
-	else if (!strcmp(k, "scalar.cache-server")) {
-		const char *v2 = NULL;
-		if (!git_config_string(&v2, k, v) && v2 && *v2)
-			gh__cmd_opts.scalar_url = transport_anonymize_url(v2);
+			gh__cmd_opts.gvfs_url = transport_anonymize_url(v2);
 		free((char *)v2);
 	}
 
 	else if (!strcmp(k, "gvfs.sharedcache") && v && *v)
-		git_config_string(&gh__cmd_opts.vfs_odb_path, k, v);
-
-	else if (!strcmp(k, "scalar.sharedcache") && v && *v)
-		git_config_string(&gh__cmd_opts.scalar_odb_path, k, v);
+		git_config_string(&gh__cmd_opts.gvfs_odb_path, k, v);
 
 	return git_default_config(k, v, data);
-}
-
-/*
- * Select the product-mode from the available inputs.  This resolves
- * the auto-detect case.  The chosen mode will be used later to select
- * the various product-specific caches -- or to disable them.
- */
-static void choose_product_mode(void)
-{
-	switch (gh__cmd_opts.product_mode) {
-	default: /* should not happen, but default to _AUTO. */
-	case GH__PRODUCT_MODE__AUTO:
-	{
-		int b_vfs = (gh__cmd_opts.vfs_url ||
-			     gh__cmd_opts.vfs_odb_path);
-		int b_scalar = (gh__cmd_opts.scalar_url ||
-				gh__cmd_opts.scalar_odb_path);
-
-		if (b_vfs && b_scalar)
-			die("Both VFS and Scalar found. Cannot auto choose.");
-
-		if (b_vfs)
-			gh__global.chosen_product_mode = GH__PRODUCT_MODE__VFS;
-
-		else if (b_scalar)
-			gh__global.chosen_product_mode = GH__PRODUCT_MODE__SCALAR;
-
-		else
-			gh__global.chosen_product_mode = GH__PRODUCT_MODE__NONE;
-		break;
-	}
-		
-	case GH__PRODUCT_MODE__VFS:
-	case GH__PRODUCT_MODE__SCALAR:
-	case GH__PRODUCT_MODE__NONE:
-		gh__global.chosen_product_mode = gh__cmd_opts.product_mode;
-		break;
-	}
 }
 
 /*
@@ -775,7 +663,6 @@ static void select_cache_server(void)
 {
 	struct gh__response_status status = GH__RESPONSE_STATUS_INIT;
 	struct strbuf config_data = STRBUF_INIT;
-	const char *p_url = NULL;
 	const char *match = NULL;
 
 	/*
@@ -791,31 +678,12 @@ static void select_cache_server(void)
 		return;
 	}
 
-	switch (gh__global.chosen_product_mode) {
-	default:                      /* should not happen */
-	case GH__PRODUCT_MODE__AUTO:  /* should not happen */
-	case GH__PRODUCT_MODE__NONE:  /* ignore product, so no cache-server */
-		return;
-
-	case GH__PRODUCT_MODE__VFS:
-		if (!gh__cmd_opts.vfs_url)
-			return;
-		p_url = gh__cmd_opts.vfs_url;
-		break;
-
-	case GH__PRODUCT_MODE__SCALAR:
-		if (!gh__cmd_opts.scalar_url)
-			return;
-		p_url = gh__cmd_opts.scalar_url;
-		break;
-	}
-
 	/*
-	 * If both URLs point to the same server, it doesn't matter.
-	 * Silently disable the cache-server by NOT setting the field
-	 * in gh__global.  (And explicitly disable the fallback logic.)
+	 * If the cache-server and main Git server have the same URL, we
+	 * can silently disable the cache-server (by NOT setting the field
+	 * in gh__global and explicitly disable the fallback logic.)
 	 */
-	if (!strcmp(p_url, gh__global.main_url)) {
+	if (!strcmp(gh__cmd_opts.gvfs_url, gh__global.main_url)) {
 		gh__cmd_opts.try_fallback = 0;
 		trace2_data_string("gvfs-helper", NULL, "cache/url", "same");
 		return;
@@ -823,8 +691,9 @@ static void select_cache_server(void)
 
 	if (gh__cmd_opts.cache_server_mode ==
 	    GH__CACHE_SERVER_MODE__TRUST_WITHOUT_VERIFY) {
-		gh__global.cache_server_url = p_url;
-		trace2_data_string("gvfs-helper", NULL, "cache/url", p_url);
+		gh__global.cache_server_url = gh__cmd_opts.gvfs_url;
+		trace2_data_string("gvfs-helper", NULL, "cache/url",
+				   gh__cmd_opts.gvfs_url);
 		return;
 	}
 
@@ -854,7 +723,7 @@ static void select_cache_server(void)
 		 */
 		struct strbuf pattern = STRBUF_INIT;
 
-		strbuf_addf(&pattern, "\"Url\":\"%s\"", p_url);
+		strbuf_addf(&pattern, "\"Url\":\"%s\"", gh__cmd_opts.gvfs_url);
 		match = strstr(config_data.buf, pattern.buf);
 
 		strbuf_release(&pattern);
@@ -863,22 +732,25 @@ static void select_cache_server(void)
 	strbuf_release(&config_data);
 
 	if (match) {
-		gh__global.cache_server_url = p_url;
-		trace2_data_string("gvfs-helper", NULL, "cache/url", p_url);
+		gh__global.cache_server_url = gh__cmd_opts.gvfs_url;
+		trace2_data_string("gvfs-helper", NULL, "cache/url",
+				   gh__cmd_opts.gvfs_url);
 	}
 
 	else if (gh__cmd_opts.cache_server_mode ==
 		 GH__CACHE_SERVER_MODE__VERIFY_ERROR) {
 		if (status.ec != GH__ERROR_CODE__OK)
 			error("config: %s", status.error_message.buf);
-		die("could not verify cache-server '%s'", p_url);
+		die("could not verify cache-server '%s'",
+		    gh__cmd_opts.gvfs_url);
 	}
 
 	else if (gh__cmd_opts.cache_server_mode ==
 		 GH__CACHE_SERVER_MODE__VERIFY_DISABLE) {
 		if (status.ec != GH__ERROR_CODE__OK)
 			warning("config: %s:", status.error_message.buf);
-		warning("could not verify cache-server '%s'", p_url);
+		warning("could not verify cache-server '%s'",
+			gh__cmd_opts.gvfs_url);
 		trace2_data_string("gvfs-helper", NULL, "cache/url",
 				   "disabled");
 	}
@@ -1063,8 +935,7 @@ static void approve_cache_server_creds(void)
 
 /*
  * Select the ODB directory where we will write objects that we
- * download.  If no product-specific ODB is defined, use the
- * local ODB (in ".git/objects").
+ * download.  If no ODB is defined, use the local ODB (in ".git/objects").
  */
 static void select_odb(void)
 {
@@ -1072,24 +943,9 @@ static void select_odb(void)
 
 	strbuf_init(&gh__global.buf_odb_path, 0);
 
-	switch (gh__global.chosen_product_mode) {
-	default:                      /* should not happen */
-	case GH__PRODUCT_MODE__AUTO:  /* should not happen */
-	case GH__PRODUCT_MODE__NONE:
-		break;
-
-	case GH__PRODUCT_MODE__VFS:
-		if (gh__cmd_opts.vfs_odb_path)
-			odb_path = gh__cmd_opts.vfs_odb_path;
-		break;
-
-	case GH__PRODUCT_MODE__SCALAR:
-		if (gh__cmd_opts.scalar_odb_path)
-			odb_path = gh__cmd_opts.scalar_odb_path;
-		break;
-	}
-
-	if (!odb_path || !*odb_path) {
+	if (gh__cmd_opts.gvfs_odb_path && *gh__cmd_opts.gvfs_odb_path)
+		odb_path = gh__cmd_opts.gvfs_odb_path;
+	else {
 		prepare_alt_odb(the_repository);
 		odb_path = the_repository->objects->odb->path;
 	}
@@ -1935,7 +1791,6 @@ cleanup:
  */
 static void finish_init(int setup_cache_server)
 {
-	choose_product_mode();
 	select_odb();
 
 	lookup_main_url();
@@ -2303,10 +2158,6 @@ int cmd_main(int argc, const char **argv)
 		OPT_STRING('r', "remote", &gh__cmd_opts.remote_name,
 			   N_("remote"),
 			   N_("Remote name")),
-		OPT_CALLBACK('m', "mode", NULL,
-			     N_("mode"),
-			     N_("mode=auto|vfs|scalar|none"),
-			     option_parse_product_mode),
 		OPT_BOOL('f', "fallback", &gh__cmd_opts.try_fallback,
 			 N_("Fallback to Git server if cache-server fails")),
 		OPT_CALLBACK(0, "cache-server", NULL,

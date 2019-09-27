@@ -259,7 +259,6 @@ static int ghc__get(enum ghc__created *p_ghc)
 	 */
 	argv_array_pushl(&argv,
 			 "gvfs-helper",
-			 "--mode=scalar",
 			 "--fallback",
 			 "--cache-server=trust",
 			 "server",
