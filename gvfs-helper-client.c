@@ -111,6 +111,11 @@ static void ghc__update_loose_cache(const char *line)
 			return;
 		}
 
+	// TODO If we fall back to the ".git/objects" odb, this
+	// TODO bug will go off because we get a full path to the
+	// TODO new loose object from gvfs-helper and the above
+	// TODO "starts_with()" calls don't catch it.  Need to
+	// TODO see if v2_path is inside $gitdir, for example.
 	BUG("update_loose_cache: unknown odb in line '%s'", line);
 }
 
