@@ -264,6 +264,8 @@ struct gh__request_params {
 	int b_write_to_file;      /* write to file=1 or strbuf=0 */
 	int b_no_cache_server;    /* force main server only */
 
+	unsigned long object_count; /* number of objects being fetched */
+
 	const struct strbuf *post_payload; /* POST body to send */
 
 	struct curl_slist *headers; /* additional http headers to send */
@@ -297,6 +299,7 @@ struct gh__request_params {
 	.b_is_post = 0, \
 	.b_write_to_file = 0, \
 	.b_no_cache_server = 0, \
+	.object_count = 0, \
 	.post_payload = NULL, \
 	.headers = NULL, \
 	.tempfile = NULL, \
@@ -343,6 +346,7 @@ struct gh__response_status {
 	long response_code; /* http response code */
 	CURLcode curl_code;
 	enum gh__error_code ec;
+	intmax_t bytes_received;
 };
 
 #define GH__RESPONSE_STATUS_INIT { \
@@ -351,6 +355,7 @@ struct gh__response_status {
 	.response_code = 0, \
 	.curl_code = CURLE_OK, \
 	.ec = GH__ERROR_CODE__OK, \
+	.bytes_received = 0, \
 	}
 
 static void gh__response_status__zero(struct gh__response_status *s)
@@ -360,6 +365,7 @@ static void gh__response_status__zero(struct gh__response_status *s)
 	s->response_code = 0;
 	s->curl_code = CURLE_OK;
 	s->ec = GH__ERROR_CODE__OK;
+	s->bytes_received = 0;
 }
 
 /*
@@ -368,6 +374,7 @@ static void gh__response_status__zero(struct gh__response_status *s)
  * status code to 'ec', but don't get too crazy here.
  */
 static void gh__response_status__set_from_slot(
+	struct gh__request_params *params,
 	struct gh__response_status *status,
 	const struct active_request_slot *slot)
 {
@@ -399,6 +406,13 @@ static void gh__response_status__set_from_slot(
 			    status->response_code);
 		status->ec = GH__ERROR_CODE__HTTP_UNEXPECTED_CODE;
 	}
+
+	if (status->ec != GH__ERROR_CODE__OK)
+		status->bytes_received = 0;
+	else if (params->b_write_to_file)
+		status->bytes_received = (intmax_t)ftell(params->tempfile->fp);
+	else
+		status->bytes_received = (intmax_t)params->buffer->len;
 }
 
 static void gh__response_status__release(struct gh__response_status *status)
@@ -558,22 +572,28 @@ static void gh__run_one_slot(struct active_request_slot *slot,
 		run_active_slot(slot);
 		if (params->b_write_to_file)
 			fflush(params->tempfile->fp);
-		gh__response_status__set_from_slot(status, slot);
+
+		gh__response_status__set_from_slot(params, status, slot);
+
+		if (status->ec == GH__ERROR_CODE__OK) {
+			int old_len = params->label.len;
+
+			strbuf_addstr(&params->label, "/object_count");
+			trace2_data_intmax("gvfs-helper", NULL,
+					   params->label.buf,
+					   params->object_count);
+			strbuf_setlen(&params->label, old_len);
+
+			strbuf_addstr(&params->label, "/bytes_received");
+			trace2_data_intmax("gvfs-helper", NULL,
+					   params->label.buf,
+					   status->bytes_received);
+			strbuf_setlen(&params->label, old_len);
+		}
 	}
 
 	if (params->progress)
 		stop_progress(&params->progress);
-
-	if (params->b_is_post && status->ec == GH__ERROR_CODE__OK) {
-		long len = -1;
-		if (params->b_write_to_file)
-			len = ftell(params->tempfile->fp);
-		else
-			len = params->buffer->len;
-		if (len != -1)
-			trace2_data_intmax("gvfs-helper", NULL, params->label.buf,
-					   (intmax_t)len);
-	}
 
 	trace2_region_leave("gvfs-helper", params->label.buf, NULL);
 }
@@ -1528,22 +1548,16 @@ static void do_req__to_main(const char *url_component,
 			    struct gh__request_params *params,
 			    struct gh__response_status *status)
 {
-	int label_len = params->label.len;
-
 //	lookup_main_creds();
 
-	strbuf_addstr(&params->label, "/main1");
 	do_req(gh__global.main_url, url_component, &gh__global.main_creds,
 	       params, status);
-	strbuf_setlen(&params->label, label_len);
 
 	if (status->response_code == 401) {
 		refresh_main_creds();
 
-		strbuf_addstr(&params->label, "/main2");
 		do_req(gh__global.main_url, url_component, &gh__global.main_creds,
 		       params, status);
-		strbuf_setlen(&params->label, label_len);
 	}
 
 	if (status->response_code == 200)
@@ -1554,23 +1568,17 @@ static void do_req__to_cache_server(const char *url_component,
 				    struct gh__request_params *params,
 				    struct gh__response_status *status)
 {
-	int label_len = params->label.len;
-
 	synthesize_cache_server_creds();
 
-	strbuf_addstr(&params->label, "/cache1");
 	do_req(gh__global.cache_server_url, url_component, &gh__global.cache_creds,
 	       params, status);
-	strbuf_setlen(&params->label, label_len);
 	fixup_cache_server_400_to_401(status);
 
 	if (status->response_code == 401) {
 		refresh_cache_server_creds();
 
-		strbuf_addstr(&params->label, "/cache2");
 		do_req(gh__global.cache_server_url, url_component,
 		       &gh__global.cache_creds, params, status);
-		strbuf_setlen(&params->label, label_len);
 		fixup_cache_server_400_to_401(status);
 	}
 
@@ -1624,6 +1632,8 @@ static void do__gvfs_config(struct gh__response_status *status,
 	params.b_no_cache_server = 1; /* they don't handle gvfs/config API */
 	params.buffer = config_data;
 
+	params.object_count = 1; /* a bit of a lie */
+
 	/*
 	 * "X-TFS-FedAuthRedirect: Suppress" disables the 302 + 203 redirect
 	 * sequence to a login page and forces the main Git server to send a
@@ -1673,6 +1683,8 @@ static void do__loose__gvfs_object(
 	params.b_write_to_file = 1;
 	params.b_no_cache_server = 0;
 
+	params.object_count = 1;
+
 	params.headers = http_copy_default_headers();
 	params.headers = curl_slist_append(params.headers,
 					   "X-TFS-FedAuthRedirect: Suppress");
@@ -1721,13 +1733,12 @@ static void do__packfile__gvfs_objects(struct gh__response_status *status,
 {
 	struct json_writer jw_req = JSON_WRITER_INIT;
 	struct gh__request_params params = GH__REQUEST_PARAMS_INIT;
-	unsigned long nr_in_block;
 
 	gh__response_status__zero(status);
 
-	nr_in_block = build_json_payload__gvfs_objects(
+	params.object_count = build_json_payload__gvfs_objects(
 		&jw_req, iter, nr_wanted_in_block);
-	*nr_taken = nr_in_block;
+	*nr_taken = params.object_count;
 
 	strbuf_addstr(&params.label, "POST/gvfs/objects");
 
@@ -1768,9 +1779,11 @@ static void do__packfile__gvfs_objects(struct gh__response_status *status,
 
 	if (gh__cmd_opts.show_progress) {
 		strbuf_addf(&params.progress_base_phase2_msg,
-			    "Requesting packfile with %ld objects", nr_in_block);
+			    "Requesting packfile with %ld objects",
+			    params.object_count);
 		strbuf_addf(&params.progress_base_phase3_msg,
-			    "Receiving packfile with %ld objects", nr_in_block);
+			    "Receiving packfile with %ld objects",
+			    params.object_count);
 	}
 
 	do_req__with_fallback("gvfs/objects", &params, status);
@@ -2039,9 +2052,12 @@ static enum gh__error_code do_sub_cmd__get_missing(int argc, const char **argv)
 	finish_init(1);
 
 	nr_total = read_stdin_from_rev_list(&oids, 1);
-	trace2_data_intmax("gvfs-helper", NULL, "get-missing/count", nr_total);
 
+	trace2_region_enter("gvfs-helper", "get-missing", NULL);
+	trace2_data_intmax("gvfs-helper", NULL, "get-missing/count", nr_total);
 	do_fetch_oidset(&status, &oids, nr_total, &result_list);
+	trace2_region_leave("gvfs-helper", "get-missing", NULL);
+
 	ec = status.ec;
 
 	for (k = 0; k < result_list.nr; k++)
@@ -2049,7 +2065,6 @@ static enum gh__error_code do_sub_cmd__get_missing(int argc, const char **argv)
 
 	if (ec != GH__ERROR_CODE__OK)
 		error("get-missing: %s", status.error_message.buf);
-
 
 	gh__response_status__release(&status);
 	oidset_clear(&oids);
@@ -2099,7 +2114,11 @@ static enum gh__error_code do_server_subprocess_get(void)
 		goto cleanup;
 	}
 
+	trace2_region_enter("gvfs-helper", "server/get", NULL);
+	trace2_data_intmax("gvfs-helper", NULL, "server/get/count", nr_total);
 	do_fetch_oidset(&status, &oids, nr_total, &result_list);
+	trace2_region_leave("gvfs-helper", "server/get", NULL);
+
 	if (status.ec != GH__ERROR_CODE__OK)
 		error("server: %s", status.error_message.buf);
 
