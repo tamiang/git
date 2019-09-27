@@ -199,8 +199,8 @@ static struct gh__cmd_opts {
 	const char *scalar_url; /* Scalar cache-server URL */
 	const char *vfs_url;    /* VFS cache-server URL */
 
-	const char *scalar_odb_path; /* .scalarCache path */
-	const char *vfs_odb_path;    /* .gvfsCache path */
+	const char *scalar_odb_path; /* Scalar shared cache path */
+	const char *vfs_odb_path;    /* VFS shared cache path */
 
 	int try_fallback; /* to git server if cache-server fails */
 	int show_progress;
@@ -685,60 +685,13 @@ static int config_cb(const char *k, const char *v, void *data)
 		free((char *)v2);
 	}
 
+	else if (!strcmp(k, "gvfs.sharedcache") && v && *v)
+		git_config_string(&gh__cmd_opts.vfs_odb_path, k, v);
+
+	else if (!strcmp(k, "scalar.sharedcache") && v && *v)
+		git_config_string(&gh__cmd_opts.scalar_odb_path, k, v);
+
 	return git_default_config(k, v, data);
-}
-
-/*
- * Find the path to the ".gvfsCache" or ".scalarCache" ODB directory.
- *
- * The local ODB for this repo is in ".git/objects/".
- *
- * GVFS and Scalar create a shared object cache somewhere near the
- * root of the drive.  This cache looks like a normal "alternate".
- *
- * Officially, the path to the shared cache is stored in the .gvfs
- * folder (and outside of the repo).  It is available from the "gvfs
- * status" or "scalar status" command.  Getting the value from
- * product-specific command assumes our PATH is properly set up and we
- * know which product's command to run.  But let's not take that
- * dependency.  Let's just look at the set of defined alternates and
- * guess.
- *
- * If there are multiple cache-servers for a particular product (i.e.
- * multiple alternates with that cache directory name), just pick one
- * arbitrarily.  We just need a well-known place to write any objects
- * we download, so it doesn't matter which.
- */
-static void lookup_odb_paths(void)
-{
-	struct object_directory *odb;
-
-	prepare_alt_odb(the_repository);
-
-	/*
-	 * We now have a linked-list of ODBs.
-	 *
-	 * The first is always the local ODB (inside the .git directory).
-	 * The rest are alternates.
-	 */
-
-	odb = the_repository->objects->odb;
-	if (!odb)
-		return;
-
-	for (odb = odb->next; odb; odb = odb->next) {
-		if (strstr(odb->path, ".gvfsCache")) {
-			if (!gh__cmd_opts.vfs_odb_path)
-				gh__cmd_opts.vfs_odb_path = odb->path;
-			continue;
-		}
-
-		if (strstr(odb->path, ".scalarCache")) {
-			if (!gh__cmd_opts.scalar_odb_path)
-				gh__cmd_opts.scalar_odb_path = odb->path;
-			continue;
-		}
-	}
 }
 
 /*
@@ -1115,7 +1068,7 @@ static void approve_cache_server_creds(void)
  */
 static void select_odb(void)
 {
-	const char *p_odb = the_repository->objects->odb->path;
+	const char *odb_path = NULL;
 
 	strbuf_init(&gh__global.buf_odb_path, 0);
 
@@ -1127,16 +1080,22 @@ static void select_odb(void)
 
 	case GH__PRODUCT_MODE__VFS:
 		if (gh__cmd_opts.vfs_odb_path)
-			p_odb = gh__cmd_opts.vfs_odb_path;
+			odb_path = gh__cmd_opts.vfs_odb_path;
 		break;
 
 	case GH__PRODUCT_MODE__SCALAR:
 		if (gh__cmd_opts.scalar_odb_path)
-			p_odb = gh__cmd_opts.scalar_odb_path;
+			odb_path = gh__cmd_opts.scalar_odb_path;
 		break;
 	}
 
-	strbuf_addstr(&gh__global.buf_odb_path, p_odb);
+	if (!odb_path || !*odb_path) {
+		prepare_alt_odb(the_repository);
+		odb_path = the_repository->objects->odb->path;
+	}
+
+	strbuf_addstr(&gh__global.buf_odb_path, odb_path);
+	trace2_printf("XXX: select_odb '%s'", odb_path);
 }
 
 /*
@@ -1976,7 +1935,6 @@ cleanup:
  */
 static void finish_init(int setup_cache_server)
 {
-	lookup_odb_paths();
 	choose_product_mode();
 	select_odb();
 
