@@ -1932,9 +1932,6 @@ static enum gh__error_code do_server_subprocess_get(void)
 	do_fetch_oidset(&status, &oids, nr_total, &result_list);
 	trace2_region_leave("gvfs-helper", "server/get", NULL);
 
-	if (status.ec != GH__ERROR_CODE__OK)
-		error("server: %s", status.error_message.buf);
-
 	for (k = 0; k < result_list.nr; k++)
 		if (packet_write_fmt_gently(1, "%s\n",
 					    result_list.items[k].string))
