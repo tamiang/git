@@ -578,13 +578,13 @@ static void gh__run_one_slot(struct active_request_slot *slot,
 		if (status->ec == GH__ERROR_CODE__OK) {
 			int old_len = params->label.len;
 
-			strbuf_addstr(&params->label, "/object_count");
+			strbuf_addstr(&params->label, "/nr_objects");
 			trace2_data_intmax("gvfs-helper", NULL,
 					   params->label.buf,
 					   params->object_count);
 			strbuf_setlen(&params->label, old_len);
 
-			strbuf_addstr(&params->label, "/bytes_received");
+			strbuf_addstr(&params->label, "/nr_bytes");
 			trace2_data_intmax("gvfs-helper", NULL,
 					   params->label.buf,
 					   status->bytes_received);
@@ -1497,7 +1497,7 @@ static void do__gvfs_config(struct gh__response_status *status,
 {
 	struct gh__request_params params = GH__REQUEST_PARAMS_INIT;
 
-	strbuf_addstr(&params.label, "GET/gvfs/config");
+	strbuf_addstr(&params.label, "GET/config");
 
 	params.b_is_post = 0;
 	params.b_write_to_file = 0;
@@ -1546,7 +1546,7 @@ static void do__loose__gvfs_object(struct gh__response_status *status,
 
 	strbuf_addf(&component_url, "gvfs/objects/%s", oid_to_hex(oid));
 
-	strbuf_addstr(&params.label, "GET/gvfs/objects");
+	strbuf_addstr(&params.label, "GET/objects");
 
 	params.b_is_post = 0;
 	params.b_write_to_file = 1;
@@ -1605,7 +1605,7 @@ static void do__packfile__gvfs_objects(struct gh__response_status *status,
 		&jw_req, iter, nr_wanted_in_block);
 	*nr_taken = params.object_count;
 
-	strbuf_addstr(&params.label, "POST/gvfs/objects");
+	strbuf_addstr(&params.label, "POST/objects");
 
 	params.b_is_post = 1;
 	params.b_write_to_file = 1;
@@ -1915,7 +1915,7 @@ static enum gh__error_code do_sub_cmd__get_missing(int argc, const char **argv)
 	nr_total = read_stdin_from_rev_list(&oids, 1);
 
 	trace2_region_enter("gvfs-helper", "get-missing", NULL);
-	trace2_data_intmax("gvfs-helper", NULL, "get-missing/count", nr_total);
+	trace2_data_intmax("gvfs-helper", NULL, "get-missing/nr_objects", nr_total);
 	do_fetch_oidset(&status, &oids, nr_total, &result_list);
 	trace2_region_leave("gvfs-helper", "get-missing", NULL);
 
@@ -1982,7 +1982,7 @@ static enum gh__error_code do_server_subprocess_get(void)
 	}
 
 	trace2_region_enter("gvfs-helper", "server/get", NULL);
-	trace2_data_intmax("gvfs-helper", NULL, "server/get/count", nr_total);
+	trace2_data_intmax("gvfs-helper", NULL, "server/get/nr_objects", nr_total);
 	do_fetch_oidset(&status, &oids, nr_total, &result_list);
 	trace2_region_leave("gvfs-helper", "server/get", NULL);
 
