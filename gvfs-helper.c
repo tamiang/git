@@ -1283,11 +1283,10 @@ static void install_loose(struct gh__response_status *status,
 
 	if (finalize_object_file(tmp_path.buf, loose_path.buf)) {
 		unlink(tmp_path.buf);
-		strbuf_addf(&status->error_message,
-			    "could not install loose object '%s'",
-			    loose_path.buf);
-		status->ec = GH__ERROR_CODE__COULD_NOT_INSTALL_LOOSE;
-		goto cleanup;
+		// If another gvfs-helper process is writing the exact same loose
+		// object, then it used the same tmp_path, and the rename done
+		// in the above call would fail. Instead of failing here, try
+		// to continue, assuming that the failure is due to that issue.
 	}
 
 cleanup:

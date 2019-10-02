@@ -680,7 +680,7 @@ all:: $(FUZZ_OBJS)
 FUZZ_PROGRAMS += $(patsubst %.o,%,$(FUZZ_OBJS))
 
 # Empty...
-EXTRA_PROGRAMS =
+EXTRA_PROGRAMS = git-gvfs-helper
 
 # ... and all the rest that could be moved out of bindir to gitexecdir
 PROGRAMS += $(EXTRA_PROGRAMS)
