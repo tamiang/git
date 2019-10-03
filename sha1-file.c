@@ -36,6 +36,7 @@
 #include "sub-process.h"
 #include "pkt-line.h"
 #include "gvfs-helper-client.h"
+#include "trace2.h"
 
 /* The maximum size for an object header. */
 #define MAX_HEADER_LEN 32
@@ -1848,8 +1849,10 @@ int finalize_object_file(const char *tmpfile, const char *filename)
 
 	if (object_creation_mode == OBJECT_CREATION_USES_RENAMES)
 		goto try_rename;
-	else if (link(tmpfile, filename))
+	else if (link(tmpfile, filename)) {
 		ret = errno;
+		trace2_data_intmax("sha1-file", the_repository, "finalize_object_file:link-errno", errno);
+	}
 
 	/*
 	 * Coda hack - coda doesn't like cross-directory links,
@@ -1867,6 +1870,9 @@ int finalize_object_file(const char *tmpfile, const char *filename)
 		if (!rename(tmpfile, filename))
 			goto out;
 		ret = errno;
+		trace2_data_intmax("sha1-file", the_repository, "finalize_object_file:rename-errno", errno);
+		trace2_data_string("sha1-file", the_repository, "finalize_object_file:rename-from", tmpfile);
+		trace2_data_string("sha1-file", the_repository, "finalize_object_file:rename-to", filename);
 	}
 	unlink_or_warn(tmpfile);
 	if (ret) {

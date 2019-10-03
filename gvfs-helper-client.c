@@ -399,6 +399,7 @@ int ghc__get_immediate(const struct object_id *oid, enum ghc__created *p_ghc)
 {
 	// TODO consider removing this trace2.
 	trace2_printf("ghc__get_immediate: %s", oid_to_hex(oid));
+	trace2_data_string("gvfs-helper", the_repository, "ghc__get_immediate", oid_to_hex(oid));
 
 	if (!oidset_insert(&ghc__oidset_queued, oid))
 		ghc__oidset_count++;

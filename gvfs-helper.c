@@ -144,7 +144,7 @@
 #include "parse-options.h"
 #include "object-store.h"
 #include "json-writer.h"
-#include "tempfile.h"
+#include "lockfile.h"
 #include "oidset.h"
 #include "dir.h"
 #include "progress.h"
@@ -269,7 +269,7 @@ struct gh__request_params {
 	const struct strbuf *post_payload; /* POST body to send */
 
 	struct curl_slist *headers; /* additional http headers to send */
-	struct tempfile *tempfile; /* for response content when file */
+	struct lock_file *lockfile; /* for response content when file */
 	struct strbuf *buffer;     /* for response content when strbuf */
 	struct strbuf label;       /* for trace2 regions */
 
@@ -302,7 +302,7 @@ struct gh__request_params {
 	.object_count = 0, \
 	.post_payload = NULL, \
 	.headers = NULL, \
-	.tempfile = NULL, \
+	.lockfile = NULL, \
 	.buffer = NULL, \
 	.label = STRBUF_INIT, \
 	.progress_state = GH__PROGRESS_STATE__START, \
@@ -322,7 +322,7 @@ static void gh__request_params__release(struct gh__request_params *params)
 	curl_slist_free_all(params->headers);
 	params->headers = NULL;
 
-	delete_tempfile(&params->tempfile);
+	delete_tempfile(&params->lockfile->tempfile);
 
 	params->buffer = NULL; /* we do not own this */
 
@@ -410,7 +410,7 @@ static void gh__response_status__set_from_slot(
 	if (status->ec != GH__ERROR_CODE__OK)
 		status->bytes_received = 0;
 	else if (params->b_write_to_file)
-		status->bytes_received = (intmax_t)ftell(params->tempfile->fp);
+		status->bytes_received = (intmax_t)ftell(params->lockfile->tempfile->fp);
 	else
 		status->bytes_received = (intmax_t)params->buffer->len;
 }
@@ -462,7 +462,7 @@ static int gh__curl_progress_cb(void *clientp,
 	 * If we pass zero for the total to the "struct progress" API, we
 	 * get simple numbers rather than percentages.  So our progress
 	 * output format may vary depending.
-	 *     
+	 *
 	 * It is unclear if CURL will give us a final callback after
 	 * everything is finished, so we leave the progress handle open
 	 * and let the caller issue the final stop_progress().
@@ -571,7 +571,7 @@ static void gh__run_one_slot(struct active_request_slot *slot,
 	} else {
 		run_active_slot(slot);
 		if (params->b_write_to_file)
-			fflush(params->tempfile->fp);
+			fflush(params->lockfile->tempfile->fp);
 
 		gh__response_status__set_from_slot(params, status, slot);
 
@@ -986,9 +986,9 @@ static void select_odb(void)
 }
 
 /*
- * Create a tempfile to stream the packfile into.
+ * Create a lockfile to stream the packfile into.
  *
- * We create a tempfile in the chosen ODB directory and let CURL
+ * We create a lockfile in the chosen ODB directory and let CURL
  * automatically stream data to the file.  If successful, we can
  * later rename it to a proper .pack and run "git index-pack" on
  * it to create the corresponding .idx file.
@@ -1002,9 +1002,9 @@ static void select_odb(void)
  * TODO an option to index-pack to handle this.  I don't want to
  * TODO deal with this issue right now.
  *
- * TODO Consider using lockfile for this rather than naked tempfile.
+ * TODO Consider using lockfile for this rather than naked lockfile.
  */
-static struct tempfile *create_tempfile_for_packfile(void)
+static struct lock_file *create_lockfile_for_packfile(void)
 {
 	static unsigned int nth = 0;
 	static struct timeval tv = {0};
@@ -1012,7 +1012,7 @@ static struct tempfile *create_tempfile_for_packfile(void)
 	static time_t secs = 0;
 	static char tbuf[32] = {0};
 
-	struct tempfile *tempfile = NULL;
+	struct lock_file *lockfile = NULL;
 	struct strbuf buf_path = STRBUF_INIT;
 
 	if (!nth) {
@@ -1031,31 +1031,35 @@ static struct tempfile *create_tempfile_for_packfile(void)
 
 	strbuf_addbuf(&buf_path, &gh__global.buf_odb_path);
 	strbuf_complete(&buf_path, '/');
-	strbuf_addf(&buf_path, "pack/vfs-%s-%04d.temp", tbuf, nth++);
+	strbuf_addf(&buf_path, "pack/vfs-%s-%04d.pack", tbuf, nth++);
 
-	tempfile = create_tempfile(buf_path.buf);
-	fdopen_tempfile(tempfile, "w");
+	lockfile = xcalloc(1, sizeof(*lockfile));
+	if (hold_lock_file_for_update_timeout(lockfile, buf_path.buf, 0, 5000) < 0) {
+		error(_("failed to open lockfile for pack %s"), buf_path.buf);
+		free(lockfile);
+		lockfile = NULL;
+	}
 
 	strbuf_release(&buf_path);
 
-	return tempfile;
+	return lockfile;
 }
 
 /*
- * Create a tempfile to stream a loose object into.
+ * Create a lockfile to stream a loose object into.
  *
- * We create a tempfile in the chosen ODB directory and let CURL
+ * We create a lockfile in the chosen ODB directory and let CURL
  * automatically stream data to the file.
  *
  * We put it directly in the "<odb>/xx/" directory.
  *
- * TODO Consider using lockfile for this rather than naked tempfile.
+ * TODO Consider using lockfile for this rather than naked lockfile.
  */
-static struct tempfile *create_tempfile_for_loose(
+static struct lock_file *create_lockfile_for_loose(
 	struct gh__response_status *status,
 	const struct object_id *oid)
 {
-	struct tempfile *tempfile = NULL;
+	struct lock_file *lk = NULL;
 	struct strbuf buf_path = STRBUF_INIT;
 	const char *hex;
 
@@ -1077,22 +1081,23 @@ static struct tempfile *create_tempfile_for_loose(
 
 	strbuf_addch(&buf_path, '/');
 	strbuf_addstr(&buf_path, hex+2);
-	strbuf_addstr(&buf_path, ".temp");
 
-	tempfile = create_tempfile(buf_path.buf);
-	if (!tempfile) {
-		strbuf_addstr(&status->error_message,
-			      "could not create tempfile for loose object");
-		status->ec = GH__ERROR_CODE__COULD_NOT_CREATE_TEMPFILE;
+	lk = xcalloc(1, sizeof(*lk));
+	if (hold_lock_file_for_update_timeout(lk, buf_path.buf, 0, 5000) < 0) {
+		trace2_data_string("gvfs-helper", the_repository, "lock-already-held", buf_path.buf);
+		free(lk);
+		lk = NULL;
+		sleep(1);
 		goto cleanup;
 	}
 
-	fdopen_tempfile(tempfile, "w");
+	trace2_data_string("gvfs-helper", the_repository, "lock-acquired", buf_path.buf);
+	fdopen_tempfile(lk->tempfile, "w");
 
 cleanup:
 	strbuf_release(&buf_path);
 
-	return tempfile;
+	return lk;
 }
 
 /*
@@ -1114,13 +1119,13 @@ static void extract_filename(struct strbuf *filename,
 }
 
 /*
- * Convert the tempfile into a permanent .pack packfile in the ODB.
+ * Convert the lockfile into a permanent .pack packfile in the ODB.
  * Create the corresponding .idx file.
  *
  * Return the filename (not pathname) of the resulting packfile.
  */
 static void install_packfile(struct gh__response_status *status,
-			     struct tempfile **pp_tempfile,
+			     struct lock_file **pp_lockfile,
 			     struct strbuf *packfile_filename)
 {
 	struct child_process ip = CHILD_PROCESS_INIT;
@@ -1135,7 +1140,7 @@ static void install_packfile(struct gh__response_status *status,
 	strbuf_setlen(packfile_filename, 0);
 
 	/*
-	 * start with "<base>.temp" (that is owned by tempfile class).
+	 * start with "<base>.temp" (that is owned by lockfile class).
 	 * rename to "<base>.pack.temp" to break ownership.
 	 *
 	 * create "<base>.idx.temp" on provisional packfile.
@@ -1144,14 +1149,14 @@ static void install_packfile(struct gh__response_status *status,
 	 * "<base>.{pack,idx}".
 	 */
 
-	strbuf_addstr(&pack_name_tmp, get_tempfile_path(*pp_tempfile));
-	if (!strip_suffix(pack_name_tmp.buf, ".temp", &len_base)) {
+	strbuf_addstr(&pack_name_tmp, get_tempfile_path((*pp_lockfile)->tempfile));
+	if (!strip_suffix(pack_name_tmp.buf, ".lock", &len_base)) {
 		/*
 		 * This is more of a BUG(), but I want the error
 		 * code propagated.
 		 */
 		strbuf_addf(&status->error_message,
-			    "packfile tempfile does not end in '.temp': '%s'",
+			    "packfile lockfile does not end in '.lock': '%s'",
 			    pack_name_tmp.buf);
 		status->ec = GH__ERROR_CODE__COULD_NOT_INSTALL_PACKFILE;
 		goto cleanup;
@@ -1162,16 +1167,17 @@ static void install_packfile(struct gh__response_status *status,
 	strbuf_addbuf(&idx_name_tmp, &pack_name_tmp);
 	strbuf_addbuf(&idx_name_dst, &pack_name_tmp);
 
-	strbuf_addstr(&pack_name_tmp, ".pack.temp");
+	strbuf_addstr(&pack_name_tmp, ".pack.lock");
 	strbuf_addstr(&pack_name_dst, ".pack");
-	strbuf_addstr(&idx_name_tmp, ".idx.temp");
+	strbuf_addstr(&idx_name_tmp, ".idx.lock");
 	strbuf_addstr(&idx_name_dst, ".idx");
 
 	// TODO if either pack_name_dst or idx_name_dst already
 	// TODO exists in the ODB, create alternate names so that
 	// TODO we don't step on them.
 
-	if (rename_tempfile(pp_tempfile, pack_name_tmp.buf) == -1) {
+	trace2_data_string("gvfs-helper", the_repository, "commit_lockfile", (*pp_lockfile)->tempfile->filename.buf);
+	if (commit_lock_file(*pp_lockfile)) {
 		strbuf_addf(&status->error_message,
 			    "could not rename packfile to '%s'",
 			    pack_name_tmp.buf);
@@ -1206,8 +1212,7 @@ static void install_packfile(struct gh__response_status *status,
 		goto cleanup;
 	}
 
-	if (finalize_object_file(pack_name_tmp.buf, pack_name_dst.buf) ||
-	    finalize_object_file(idx_name_tmp.buf, idx_name_dst.buf)) {
+	if (finalize_object_file(idx_name_tmp.buf, idx_name_dst.buf)) {
 		unlink(pack_name_tmp.buf);
 		unlink(pack_name_dst.buf);
 		unlink(idx_name_tmp.buf);
@@ -1230,43 +1235,14 @@ cleanup:
 }
 
 /*
- * Convert the tempfile into a permanent loose object in the ODB.
+ * Convert the lockfile into a permanent loose object in the ODB.
  *
  * Return the full pathname of the resulting file.
  */
 static void install_loose(struct gh__response_status *status,
-			  struct tempfile **pp_tempfile)
+			  struct lock_file **pp_lockfile)
 {
-	struct strbuf tmp_path = STRBUF_INIT;
-	struct strbuf loose_path = STRBUF_INIT;
-	size_t len_base;
-
 	gh__response_status__zero(status);
-
-	/*
-	 * start with "<odb>/xx/y38.temp" and owned by tempfile class.
-	 * compute new name as "<odb>/xx/y38".
-	 * close tempfile to steal ownership.
-	 * officially install loose object.
-	 */
-
-	strbuf_addstr(&tmp_path, get_tempfile_path(*pp_tempfile));
-	close_tempfile_gently(*pp_tempfile);
-	pp_tempfile = NULL;
-
-	if (!strip_suffix(tmp_path.buf, ".temp", &len_base)) {
-		/*
-		 * This is more of a BUG(), but I want the error
-		 * code propagated.
-		 */
-		strbuf_addf(&status->error_message,
-			    "loose object tempfile does not end in '.temp': '%s'",
-			    tmp_path.buf);
-		status->ec = GH__ERROR_CODE__COULD_NOT_INSTALL_LOOSE;
-		goto cleanup;
-	}
-
-	strbuf_add(&loose_path, tmp_path.buf, len_base);
 
 	// TODO If the target loose object already exists, finalize_object_file()
 	// TODO will NOT overwrite/replace it.  (This makes sense if we think of
@@ -1281,17 +1257,14 @@ static void install_loose(struct gh__response_status *status,
 	// TODO Alternatively, consider moving the existing loose file to a .bak
 	// TODO and then installing it.
 
-	if (finalize_object_file(tmp_path.buf, loose_path.buf)) {
-		unlink(tmp_path.buf);
+	trace2_data_string("gvfs-helper", the_repository, "commit_lockfile", (*pp_lockfile)->tempfile->filename.buf);
+	if (commit_lock_file(*pp_lockfile)) {
 		// If another gvfs-helper process is writing the exact same loose
 		// object, then it used the same tmp_path, and the rename done
 		// in the above call would fail. Instead of failing here, try
 		// to continue, assuming that the failure is due to that issue.
+		trace2_data_string("gvfs-helper", the_repository, "install_loose", "commit_lock_file failed");
 	}
-
-cleanup:
-	strbuf_release(&tmp_path);
-	strbuf_release(&loose_path);
 }
 
 /*
@@ -1334,7 +1307,7 @@ static void do_req(const char *url_base,
 	gh__response_status__zero(status);
 
 	if (params->b_write_to_file) {
-		// TODO ftruncate tempfile ??
+		// TODO ftruncate lockfile ??
 	} else {
 		strbuf_setlen(params->buffer, 0);
 	}
@@ -1363,7 +1336,7 @@ static void do_req(const char *url_base,
 	if (params->b_write_to_file) {
 		curl_easy_setopt(slot->curl, CURLOPT_WRITEFUNCTION, fwrite);
 		curl_easy_setopt(slot->curl, CURLOPT_WRITEDATA,
-				 (void*)params->tempfile->fp);
+				 (void*)params->lockfile->tempfile->fp);
 	} else {
 		curl_easy_setopt(slot->curl, CURLOPT_WRITEFUNCTION,
 				 fwrite_buffer);
@@ -1559,8 +1532,8 @@ static void do__loose__gvfs_object(struct gh__response_status *status,
 	params.headers = curl_slist_append(params.headers,
 					   "Pragma: no-cache");
 
-	params.tempfile = create_tempfile_for_loose(status, oid);
-	if (!params.tempfile)
+	params.lockfile = create_lockfile_for_loose(status, oid);
+	if (!params.lockfile)
 		goto cleanup;
 
 	if (gh__cmd_opts.show_progress) {
@@ -1576,8 +1549,7 @@ static void do__loose__gvfs_object(struct gh__response_status *status,
 
 	do_req__with_fallback(component_url.buf, &params, status);
 
-	if (status->ec == GH__ERROR_CODE__OK)
-		install_loose(status, &params.tempfile);
+	install_loose(status, &params.lockfile);
 
 cleanup:
 	gh__request_params__release(&params);
@@ -1633,10 +1605,10 @@ static void do__packfile__gvfs_objects(struct gh__response_status *status,
 	params.headers = curl_slist_append(params.headers,
 					   "Accept: application/x-git-loose-object");
 
-	params.tempfile = create_tempfile_for_packfile();
-	if (!params.tempfile) {
+	params.lockfile = create_lockfile_for_packfile();
+	if (!params.lockfile) {
 		strbuf_addstr(&status->error_message,
-			      "could not create tempfile for packfile");
+			      "could not create lockfile for packfile");
 		status->ec = GH__ERROR_CODE__COULD_NOT_CREATE_TEMPFILE;
 		goto cleanup;
 	}
@@ -1669,7 +1641,7 @@ static void do__packfile__gvfs_objects(struct gh__response_status *status,
 			// TODO to our alternate and stream the data thru it,
 			// TODO it won't matter.
 
-			install_packfile(status, &params.tempfile,
+			install_packfile(status, &params.lockfile,
 					 output_filename);
 			goto cleanup;
 		}
