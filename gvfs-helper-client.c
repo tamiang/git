@@ -224,6 +224,13 @@ static int ghc__get__receive_response(struct child_process *process,
 	return err;
 }
 
+/*
+ * Select the preferred ODB for fetching missing objects.
+ * This should be the alternate with the same directory
+ * name as set in `gvfs.sharedCache`.
+ *
+ * Fallback to .git/objects if necessary.
+ */
 static void ghc__choose_odb(void)
 {
 	struct object_directory *odb;
@@ -231,22 +238,19 @@ static void ghc__choose_odb(void)
 	if (ghs__chosen_odb)
 		return;
 
+	ghs__chosen_odb = the_repository->objects->odb;
+
 	prepare_alt_odb(the_repository);
 
-	if (gvfs_shared_cache_pathname && *gvfs_shared_cache_pathname) {
-		for (odb = the_repository->objects->odb; odb; odb = odb->next) {
-			if (!strcmp(odb->path, gvfs_shared_cache_pathname)) {
-				ghs__chosen_odb = odb;
-				return;
-			}
+	if (!gvfs_shared_cache_pathname.len)
+		return;
+
+	for (odb = the_repository->objects->odb->next; odb; odb = odb->next) {
+		if (!strcmp(odb->path, gvfs_shared_cache_pathname.buf)) {
+			ghs__chosen_odb = odb;
+			return;
 		}
 	}
-
-	/*
-	 * Use .git/objects if "gvfs.sharedcache" not set or set to an
-	 * unknown pathname.
-	 */
-	ghs__chosen_odb = the_repository->objects->odb;
 }
 
 static int ghc__get(enum ghc__created *p_ghc)
