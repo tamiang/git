@@ -22,7 +22,7 @@ struct gh_server__process {
 
 static int gh_server__subprocess_map_initialized;
 static struct hashmap gh_server__subprocess_map;
-static struct object_directory *ghs__chosen_odb;
+static struct object_directory *gh_client__chosen_odb;
 
 #define CAP_GET      (1u<<1)
 
@@ -95,9 +95,10 @@ static void ghc__verify_odb_line(const char *line)
 	if (!skip_prefix(line, "odb ", &v1_odb_path))
 		BUG("verify_odb_line: invalid line '%s'", line);
 
-	if (!ghs__chosen_odb || strcmp(v1_odb_path, ghs__chosen_odb->path))
+	if (!gh_client__chosen_odb ||
+	    strcmp(v1_odb_path, gh_client__chosen_odb->path))
 		BUG("verify_odb_line: unexpeced odb path '%s' vs '%s'",
-		    v1_odb_path, ghs__chosen_odb->path);
+		    v1_odb_path, gh_client__chosen_odb->path);
 }
 
 /*
@@ -112,7 +113,7 @@ static void ghc__update_loose_cache(const char *line)
 	if (!skip_prefix(line, "loose ", &v1_oid))
 		BUG("update_loose_cache: invalid line '%s'", line);
 
-	odb_loose_cache_add_new_oid(ghs__chosen_odb, &oid);
+	odb_loose_cache_add_new_oid(gh_client__chosen_odb, &oid);
 }
 
 /*
@@ -131,9 +132,10 @@ static void ghc__update_packed_git(const char *line)
 	/*
 	 * ODB[0] is the local .git/objects.  All others are alternates.
 	 */
-	is_local = (ghs__chosen_odb == the_repository->objects->odb);
+	is_local = (gh_client__chosen_odb == the_repository->objects->odb);
 
-	strbuf_addf(&path, "%s/pack/%s", ghs__chosen_odb->path, v1_filename);
+	strbuf_addf(&path, "%s/pack/%s",
+		    gh_client__chosen_odb->path, v1_filename);
 	strbuf_strip_suffix(&path, ".pack");
 	strbuf_addstr(&path, ".idx");
 
@@ -235,10 +237,10 @@ static void ghc__choose_odb(void)
 {
 	struct object_directory *odb;
 
-	if (ghs__chosen_odb)
+	if (gh_client__chosen_odb)
 		return;
 
-	ghs__chosen_odb = the_repository->objects->odb;
+	gh_client__chosen_odb = the_repository->objects->odb;
 
 	prepare_alt_odb(the_repository);
 
@@ -247,7 +249,7 @@ static void ghc__choose_odb(void)
 
 	for (odb = the_repository->objects->odb->next; odb; odb = odb->next) {
 		if (!strcmp(odb->path, gvfs_shared_cache_pathname.buf)) {
-			ghs__chosen_odb = odb;
+			gh_client__chosen_odb = odb;
 			return;
 		}
 	}
@@ -273,7 +275,8 @@ static int ghc__get(enum ghc__created *p_ghc)
 	argv_array_push(&argv, "gvfs-helper");
 	argv_array_push(&argv, "--fallback");
 	argv_array_push(&argv, "--cache-server=trust");
-	argv_array_pushf(&argv, "--shared-cache=%s", ghs__chosen_odb->path);
+	argv_array_pushf(&argv, "--shared-cache=%s",
+			 gh_client__chosen_odb->path);
 	argv_array_push(&argv, "server");
 
 	sq_quote_argv_pretty(&quoted, argv.argv);
