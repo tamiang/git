@@ -4,7 +4,7 @@
 struct repository;
 struct commit;
 
-enum ghc__created {
+enum gh_client__created {
 	/*
 	 * The _get_ operation did not create anything.  If doesn't
 	 * matter if `gvfs-helper` had errors or not -- just that
@@ -13,7 +13,7 @@ enum ghc__created {
 	GHC__CREATED__NOTHING  = 0,
 
 	/*
-	 * The _get_operation created one or more packfiles.
+	 * The _get_ operation created one or more packfiles.
 	 */
 	GHC__CREATED__PACKFILE = 1<<1,
 
@@ -40,7 +40,8 @@ enum ghc__created {
  * It is undefined whether the requested OID will be loose or
  * in a packfile.
  */
-int ghc__get_immediate(const struct object_id *oid, enum ghc__created *p_ghc);
+int gh_client__get_immediate(const struct object_id *oid,
+			     enum gh_client__created *p_ghc);
 
 /*
  * Queue this OID for a future fetch using `gvfs-helper service`.
@@ -53,9 +54,9 @@ int ghc__get_immediate(const struct object_id *oid, enum ghc__created *p_ghc);
  * Callers should not rely on the queued object being on disk until
  * the queue has been drained.
  */
-void ghc__queue_oid(const struct object_id *oid);
-void ghc__queue_oid_array(const struct object_id *oids, int oid_nr);
+void gh_client__queue_oid(const struct object_id *oid);
+void gh_client__queue_oid_array(const struct object_id *oids, int oid_nr);
 
-int ghc__drain_queue(enum ghc__created *p_ghc);
+int gh_client__drain_queue(enum gh_client__created *p_ghc);
 
 #endif /* GVFS_HELPER_CLIENT_H */

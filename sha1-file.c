@@ -1676,12 +1676,12 @@ retry:
 			return 0;
 
 		if (core_use_gvfs_helper && !tried_gvfs_helper) {
-			enum ghc__created ghc;
+			enum gh_client__created ghc;
 
 			if (flags & OBJECT_INFO_SKIP_FETCH_OBJECT)
 				return -1;
 
-			ghc__get_immediate(real, &ghc);
+			gh_client__get_immediate(real, &ghc);
 			tried_gvfs_helper = 1;
 
 			/*

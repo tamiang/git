@@ -11,9 +11,9 @@
 #include "quote.h"
 #include "packfile.h"
 
-static struct oidset ghc__oidset_queued = OIDSET_INIT;
-static unsigned long ghc__oidset_count;
-static int ghc__includes_immediate;
+static struct oidset gh_client__oidset_queued = OIDSET_INIT;
+static unsigned long gh_client__oidset_count;
+static int gh_client__includes_immediate;
 
 struct gh_server__process {
 	struct subprocess_entry subprocess; /* must be first */
@@ -26,7 +26,7 @@ static struct object_directory *gh_client__chosen_odb;
 
 #define CAP_GET      (1u<<1)
 
-static int ghc__start_fn(struct subprocess_entry *subprocess)
+static int gh_client__start_fn(struct subprocess_entry *subprocess)
 {
 	static int versions[] = {1, 0};
 	static struct subprocess_capability capabilities[] = {
@@ -49,7 +49,7 @@ static int ghc__start_fn(struct subprocess_entry *subprocess)
  *     <flush>
  *
  */
-static int ghc__get__send_command(struct child_process *process)
+static int gh_client__get__send_command(struct child_process *process)
 {
 	struct oidset_iter iter;
 	struct object_id *oid;
@@ -64,7 +64,7 @@ static int ghc__get__send_command(struct child_process *process)
 	if (err)
 		return err;
 
-	oidset_iter_init(&ghc__oidset_queued, &iter);
+	oidset_iter_init(&gh_client__oidset_queued, &iter);
 	while ((oid = oidset_iter_next(&iter))) {
 		err = packet_write_fmt_gently(process->in, "%s\n",
 					      oid_to_hex(oid));
@@ -88,7 +88,7 @@ static int ghc__get__send_command(struct child_process *process)
  * In particular, I don't see a need to try to search for the response
  * value in from our list of alternates.
  */
-static void ghc__verify_odb_line(const char *line)
+static void gh_client__verify_odb_line(const char *line)
 {
 	const char *v1_odb_path;
 
@@ -105,7 +105,7 @@ static void ghc__verify_odb_line(const char *line)
  * Update the loose object cache to include the newly created
  * object.
  */
-static void ghc__update_loose_cache(const char *line)
+static void gh_client__update_loose_cache(const char *line)
 {
 	const char *v1_oid;
 	struct object_id oid;
@@ -119,7 +119,7 @@ static void ghc__update_loose_cache(const char *line)
 /*
  * Update the packed-git list to include the newly created packfile.
  */
-static void ghc__update_packed_git(const char *line)
+static void gh_client__update_packed_git(const char *line)
 {
 	struct strbuf path = STRBUF_INIT;
 	const char *v1_filename;
@@ -176,11 +176,12 @@ static void ghc__update_packed_git(const char *line)
  * grouped with a queued request for a blob.  The tree-walk *might* be
  * able to continue and let the 404 blob be handled later.
  */
-static int ghc__get__receive_response(struct child_process *process,
-				      enum ghc__created *p_ghc,
-				      int *p_nr_loose, int *p_nr_packfile)
+static int gh_client__get__receive_response(
+	struct child_process *process,
+	enum gh_client__created *p_ghc,
+	int *p_nr_loose, int *p_nr_packfile)
 {
-	enum ghc__created ghc = GHC__CREATED__NOTHING;
+	enum gh_client__created ghc = GHC__CREATED__NOTHING;
 	const char *v1;
 	char *line;
 	int len;
@@ -196,17 +197,17 @@ static int ghc__get__receive_response(struct child_process *process,
 			break;
 
 		if (starts_with(line, "odb")) {
-			ghc__verify_odb_line(line);
+			gh_client__verify_odb_line(line);
 		}
 
 		else if (starts_with(line, "packfile")) {
-			ghc__update_packed_git(line);
+			gh_client__update_packed_git(line);
 			ghc |= GHC__CREATED__PACKFILE;
 			*p_nr_packfile += 1;
 		}
 
 		else if (starts_with(line, "loose")) {
-			ghc__update_loose_cache(line);
+			gh_client__update_loose_cache(line);
 			ghc |= GHC__CREATED__LOOSE;
 			*p_nr_loose += 1;
 		}
@@ -233,7 +234,7 @@ static int ghc__get__receive_response(struct child_process *process,
  *
  * Fallback to .git/objects if necessary.
  */
-static void ghc__choose_odb(void)
+static void gh_client__choose_odb(void)
 {
 	struct object_directory *odb;
 
@@ -255,7 +256,7 @@ static void ghc__choose_odb(void)
 	}
 }
 
-static int ghc__get(enum ghc__created *p_ghc)
+static int gh_client__get(enum gh_client__created *p_ghc)
 {
 	struct gh_server__process *entry;
 	struct child_process *process;
@@ -267,7 +268,7 @@ static int ghc__get(enum ghc__created *p_ghc)
 
 	trace2_region_enter("gh-client", "get", the_repository);
 
-	ghc__choose_odb();
+	gh_client__choose_odb();
 
 	/*
 	 * TODO decide what defaults we want.
@@ -296,7 +297,7 @@ static int ghc__get(enum ghc__created *p_ghc)
 
 		err = subprocess_start_argv(
 			&gh_server__subprocess_map, &entry->subprocess, 1,
-			&argv, ghc__start_fn);
+			&argv, gh_client__start_fn);
 		if (err) {
 			free(entry);
 			goto leave_region;
@@ -316,9 +317,9 @@ static int ghc__get(enum ghc__created *p_ghc)
 
 	sigchain_push(SIGPIPE, SIG_IGN);
 
-	err = ghc__get__send_command(process);
+	err = gh_client__get__send_command(process);
 	if (!err)
-		err = ghc__get__receive_response(process, p_ghc,
+		err = gh_client__get__receive_response(process, p_ghc,
 						 &nr_loose, &nr_packfile);
 
 	sigchain_pop(SIGPIPE);
@@ -334,10 +335,10 @@ leave_region:
 	strbuf_release(&quoted);
 
 	trace2_data_intmax("gh-client", the_repository,
-			   "get/immediate", ghc__includes_immediate);
+			   "get/immediate", gh_client__includes_immediate);
 
 	trace2_data_intmax("gh-client", the_repository,
-			   "get/nr_objects", ghc__oidset_count);
+			   "get/nr_objects", gh_client__oidset_count);
 
 	if (nr_loose)
 		trace2_data_intmax("gh-client", the_repository,
@@ -353,22 +354,22 @@ leave_region:
 
 	trace2_region_leave("gh-client", "get", the_repository);
 
-	oidset_clear(&ghc__oidset_queued);
-	ghc__oidset_count = 0;
-	ghc__includes_immediate = 0;
+	oidset_clear(&gh_client__oidset_queued);
+	gh_client__oidset_count = 0;
+	gh_client__includes_immediate = 0;
 
 	return err;
 }
 
-void ghc__queue_oid(const struct object_id *oid)
+void gh_client__queue_oid(const struct object_id *oid)
 {
 	// TODO consider removing this trace2.  it is useful for interactive
 	// TODO debugging, but may generate way too much noise for a data
 	// TODO event.
-	trace2_printf("ghc__queue_oid: %s", oid_to_hex(oid));
+	trace2_printf("gh_client__queue_oid: %s", oid_to_hex(oid));
 
-	if (!oidset_insert(&ghc__oidset_queued, oid))
-		ghc__oidset_count++;
+	if (!oidset_insert(&gh_client__oidset_queued, oid))
+		gh_client__oidset_count++;
 }
 
 /*
@@ -376,35 +377,36 @@ void ghc__queue_oid(const struct object_id *oid)
  * rather than the component parts, but fetch_objects() uses
  * this model (because of the call in sha1-file.c).
  */
-void ghc__queue_oid_array(const struct object_id *oids, int oid_nr)
+void gh_client__queue_oid_array(const struct object_id *oids, int oid_nr)
 {
 	int k;
 
 	for (k = 0; k < oid_nr; k++)
-		ghc__queue_oid(&oids[k]);
+		gh_client__queue_oid(&oids[k]);
 }
 
-int ghc__drain_queue(enum ghc__created *p_ghc)
+int gh_client__drain_queue(enum gh_client__created *p_ghc)
 {
 	*p_ghc = GHC__CREATED__NOTHING;
 
-	if (!ghc__oidset_count)
+	if (!gh_client__oidset_count)
 		return 0;
 
-	return ghc__get(p_ghc);
+	return gh_client__get(p_ghc);
 }
 
-int ghc__get_immediate(const struct object_id *oid, enum ghc__created *p_ghc)
+int gh_client__get_immediate(const struct object_id *oid,
+			     enum gh_client__created *p_ghc)
 {
-	ghc__includes_immediate = 1;
+	gh_client__includes_immediate = 1;
 
 	// TODO consider removing this trace2.  it is useful for interactive
 	// TODO debugging, but may generate way too much noise for a data
 	// TODO event.
-	trace2_printf("ghc__get_immediate: %s", oid_to_hex(oid));
+	trace2_printf("gh_client__get_immediate: %s", oid_to_hex(oid));
 
-	if (!oidset_insert(&ghc__oidset_queued, oid))
-		ghc__oidset_count++;
+	if (!oidset_insert(&gh_client__oidset_queued, oid))
+		gh_client__oidset_count++;
 
-	return ghc__drain_queue(p_ghc);
+	return gh_client__drain_queue(p_ghc);
 }
