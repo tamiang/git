@@ -15,13 +15,13 @@ static struct oidset ghc__oidset_queued = OIDSET_INIT;
 static unsigned long ghc__oidset_count;
 static int ghc__includes_immediate;
 
-struct ghs__process {
+struct gh_server__process {
 	struct subprocess_entry subprocess; /* must be first */
 	unsigned int supported_capabilities;
 };
 
-static int ghs__subprocess_map_initialized;
-static struct hashmap ghs__subprocess_map;
+static int gh_server__subprocess_map_initialized;
+static struct hashmap gh_server__subprocess_map;
 static struct object_directory *ghs__chosen_odb;
 
 #define CAP_GET      (1u<<1)
@@ -34,7 +34,7 @@ static int ghc__start_fn(struct subprocess_entry *subprocess)
 		{ NULL, 0 }
 	};
 
-	struct ghs__process *entry = (struct ghs__process *)subprocess;
+	struct gh_server__process *entry = (struct gh_server__process *)subprocess;
 
 	return subprocess_handshake(subprocess, "gvfs-helper", versions,
 				    NULL, capabilities,
@@ -255,7 +255,7 @@ static void ghc__choose_odb(void)
 
 static int ghc__get(enum ghc__created *p_ghc)
 {
-	struct ghs__process *entry;
+	struct gh_server__process *entry;
 	struct child_process *process;
 	struct argv_array argv = ARGV_ARRAY_INIT;
 	struct strbuf quoted = STRBUF_INIT;
@@ -278,21 +278,21 @@ static int ghc__get(enum ghc__created *p_ghc)
 
 	sq_quote_argv_pretty(&quoted, argv.argv);
 
-	if (!ghs__subprocess_map_initialized) {
-		ghs__subprocess_map_initialized = 1;
-		hashmap_init(&ghs__subprocess_map,
+	if (!gh_server__subprocess_map_initialized) {
+		gh_server__subprocess_map_initialized = 1;
+		hashmap_init(&gh_server__subprocess_map,
 			     (hashmap_cmp_fn)cmd2process_cmp, NULL, 0);
 		entry = NULL;
 	} else
-		entry = (struct ghs__process *)subprocess_find_entry(
-			&ghs__subprocess_map, quoted.buf);
+		entry = (struct gh_server__process *)subprocess_find_entry(
+			&gh_server__subprocess_map, quoted.buf);
 
 	if (!entry) {
 		entry = xmalloc(sizeof(*entry));
 		entry->supported_capabilities = 0;
 
 		err = subprocess_start_argv(
-			&ghs__subprocess_map, &entry->subprocess, 1,
+			&gh_server__subprocess_map, &entry->subprocess, 1,
 			&argv, ghc__start_fn);
 		if (err) {
 			free(entry);
@@ -304,7 +304,7 @@ static int ghc__get(enum ghc__created *p_ghc)
 
 	if (!(CAP_GET & entry->supported_capabilities)) {
 		error("gvfs-helper: does not support GET");
-		subprocess_stop(&ghs__subprocess_map,
+		subprocess_stop(&gh_server__subprocess_map,
 				(struct subprocess_entry *)entry);
 		free(entry);
 		err = -1;
@@ -321,7 +321,7 @@ static int ghc__get(enum ghc__created *p_ghc)
 	sigchain_pop(SIGPIPE);
 
 	if (err) {
-		subprocess_stop(&ghs__subprocess_map,
+		subprocess_stop(&gh_server__subprocess_map,
 				(struct subprocess_entry *)entry);
 		free(entry);
 	}
