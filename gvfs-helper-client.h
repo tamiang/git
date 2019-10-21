@@ -32,13 +32,14 @@ enum gh_client__created {
 };
 
 /*
- * Ask `gvfs-helper server` to immediately fetch an object.
- * Wait for the response.
+ * Ask `gvfs-helper server` to immediately fetch a single object
+ * using "/gvfs/objects" GET semantics.
  *
- * This may also fetch any queued (non-immediate) objects and
- * so may create one or more loose objects and/or packfiles.
- * It is undefined whether the requested OID will be loose or
- * in a packfile.
+ * A long-running background process is used to make subsequent
+ * requests more efficient.
+ *
+ * A loose object will be created in the shared-cache ODB and
+ * in-memory cache updated.
  */
 int gh_client__get_immediate(const struct object_id *oid,
 			     enum gh_client__created *p_ghc);
@@ -47,16 +48,21 @@ int gh_client__get_immediate(const struct object_id *oid,
  * Queue this OID for a future fetch using `gvfs-helper service`.
  * It does not wait.
  *
- * The GHC layer is free to process this queue in any way it wants,
- * including individual fetches, bulk fetches, and batching.  And
- * it may add queued objects to immediate requests.
- *
  * Callers should not rely on the queued object being on disk until
  * the queue has been drained.
  */
 void gh_client__queue_oid(const struct object_id *oid);
 void gh_client__queue_oid_array(const struct object_id *oids, int oid_nr);
 
+/*
+ * Ask `gvfs-helper server` to fetch the set of queued OIDs using
+ * "/gvfs/objects" POST semantics.
+ *
+ * A long-running background process is used to subsequent requests
+ * more efficient.
+ *
+ * One or more packfiles will be created in the shared-cache ODB.
+ */
 int gh_client__drain_queue(enum gh_client__created *p_ghc);
 
 #endif /* GVFS_HELPER_CLIENT_H */
