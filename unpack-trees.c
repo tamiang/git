@@ -1548,7 +1548,7 @@ int unpack_trees(unsigned len, struct tree_desc *t, struct unpack_trees_options 
 	memset(&pl, 0, sizeof(pl));
 	if (!core_apply_sparse_checkout || !o->update)
 		o->skip_sparse_checkout = 1;
-	if (!o->skip_sparse_checkout) {
+	if (!o->skip_sparse_checkout && !o->pl) {
 		if (core_virtualfilesystem) {
 			o->pl = &pl;
 		} else {
