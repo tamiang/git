@@ -16,6 +16,7 @@
 #include "hashmap.h"
 #include "replace-object.h"
 #include "progress.h"
+#include "bloom.h"
 
 #define GRAPH_SIGNATURE 0x43475048 /* "CGPH" */
 #define GRAPH_CHUNKID_OIDFANOUT 0x4f494446 /* "OIDF" */
@@ -23,6 +24,9 @@
 #define GRAPH_CHUNKID_DATA 0x43444154 /* "CDAT" */
 #define GRAPH_CHUNKID_EXTRAEDGES 0x45444745 /* "EDGE" */
 #define GRAPH_CHUNKID_BASE 0x42415345 /* "BASE" */
+#define GRAPH_CHUNKID_BLOOMINDEXES 0x42494458 /* "BIDX" */
+#define GRAPH_CHUNKID_BLOOMDATA 0x42444154 /* "BDAT" */
+#define MAX_NUM_CHUNKS 7
 
 #define GRAPH_DATA_WIDTH (the_hash_algo->rawsz + 16)
 
@@ -188,6 +192,8 @@ struct commit_graph *parse_commit_graph(void *graph_map, int fd,
 	if (graph_size < GRAPH_MIN_SIZE)
 		return NULL;
 
+	load_bloom_filters();
+
 	data = (const unsigned char *)graph_map;
 
 	graph_signature = get_be32(data);
@@ -280,6 +286,26 @@ struct commit_graph *parse_commit_graph(void *graph_map, int fd,
 				chunk_repeated = 1;
 			else
 				graph->chunk_base_graphs = data + chunk_offset;
+			break;
+
+		case GRAPH_CHUNKID_BLOOMINDEXES:
+			if (graph->chunk_bloom_indexes)
+				chunk_repeated = 1;
+			else
+				graph->chunk_bloom_indexes = data + chunk_offset;
+			break;
+
+		case GRAPH_CHUNKID_BLOOMDATA:
+			if (graph->chunk_bloom_data)
+				chunk_repeated = 1;
+			else {
+				graph->chunk_bloom_data = data + chunk_offset;
+				graph->settings = xmalloc(sizeof(struct bloom_filter_settings));
+				graph->settings->hash_version = get_be32(data + chunk_offset);
+				graph->settings->num_hashes = get_be32(data + chunk_offset + 4);
+				graph->settings->bits_per_entry = get_be32(data + chunk_offset + 8);
+			}
+			break;
 		}
 
 		if (chunk_repeated) {
@@ -372,6 +398,7 @@ static int add_graph_to_chain(struct commit_graph *g,
 	return 1;
 }
 
+// WILL THIS JUST WORK? Needs a lot of testing. 
 static struct commit_graph *load_commit_graph_chain(struct repository *r, const char *obj_dir)
 {
 	struct commit_graph *graph_chain = NULL;
@@ -799,6 +826,31 @@ struct write_commit_graph_context {
 	const struct split_commit_graph_opts *split_opts;
 };
 
+static void compute_bloom_filters(struct write_commit_graph_context *ctx,
+				  struct bloom_filter_settings *settings,
+				  uint32_t *total_filter_size)
+{
+	int i;
+	struct progress *progress = NULL;
+	*total_filter_size = 0;
+
+	load_bloom_filters();
+
+	if (ctx->report_progress)
+		progress = start_progress(
+			_("Computing commit diff Bloom filters"),
+			ctx->commits.nr);
+
+	for (i = 0; i < ctx->commits.nr; i++) {
+		struct commit *c = ctx->commits.list[i];
+		struct bloom_filter *filter = get_bloom_filter(ctx->r, c, 1);
+		*total_filter_size += filter->len;
+		display_progress(progress, i + 1);
+	}
+
+	stop_progress(&progress);
+}
+
 static void write_graph_chunk_fanout(struct hashfile *f,
 				     struct write_commit_graph_context *ctx)
 {
@@ -992,6 +1044,41 @@ static void write_graph_chunk_extra_edges(struct hashfile *f,
 		}
 
 		list++;
+	}
+}
+
+static void write_graph_chunk_bloom_indexes(struct hashfile *f,
+					    struct write_commit_graph_context *ctx)
+{
+	struct commit **list = ctx->commits.list;
+	struct commit **last = ctx->commits.list + ctx->commits.nr;
+	uint32_t cur_pos = 0;
+
+	while (list < last) {
+		struct bloom_filter *filter = get_bloom_filter(ctx->r, *list, 0);
+		cur_pos += filter->len;
+
+		hashwrite_be32(f, cur_pos);
+		list++;
+	}
+}
+
+static void write_graph_chunk_bloom_data(struct hashfile *f,
+					 struct write_commit_graph_context *ctx,
+					 struct bloom_filter_settings *settings)
+{
+	struct commit **first = ctx->commits.list;
+	struct commit **last = ctx->commits.list + ctx->commits.nr;
+
+	hashwrite_be32(f, settings->hash_version);
+	hashwrite_be32(f, settings->num_hashes);
+	hashwrite_be32(f, settings->bits_per_entry);
+
+	while (first < last) {
+		struct bloom_filter *filter = get_bloom_filter(ctx->r, *first, 0);
+
+		hashwrite(f, filter->data, filter->len * sizeof(uint64_t));
+		first++;
 	}
 }
 
@@ -1353,19 +1440,20 @@ static int write_graph_chunk_base(struct hashfile *f,
 	return 0;
 }
 
-static int write_commit_graph_file(struct write_commit_graph_context *ctx)
+static int write_commit_graph_file(struct write_commit_graph_context *ctx, struct bloom_filter_settings *settings, uint32_t total_filter_size)
 {
 	uint32_t i;
 	int fd;
 	struct hashfile *f;
 	struct lock_file lk = LOCK_INIT;
-	uint32_t chunk_ids[6];
-	uint64_t chunk_offsets[6];
+	uint32_t chunk_ids[MAX_NUM_CHUNKS + 1];
+	uint64_t chunk_offsets[MAX_NUM_CHUNKS + 1];
 	const unsigned hashsz = the_hash_algo->rawsz;
 	struct strbuf progress_title = STRBUF_INIT;
 	int num_chunks = 3;
 	struct object_id file_hash;
-
+	int write_bloom_filters = 1; //git_env_bool(GIT_TEST_BLOOM_FILTERS, 0); //can this be globally checked? put in the context struct?
+	
 	if (ctx->split) {
 		struct strbuf tmp_file = STRBUF_INIT;
 
@@ -1405,12 +1493,19 @@ static int write_commit_graph_file(struct write_commit_graph_context *ctx)
 	chunk_ids[0] = GRAPH_CHUNKID_OIDFANOUT;
 	chunk_ids[1] = GRAPH_CHUNKID_OIDLOOKUP;
 	chunk_ids[2] = GRAPH_CHUNKID_DATA;
+	
 	if (ctx->num_extra_edges) {
 		chunk_ids[num_chunks] = GRAPH_CHUNKID_EXTRAEDGES;
 		num_chunks++;
 	}
 	if (ctx->num_commit_graphs_after > 1) {
 		chunk_ids[num_chunks] = GRAPH_CHUNKID_BASE;
+		num_chunks++;
+	}
+	if (write_bloom_filters){
+		chunk_ids[num_chunks] = GRAPH_CHUNKID_BLOOMINDEXES;
+		num_chunks++;
+		chunk_ids[num_chunks] = GRAPH_CHUNKID_BLOOMDATA;
 		num_chunks++;
 	}
 
@@ -1432,9 +1527,15 @@ static int write_commit_graph_file(struct write_commit_graph_context *ctx)
 						hashsz * (ctx->num_commit_graphs_after - 1);
 		num_chunks++;
 	}
+	if (write_bloom_filters) {
+		chunk_offsets[num_chunks] = chunk_offsets[num_chunks - 1] + 4 * ctx->commits.nr;
+		num_chunks++;
+		
+		chunk_offsets[num_chunks] = chunk_offsets[num_chunks - 1] + 4 * 3 + total_filter_size;
+		num_chunks++;
+	}	
 
 	hashwrite_be32(f, GRAPH_SIGNATURE);
-
 	hashwrite_u8(f, GRAPH_VERSION);
 	hashwrite_u8(f, oid_version());
 	hashwrite_u8(f, num_chunks);
@@ -1459,11 +1560,19 @@ static int write_commit_graph_file(struct write_commit_graph_context *ctx)
 			progress_title.buf,
 			num_chunks * ctx->commits.nr);
 	}
+
 	write_graph_chunk_fanout(f, ctx);
 	write_graph_chunk_oids(f, hashsz, ctx);
 	write_graph_chunk_data(f, hashsz, ctx);
+
 	if (ctx->num_extra_edges)
 		write_graph_chunk_extra_edges(f, ctx);
+
+	if (write_bloom_filters) { 
+		write_graph_chunk_bloom_indexes(f, ctx);
+		write_graph_chunk_bloom_data(f, ctx, settings);
+	}
+
 	if (ctx->num_commit_graphs_after > 1 &&
 	    write_graph_chunk_base(f, ctx)) {
 		return -1;
@@ -1775,6 +1884,8 @@ int write_commit_graph(const char *obj_dir,
 	uint32_t i, count_distinct = 0;
 	size_t len;
 	int res = 0;
+	struct bloom_filter_settings bloom_settings = DEFAULT_BLOOM_FILTER_SETTINGS;
+	uint32_t total_filter_size = 0;
 
 	if (!commit_graph_compatible(the_repository))
 		return 0;
@@ -1888,7 +1999,12 @@ int write_commit_graph(const char *obj_dir,
 
 	compute_generation_numbers(ctx);
 
-	res = write_commit_graph_file(ctx);
+	if (1/*git_env_bool(GIT_TEST_BLOOM_FILTERS, 0)*/) 
+		compute_bloom_filters(ctx,
+				      &bloom_settings,
+				      &total_filter_size);
+	
+	res = write_commit_graph_file(ctx, &bloom_settings, total_filter_size);
 
 	if (ctx->split)
 		mark_commit_graphs(ctx);
@@ -1953,7 +2069,7 @@ int verify_commit_graph(struct repository *r, struct commit_graph *g, int flags)
 	}
 
 	verify_commit_graph_error = verify_commit_graph_lite(g);
-	if (verify_commit_graph_error)
+	if (verify_commit_graph_error) 
 		return verify_commit_graph_error;
 
 	devnull = open("/dev/null", O_WRONLY);
@@ -2098,7 +2214,7 @@ int verify_commit_graph(struct repository *r, struct commit_graph *g, int flags)
 
 	local_error = verify_commit_graph_error;
 
-	if (!(flags & COMMIT_GRAPH_VERIFY_SHALLOW) && g->base_graph)
+	if (!(flags & COMMIT_GRAPH_VERIFY_SHALLOW) && g->base_graph) 
 		local_error |= verify_commit_graph(r, g->base_graph, flags);
 
 	return local_error;

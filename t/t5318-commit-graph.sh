@@ -74,7 +74,7 @@ graph_git_behavior 'no graph' full commits/3 commits/1
 
 graph_read_expect() {
 	OPTIONAL=""
-	NUM_CHUNKS=3
+	NUM_CHUNKS=5 #assuming bloom filters are default. 
 	if test ! -z $2
 	then
 		OPTIONAL=" $2"
@@ -83,7 +83,7 @@ graph_read_expect() {
 	cat >expect <<- EOF
 	header: 43475048 1 1 $NUM_CHUNKS 0
 	num_commits: $1
-	chunks: oid_fanout oid_lookup commit_metadata$OPTIONAL
+	chunks: oid_fanout oid_lookup commit_metadata$OPTIONAL bloom_indexes bloom_data
 	EOF
 	test-tool read-graph >output &&
 	test_cmp expect output
@@ -130,6 +130,13 @@ test_expect_success 'commit-graph write progress off for redirected stderr' '
 	test_line_count = 0 err
 '
 
+test_done
+
+test_expect_success 'commit-graph write progress off for redirected stderr' '
+	cd "$TRASH_DIRECTORY/full" &&
+	git commit-graph write 2>err &&
+	test_line_count = 0 err
+'
 test_expect_success 'commit-graph write force progress on for stderr' '
 	cd "$TRASH_DIRECTORY/full" &&
 	git commit-graph write --progress 2>err &&

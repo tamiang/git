@@ -47,6 +47,7 @@ struct pathspec {
 			} match_mode;
 		} *attr_match;
 		struct attr_check *attr_check;
+		unsigned char name_hash[GIT_MAX_RAWSZ];
 	} *items;
 };
 

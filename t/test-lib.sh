@@ -920,7 +920,7 @@ test_eval_ () {
 	#   - checking $? has to come immediately after the eval, but it must
 	#     be _inside_ the block to avoid polluting the "set -x" output
 	#
-
+	
 	test_eval_inner_ "$@" </dev/null >&3 2>&4
 	{
 		test_eval_ret_=$?

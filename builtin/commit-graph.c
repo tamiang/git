@@ -181,7 +181,7 @@ static int graph_write(int argc, const char **argv)
 }
 
 int cmd_commit_graph(int argc, const char **argv, const char *prefix)
-{
+{	
 	static struct option builtin_commit_graph_options[] = {
 		OPT_STRING(0, "object-dir", &opts.obj_dir,
 			N_("dir"),
@@ -202,9 +202,14 @@ int cmd_commit_graph(int argc, const char **argv, const char *prefix)
 	save_commit_buffer = 0;
 
 	if (argc > 0) {
+<<<<<<< HEAD
+=======
+		if (!strcmp(argv[0], "read")) 
+			return graph_read(argc, argv);
+>>>>>>> Debugging in progress
 		if (!strcmp(argv[0], "verify"))
 			return graph_verify(argc, argv);
-		if (!strcmp(argv[0], "write"))
+		if (!strcmp(argv[0], "write")) 
 			return graph_write(argc, argv);
 	}
 
