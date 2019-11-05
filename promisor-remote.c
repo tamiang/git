@@ -3,6 +3,7 @@
 #include "promisor-remote.h"
 #include "config.h"
 #include "transport.h"
+#include "gvfs-helper-client.h"
 
 static char *repository_format_partial_clone;
 static const char *core_partial_clone_filter_default;
@@ -39,6 +40,14 @@ static int fetch_objects(const char *remote_name,
 {
 	struct ref *ref = NULL;
 	int i;
+
+	if (core_use_gvfs_helper) {
+		enum gh_client__created ghc = GHC__CREATED__NOTHING;
+
+		gh_client__queue_oid_array(oids, oid_nr);
+		gh_client__drain_queue(&ghc);
+		return 0;
+	}
 
 	for (i = 0; i < oid_nr; i++) {
 		struct ref *new_ref = alloc_ref(oid_to_hex(&oids[i]));
