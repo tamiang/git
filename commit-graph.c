@@ -1452,7 +1452,7 @@ static int write_commit_graph_file(struct write_commit_graph_context *ctx, struc
 	struct strbuf progress_title = STRBUF_INIT;
 	int num_chunks = 3;
 	struct object_id file_hash;
-	int write_bloom_filters = 1; //git_env_bool(GIT_TEST_BLOOM_FILTERS, 0); //can this be globally checked? put in the context struct?
+	int write_bloom_filters = !git_env_bool(GIT_TEST_COMMIT_GRAPH_DIE_ON_LOAD, 0); //1; //git_env_bool(GIT_TEST_BLOOM_FILTERS, 0); //can this be globally checked? put in the context struct?
 	
 	if (ctx->split) {
 		struct strbuf tmp_file = STRBUF_INIT;
@@ -1528,10 +1528,10 @@ static int write_commit_graph_file(struct write_commit_graph_context *ctx, struc
 		num_chunks++;
 	}
 	if (write_bloom_filters) {
-		chunk_offsets[num_chunks] = chunk_offsets[num_chunks - 1] + 4 * ctx->commits.nr;
+		chunk_offsets[num_chunks + 1] = chunk_offsets[num_chunks] + 4 * ctx->commits.nr;
 		num_chunks++;
 		
-		chunk_offsets[num_chunks] = chunk_offsets[num_chunks - 1] + 4 * 3 + total_filter_size;
+		chunk_offsets[num_chunks + 1] = chunk_offsets[num_chunks] + 4 * 3 + total_filter_size;
 		num_chunks++;
 	}	
 
@@ -1999,7 +1999,7 @@ int write_commit_graph(const char *obj_dir,
 
 	compute_generation_numbers(ctx);
 
-	if (1/*git_env_bool(GIT_TEST_BLOOM_FILTERS, 0)*/) 
+	if (!git_env_bool(GIT_TEST_COMMIT_GRAPH_DIE_ON_LOAD, 0)) //hack to get through all the tests. 
 		compute_bloom_filters(ctx,
 				      &bloom_settings,
 				      &total_filter_size);

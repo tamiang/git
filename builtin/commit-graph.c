@@ -202,11 +202,6 @@ int cmd_commit_graph(int argc, const char **argv, const char *prefix)
 	save_commit_buffer = 0;
 
 	if (argc > 0) {
-<<<<<<< HEAD
-=======
-		if (!strcmp(argv[0], "read")) 
-			return graph_read(argc, argv);
->>>>>>> Debugging in progress
 		if (!strcmp(argv[0], "verify"))
 			return graph_verify(argc, argv);
 		if (!strcmp(argv[0], "write")) 
