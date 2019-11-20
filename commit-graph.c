@@ -192,8 +192,6 @@ struct commit_graph *parse_commit_graph(void *graph_map, int fd,
 	if (graph_size < GRAPH_MIN_SIZE)
 		return NULL;
 
-	load_bloom_filters();
-
 	data = (const unsigned char *)graph_map;
 
 	graph_signature = get_be32(data);
@@ -1056,9 +1054,10 @@ static void write_graph_chunk_bloom_indexes(struct hashfile *f,
 
 	while (list < last) {
 		struct bloom_filter *filter = get_bloom_filter(ctx->r, *list, 0);
-		cur_pos += filter->len;
 
+		/* Write current position (for start of filter) before incrementing cur_pos. */
 		hashwrite_be32(f, cur_pos);
+		cur_pos += filter->len;
 		list++;
 	}
 }
@@ -1498,14 +1497,14 @@ static int write_commit_graph_file(struct write_commit_graph_context *ctx, struc
 		chunk_ids[num_chunks] = GRAPH_CHUNKID_EXTRAEDGES;
 		num_chunks++;
 	}
-	if (ctx->num_commit_graphs_after > 1) {
-		chunk_ids[num_chunks] = GRAPH_CHUNKID_BASE;
-		num_chunks++;
-	}
 	if (write_bloom_filters){
 		chunk_ids[num_chunks] = GRAPH_CHUNKID_BLOOMINDEXES;
 		num_chunks++;
 		chunk_ids[num_chunks] = GRAPH_CHUNKID_BLOOMDATA;
+		num_chunks++;
+	}
+	if (ctx->num_commit_graphs_after > 1) {
+		chunk_ids[num_chunks] = GRAPH_CHUNKID_BASE;
 		num_chunks++;
 	}
 
@@ -1522,11 +1521,6 @@ static int write_commit_graph_file(struct write_commit_graph_context *ctx, struc
 						4 * ctx->num_extra_edges;
 		num_chunks++;
 	}
-	if (ctx->num_commit_graphs_after > 1) {
-		chunk_offsets[num_chunks + 1] = chunk_offsets[num_chunks] +
-						hashsz * (ctx->num_commit_graphs_after - 1);
-		num_chunks++;
-	}
 	if (write_bloom_filters) {
 		chunk_offsets[num_chunks + 1] = chunk_offsets[num_chunks] + 4 * ctx->commits.nr;
 		num_chunks++;
@@ -1534,6 +1528,11 @@ static int write_commit_graph_file(struct write_commit_graph_context *ctx, struc
 		chunk_offsets[num_chunks + 1] = chunk_offsets[num_chunks] + 4 * 3 + total_filter_size;
 		num_chunks++;
 	}	
+	if (ctx->num_commit_graphs_after > 1) {
+		chunk_offsets[num_chunks + 1] = chunk_offsets[num_chunks] +
+						hashsz * (ctx->num_commit_graphs_after - 1);
+		num_chunks++;
+	}
 
 	hashwrite_be32(f, GRAPH_SIGNATURE);
 	hashwrite_u8(f, GRAPH_VERSION);

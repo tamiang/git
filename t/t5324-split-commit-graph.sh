@@ -4,6 +4,7 @@ test_description='split commit graph'
 . ./test-lib.sh
 
 GIT_TEST_COMMIT_GRAPH=0
+GIT_TEST_COMMIT_GRAPH_BLOOM_FILTERS=0
 
 test_expect_success 'setup repo' '
 	git init &&
@@ -21,9 +22,9 @@ graph_read_expect() {
 		NUM_BASE=$2
 	fi
 	cat >expect <<- EOF
-	header: 43475048 1 1 5 $NUM_BASE
+	header: 43475048 1 1 3 $NUM_BASE
 	num_commits: $1
-	chunks: oid_fanout oid_lookup commit_metadata bloom_indexes bloom_data
+	chunks: oid_fanout oid_lookup commit_metadata
 	EOF
 	test-tool read-graph >output &&
 	test_cmp expect output
@@ -113,6 +114,8 @@ test_expect_success 'add three more commits, write a tip graph' '
 	git merge merge/2 &&
 	git branch merge/3 &&
 	git commit-graph write --reachable --split &&
+	cat $graphdir/commit-graph-chain &&
+	ls $graphdir &&
 	test_path_is_missing $infodir/commit-graph &&
 	test_path_is_file $graphdir/commit-graph-chain &&
 	ls $graphdir/graph-*.graph >graph-files &&
@@ -126,6 +129,8 @@ test_expect_success 'add one commit, write a tip graph' '
 	test_commit 11 &&
 	git branch commits/11 &&
 	git commit-graph write --reachable --split &&
+	cat $graphdir/commit-graph-chain &&
+	ls $graphdir &&
 	test_path_is_missing $infodir/commit-graph &&
 	test_path_is_file $graphdir/commit-graph-chain &&
 	ls $graphdir/graph-*.graph >graph-files &&
