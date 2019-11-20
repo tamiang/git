@@ -1,5 +1,8 @@
 #!/bin/sh
 
+# disable bloom filters for now, tested in tXXXX
+GIT_TEST_COMMIT_GRAPH_BLOOM_FILTERS=0
+
 test_description='commit graph'
 . ./test-lib.sh
 
@@ -74,16 +77,16 @@ graph_git_behavior 'no graph' full commits/3 commits/1
 
 graph_read_expect() {
 	OPTIONAL=""
-	NUM_CHUNKS=5 #assuming bloom filters are default. 
+	NUM_CHUNKS=3 #assuming bloom filters are default. 
 	if test ! -z $2
 	then
 		OPTIONAL=" $2"
-		NUM_CHUNKS=$((5 + $(echo "$2" | wc -w)))
+		NUM_CHUNKS=$(($NUM_CHUNKS + $(echo "$2" | wc -w)))
 	fi
 	cat >expect <<- EOF
 	header: 43475048 1 1 $NUM_CHUNKS 0
 	num_commits: $1
-	chunks: oid_fanout oid_lookup commit_metadata$OPTIONAL bloom_indexes bloom_data
+	chunks: oid_fanout oid_lookup commit_metadata$OPTIONAL
 	EOF
 	test-tool read-graph >output &&
 	test_cmp expect output
@@ -451,7 +454,7 @@ corrupt_graph_verify() {
 		cp $objdir/info/commit-graph commit-graph-pre-write-test
 	fi &&
 	git status --short &&
-	GIT_TEST_COMMIT_GRAPH_DIE_ON_LOAD=true git commit-graph write &&
+	GIT_TEST_COMMIT_GRAPH_BLOOM_FILTERS=0 GIT_TEST_COMMIT_GRAPH_DIE_ON_LOAD=true git commit-graph write &&
 	git commit-graph verify
 }
 
