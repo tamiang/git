@@ -676,7 +676,9 @@ static int check_maybe_different_in_bloom_filter(struct rev_info *revs,
 }
 
 static int rev_compare_tree(struct rev_info *revs,
-			    struct commit *parent, struct commit *commit, int nth_parent)
+			    struct commit *parent, 
+                            struct commit *commit, 
+                            int nth_parent)
 {
 	struct tree *t1 = get_commit_tree(parent);
 	struct tree *t2 = get_commit_tree(commit);
@@ -3394,13 +3396,13 @@ static void expand_topo_walk(struct rev_info *revs, struct commit *commit)
 
 static void prepare_to_use_bloom_filter(struct rev_info *revs)
 {
-	const char *env = getenv("GIT_USE_POC_BLOOM_FILTER");
 	int i;
 
-	parse_commit(revs->commits->item);
+	// t4202 has a test that caught this seg fault.
+	if (!revs->commits)
+	    return;
 
-	if (!env || !*env)
-		return;
+	parse_commit(revs->commits->item);
 
 	if (!the_repository->objects->commit_graph)
 		return;
@@ -3417,7 +3419,7 @@ static void prepare_to_use_bloom_filter(struct rev_info *revs)
 		revs->bloom_key = xmalloc(sizeof(struct bloom_key));
 		fill_bloom_key(path, len, revs->bloom_key, revs->bloom_settings);
 
-		/* TODO: handle multiple pathspecs */
+		/* TODO: handle multiple pathspecs */		
 		break;
 	}
 

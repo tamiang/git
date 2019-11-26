@@ -287,7 +287,7 @@ struct commit_graph *parse_commit_graph(void *graph_map, int fd,
 			if (graph->chunk_bloom_indexes)
 				chunk_repeated = 1;
 			else {
-				load_bloom_filters(); // is this the right place to load the bloom filters slab? or should it have been done earlier?
+				load_bloom_filters(); // Confirm this is the right place
 				graph->chunk_bloom_indexes = data + chunk_offset;
 			}
 			break;

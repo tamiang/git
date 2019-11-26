@@ -185,7 +185,6 @@ test_expect_success 'test merge stragety constants' '
 		test_commit 14 &&
 		git commit-graph write --reachable --split --size-multiple=2 &&
 		test_line_count = 3 $graphdir/commit-graph-chain
-
 	) &&
 	git clone . merge-10 &&
 	(
