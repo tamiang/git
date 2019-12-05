@@ -101,7 +101,7 @@ printf "c7\nc4\nc1" > expect
 
 test_expect_success 'log using bloom filters' '
 	cd "$TRASH_DIRECTORY/full" &&
-	git log --pretty="format:%s"  -- file1 > actual &&
+	GIT_TRACE_BLOOM_FILTER=1 git log --pretty="format:%s"  -- file1 > actual &&
 	test_cmp expect actual
 '
 

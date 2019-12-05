@@ -630,17 +630,21 @@ static int trace_bloom_filter_atexit_registered;
 static unsigned int bloom_filter_count_maybe;
 static unsigned int bloom_filter_count_definitely_not;
 static unsigned int bloom_filter_count_false_positive;
+static unsigned int bloom_filter_not_parsed_correctly;
 
 static void print_bloom_filter_stats_atexit(void)
 {
 	unsigned int total = bloom_filter_count_maybe +
-			     bloom_filter_count_definitely_not;
+			     bloom_filter_count_definitely_not + 
+			     bloom_filter_not_parsed_correctly;
+
 	trace_printf_key(&trace_bloom_filter,
-			 "bloom filter total queries: %d definitely not: %d maybe: %d false positives: %d fp ratio: %f\n",
+			 "bloom filter total queries: %d definitely not: %d maybe: %d false positives: %d NOT-parsed: %d fp ratio: %f\n",
 			 total,
 			 bloom_filter_count_definitely_not,
 			 bloom_filter_count_maybe,
 			 bloom_filter_count_false_positive,
+			 bloom_filter_not_parsed_correctly,
 			 (1.0 * bloom_filter_count_false_positive) / total);
 }
 
@@ -663,7 +667,10 @@ static int check_maybe_different_in_bloom_filter(struct rev_info *revs,
 	filter = get_bloom_filter(the_repository, commit, 0);
 
 	if (!filter || !filter->len)
-		return -1;
+	{
+	    bloom_filter_not_parsed_correctly++;
+	    return 1;
+	}
 
 	result = bloom_filter_contains(filter, key, settings);
 
@@ -682,7 +689,8 @@ static int rev_compare_tree(struct rev_info *revs,
 {
 	struct tree *t1 = get_commit_tree(parent);
 	struct tree *t2 = get_commit_tree(commit);
-
+	
+	load_bloom_filters();
 	int bloom_ret = 1;
 
 	if (!t1)
@@ -3397,6 +3405,8 @@ static void expand_topo_walk(struct rev_info *revs, struct commit *commit)
 static void prepare_to_use_bloom_filter(struct rev_info *revs)
 {
 	int i;
+	
+	load_bloom_filters();
 
 	// t4202 has a test that caught this seg fault.
 	if (!revs->commits)

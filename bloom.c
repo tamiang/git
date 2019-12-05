@@ -232,11 +232,11 @@ struct bloom_filter *get_bloom_filter(struct repository *r,
 	return filter;
 }
 
-void set_bloom_filter(struct commit *c, struct bloom_filter *filter)
-{
-	struct bloom_filter *current = bloom_filter_slab_at(&bloom_filters, c);
-
-	free(current->data);
-	current->data = filter->data;
-	current->len = filter->len;
-}
+//void set_bloom_filter(struct commit *c, struct bloom_filter *filter)
+//{
+//	struct bloom_filter *current = bloom_filter_slab_at(&bloom_filters, c);
+//
+//	free(current->data);
+//	current->data = filter->data;
+//	current->len = filter->len;
+//}
