@@ -1051,8 +1051,8 @@ static void write_graph_chunk_bloom_indexes(struct hashfile *f,
 
 	while (list < last) {
 		struct bloom_filter *filter = get_bloom_filter(ctx->r, *list, 0);
-		hashwrite_be32(f, cur_pos);
 		cur_pos += filter->len;
+		hashwrite_be32(f, cur_pos);
 		list++;
 	}
 }

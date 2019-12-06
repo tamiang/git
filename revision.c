@@ -630,21 +630,18 @@ static int trace_bloom_filter_atexit_registered;
 static unsigned int bloom_filter_count_maybe;
 static unsigned int bloom_filter_count_definitely_not;
 static unsigned int bloom_filter_count_false_positive;
-static unsigned int bloom_filter_not_parsed_correctly;
 
 static void print_bloom_filter_stats_atexit(void)
 {
-	unsigned int total = bloom_filter_count_maybe +
-			     bloom_filter_count_definitely_not + 
-			     bloom_filter_not_parsed_correctly;
+    unsigned int total = bloom_filter_count_maybe +
+	bloom_filter_count_definitely_not;
 
 	trace_printf_key(&trace_bloom_filter,
-			 "bloom filter total queries: %d definitely not: %d maybe: %d false positives: %d NOT-parsed: %d fp ratio: %f\n",
+			 "bloom filter total queries: %d definitely not: %d maybe: %d false positives: %d fp ratio: %f\n",
 			 total,
 			 bloom_filter_count_definitely_not,
 			 bloom_filter_count_maybe,
 			 bloom_filter_count_false_positive,
-			 bloom_filter_not_parsed_correctly,
 			 (1.0 * bloom_filter_count_false_positive) / total);
 }
 
@@ -667,10 +664,7 @@ static int check_maybe_different_in_bloom_filter(struct rev_info *revs,
 	filter = get_bloom_filter(the_repository, commit, 0);
 
 	if (!filter || !filter->len)
-	{
-	    bloom_filter_not_parsed_correctly++;
 	    return 1;
-	}
 
 	result = bloom_filter_contains(filter, key, settings);
 
@@ -3433,7 +3427,7 @@ static void prepare_to_use_bloom_filter(struct rev_info *revs)
 		break;
 	}
 
-	if (trace_want(&trace_bloom_filter)) {
+	if (1 || trace_want(&trace_bloom_filter)) {
 		if (!trace_bloom_filter_atexit_registered) {
 			atexit(print_bloom_filter_stats_atexit);
 			trace_bloom_filter_atexit_registered = 1;
