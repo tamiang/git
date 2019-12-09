@@ -219,9 +219,9 @@ pre_context_calculation:
 				 * Did we extend context upwards into an
 				 * ignored change?
 				 */
-				while (xchp != xch &&
-				       xchp->i1 + xchp->chg1 <= s1 &&
-				       xchp->i2 + xchp->chg2 <= s2)
+				while (xchp != xch
+				       && xchp->i1 + xchp->chg1 <= s1
+				       && xchp->i2 + xchp->chg2 <= s2)
 					xchp = xchp->next;
 
 				/* If so, show it after all. */
