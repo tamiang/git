@@ -677,15 +677,15 @@ static int check_maybe_different_in_bloom_filter(struct rev_info *revs,
 }
 
 static int rev_compare_tree(struct rev_info *revs,
-			    struct commit *parent, 
-                            struct commit *commit, 
+			    struct commit *parent,
+                            struct commit *commit,
                             int nth_parent)
 {
+	int bloom_ret = 1;
 	struct tree *t1 = get_commit_tree(parent);
 	struct tree *t2 = get_commit_tree(commit);
-	
+
 	load_bloom_filters();
-	int bloom_ret = 1;
 
 	if (!t1)
 		return REV_TREE_NEW;

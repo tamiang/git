@@ -32,7 +32,7 @@ static uint32_t seed_murmur3(uint32_t seed, const char *data, int len)
 	int i;
 	uint32_t k1 = 0;
 	const char *tail;
-                    
+
 	int len4 = len / sizeof(uint32_t);
 
         const uint32_t *blocks = (const uint32_t*)data;
@@ -192,11 +192,17 @@ struct bloom_filter *get_bloom_filter(struct repository *r,
 				diff_tree_oid(NULL, &c->object.oid, "", &revs.diffopt);
 			diffcore_std(&revs.diffopt);
 
+			fprintf(stderr, "computing filter for %s: (%d)\n", oid_to_hex(&c->object.oid), diff_queued_diff.nr);
+
 			if (diff_queued_diff.nr <= 512) {
+				// TODO: examine the paths to find the _real_ set of changes.
+				// Create a hashset of the paths and their partents
+
 				filter->len = (diff_queued_diff.nr * settings.bits_per_entry + BITS_PER_BLOCK - 1)
 					      / BITS_PER_BLOCK;
 				filter->data = xcalloc(sizeof(uint64_t), filter->len);
 
+				// loop through the hashset
 				for (i = 0; i < diff_queued_diff.nr; i++) {
 					const char *path = diff_queued_diff.queue[i]->two->path;
 					const char *p = path;
@@ -211,15 +217,26 @@ struct bloom_filter *get_bloom_filter(struct repository *r,
 					 */
 					do {
 						struct bloom_key key;
+						char *last_slash;
+
+						fprintf(stderr, "%s\n", p);
 						fill_bloom_key(p, strlen(p), &key, &settings);
 						add_key_to_filter(&key, filter, &settings);
 
-						p = strchrnul(p + 1, '/');
+						last_slash = strrchr(p, '/');
+
+						if (!last_slash)
+							last_slash = (char *)p;
+
+						*last_slash = '\0';
 					} while (*p);
 
 					diff_free_filepair(diff_queued_diff.queue[i]);
 				}
+
+				fprintf(stderr, "\n");
 			} else {
+				fprintf(stderr, "TOO LARGE!\n\n");
 				filter->data = NULL;
 				filter->len = 0;
 			}
