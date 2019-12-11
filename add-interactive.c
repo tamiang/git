@@ -279,7 +279,7 @@ static ssize_t list_and_choose(struct add_i_state *s,
 	find_unique_prefixes(items);
 
 	for (;;) {
-		char *p, *endp;
+		char *p;
 
 		strbuf_reset(&input);
 
@@ -330,7 +330,16 @@ static ssize_t list_and_choose(struct add_i_state *s,
 				from = 0;
 				to = items->items.nr;
 			} else if (isdigit(*p)) {
-				/* A range can be specified like 5-7 or 5-. */
+				char *endp;
+				/*
+				 * A range can be specified like 5-7 or 5-.
+				 *
+				 * Note: `from` is 0-based while the user input
+				 * is 1-based, hence we have to decrement by
+				 * one. We do not have to decrement `to` even
+				 * if it is 0-based because it is an exclusive
+				 * boundary.
+				 */
 				from = strtoul(p, &endp, 10) - 1;
 				if (endp == p + sep)
 					to = from + 1;
@@ -342,7 +351,8 @@ static ssize_t list_and_choose(struct add_i_state *s,
 				}
 			}
 
-			p[sep] = '\0';
+			if (p[sep])
+				p[sep++] = '\0';
 			if (from < 0) {
 				from = find_unique(p, items);
 				if (from >= 0)
@@ -368,7 +378,7 @@ static ssize_t list_and_choose(struct add_i_state *s,
 					res += choose ? +1 : -1;
 				}
 
-			p += sep + 1;
+			p += sep;
 		}
 
 		if ((immediate && res != LIST_AND_CHOOSE_ERROR) ||
@@ -417,7 +427,7 @@ static int pathname_entry_cmp(const void *unused_cmp_data,
 }
 
 struct collection_status {
-	enum { FROM_WORKTREE = 0, FROM_INDEX = 1 } phase;
+	enum { FROM_WORKTREE = 0, FROM_INDEX = 1 } mode;
 
 	const char *reference;
 
@@ -463,9 +473,9 @@ static void collect_changes_cb(struct diff_queue_struct *q,
 		}
 
 		file_item = entry->item;
-		adddel = s->phase == FROM_INDEX ?
+		adddel = s->mode == FROM_INDEX ?
 			&file_item->index : &file_item->worktree;
-		other_adddel = s->phase == FROM_INDEX ?
+		other_adddel = s->mode == FROM_INDEX ?
 			&file_item->worktree : &file_item->index;
 		adddel->seen = 1;
 		adddel->add = stat.files[i]->added;
@@ -500,7 +510,7 @@ static int get_modified_files(struct repository *r,
 	struct object_id head_oid;
 	int is_initial = !resolve_ref_unsafe("HEAD", RESOLVE_REF_READING,
 					     &head_oid, NULL);
-	struct collection_status s = { FROM_WORKTREE };
+	struct collection_status s = { 0 };
 	int i;
 
 	if (discard_index(r->index) < 0 ||
@@ -516,9 +526,9 @@ static int get_modified_files(struct repository *r,
 		struct setup_revision_opt opt = { 0 };
 
 		if (filter == INDEX_ONLY)
-			s.phase = i ? FROM_WORKTREE : FROM_INDEX;
+			s.mode = (i == 0) ? FROM_INDEX : FROM_WORKTREE;
 		else
-			s.phase = i ? FROM_INDEX : FROM_WORKTREE;
+			s.mode = (i == 0) ? FROM_WORKTREE : FROM_INDEX;
 		s.skip_unseen = filter && i;
 
 		opt.def = is_initial ?
@@ -534,12 +544,15 @@ static int get_modified_files(struct repository *r,
 		if (ps)
 			copy_pathspec(&rev.prune_data, ps);
 
-		if (s.phase == FROM_INDEX)
+		if (s.mode == FROM_INDEX)
 			run_diff_index(&rev, 1);
 		else {
 			rev.diffopt.flags.ignore_dirty_submodules = 1;
 			run_diff_files(&rev, 0);
 		}
+
+		if (ps)
+			clear_pathspec(&rev.prune_data);
 	}
 	hashmap_free_entries(&s.file_map, struct pathname_entry, ent);
 	if (unmerged_count)
@@ -980,7 +993,7 @@ static int run_diff(struct add_i_state *s, const struct pathspec *ps,
 
 static int run_help(struct add_i_state *s, const struct pathspec *unused_ps,
 		    struct prefix_item_list *unused_files,
-		    struct list_and_choose_options *opts)
+		    struct list_and_choose_options *unused_opts)
 {
 	color_fprintf_ln(stdout, s->help_color, "status        - %s",
 			 _("show paths with changes"));

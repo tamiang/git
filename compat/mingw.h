@@ -479,6 +479,20 @@ char *mingw_query_user_email(void);
 #endif
 
 /**
+ * Verifies that the given path is a valid one on Windows.
+ *
+ * In particular, path segments are disallowed which
+ *
+ * - end in a period or a space (except the special directories `.` and `..`).
+ *
+ * - contain any of the reserved characters, e.g. `:`, `;`, `*`, etc
+ *
+ * Returns 1 upon success, otherwise 0.
+ */
+int is_valid_win32_path(const char *path);
+#define is_valid_path(path) is_valid_win32_path(path)
+
+/**
  * Max length of long paths (exceeding MAX_PATH). The actual maximum supported
  * by NTFS is 32,767 (* sizeof(wchar_t)), but we choose an arbitrary smaller
  * value to limit required stack memory.
