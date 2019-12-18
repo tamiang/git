@@ -1026,7 +1026,7 @@ static void write_graph_chunk_bloom_indexes(struct hashfile *f,
 	uint32_t cur_pos = 0;
 
 	while (list < last) {
-		struct bloom_filter *filter = get_bloom_filter(ctx->r, *list);
+		struct bloom_filter *filter = get_bloom_filter(ctx->r, *list, 0);
 		cur_pos += filter->len;
 		hashwrite_be32(f, cur_pos);
 		list++;
@@ -1045,7 +1045,7 @@ static void write_graph_chunk_bloom_data(struct hashfile *f,
 	hashwrite_be32(f, settings->bits_per_entry);
 
 	while (first < last) {
-		struct bloom_filter *filter = get_bloom_filter(ctx->r, *first);
+		struct bloom_filter *filter = get_bloom_filter(ctx->r, *first, 0);
 		hashwrite(f, filter->data, filter->len * sizeof(uint64_t));
 		first++;
 	}
@@ -1212,7 +1212,7 @@ static void compute_bloom_filters(struct write_commit_graph_context *ctx)
 
 	for (i = 0; i < ctx->commits.nr; i++) {
 		struct commit *c = ctx->commits.list[i];
-		struct bloom_filter *filter = get_bloom_filter(ctx->r, c);
+		struct bloom_filter *filter = get_bloom_filter(ctx->r, c, 1);
 		ctx->total_bloom_filter_size += 8 * filter->len;
 		display_progress(progress, i + 1);
 	}

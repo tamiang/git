@@ -1,5 +1,7 @@
 #include "git-compat-util.h"
 #include "bloom.h"
+#include "commit.h"
+#include "commit-slab.h"
 #include "commit-graph.h"
 #include "object-store.h"
 #include "diff.h"
@@ -119,83 +121,109 @@ static void add_key_to_filter(struct bloom_key *key,
 	}
 }
 
+static void fill_filter_from_graph(struct commit_graph *g,
+				   struct bloom_filter *filter,
+				   struct commit *c)
+{
+	uint32_t prev_index = 0;
+	uint32_t next_index = get_be32(g->chunk_bloom_indexes + 4 * c->graph_pos);
+
+	if (c->graph_pos > 0)
+		prev_index = get_be32(g->chunk_bloom_indexes + 4 * (c->graph_pos - 1));
+
+	filter->len = next_index - prev_index;
+	filter->data = (uint64_t *)(g->chunk_bloom_data + 8 * prev_index + 12);
+}
+
 void load_bloom_filters(void)
 {
 	init_bloom_filter_slab(&bloom_filters);
 }
 
 struct bloom_filter *get_bloom_filter(struct repository *r,
-				      struct commit *c)
+									  struct commit *c,
+									  int compute_if_null)
 {
 	struct bloom_filter *filter;
 	struct bloom_filter_settings settings = DEFAULT_BLOOM_FILTER_SETTINGS;
-	int i;
-	struct rev_info revs;
-	const char *revs_argv[] = {NULL, "HEAD", NULL};
+	int already_computed = 0;
 
 	filter = bloom_filter_slab_at(&bloom_filters, c);
-	init_revisions(&revs, NULL);
-	revs.diffopt.flags.recursive = 1;
 
-	setup_revisions(2, revs_argv, &revs, NULL);
-
-	if (c->parents)
-		diff_tree_oid(&c->parents->item->object.oid, &c->object.oid, "", &revs.diffopt);
-	else
-		diff_tree_oid(NULL, &c->object.oid, "", &revs.diffopt);
-	diffcore_std(&revs.diffopt);
-
-	if (diff_queued_diff.nr <= 512) {
-		struct hashmap pathmap;
-		struct pathmap_hash_entry* e;
-		struct hashmap_iter iter;
-		hashmap_init(&pathmap, NULL, NULL, 0);
-
-		for (i = 0; i < diff_queued_diff.nr; i++) {
-		    const char* path = diff_queued_diff.queue[i]->two->path;
-		    const char* p = path;
-
-		    /*
-		     * Add each leading directory of the changed file, i.e. for
-		     * 'dir/subdir/file' add 'dir' and 'dir/subdir' as well, so
-		     * the Bloom filter could be used to speed up commands like
-		     * 'git log dir/subdir', too.
-		     *
-		     * Note that directories are added without the trailing '/'.
-		     */
-		    do {
-				char* last_slash = strrchr(p, '/');
-
-				FLEX_ALLOC_STR(e, path, path);
-				hashmap_entry_init(&e->entry, strhash(p));
-				hashmap_add(&pathmap, &e->entry);
-
-				if (!last_slash)
-				    last_slash = (char*)p;
-				*last_slash = '\0';
-
-		    } while (*p);
-
-		    diff_free_filepair(diff_queued_diff.queue[i]);
+	if (!filter->data) {
+		load_commit_graph_info(r, c);
+		if (c->graph_pos != COMMIT_NOT_FROM_GRAPH && r->objects->commit_graph->chunk_bloom_indexes) {
+			fill_filter_from_graph(r->objects->commit_graph, filter, c);
+			already_computed = 1;
 		}
-
-		filter->len = (hashmap_get_size(&pathmap) * settings.bits_per_entry + BITS_PER_BLOCK - 1) / BITS_PER_BLOCK;
-		filter->data = xcalloc(sizeof(uint64_t), filter->len);
-
-		hashmap_for_each_entry(&pathmap, &iter, e, entry) {
-		    struct bloom_key key;
-		    fill_bloom_key(e->path, strlen(e->path), &key, &settings);
-		    add_key_to_filter(&key, filter, &settings);
-		}
-
-		hashmap_free_entries(&pathmap, struct pathmap_hash_entry, entry);
-	} else {
-		filter->data = NULL;
-		filter->len = 0;
 	}
 
-	free(diff_queued_diff.queue);
-	DIFF_QUEUE_CLEAR(&diff_queued_diff);
+	if (!filter->data && compute_if_null && !already_computed) {
+		int i;
+		struct rev_info revs;
+		const char *revs_argv[] = {NULL, "HEAD", NULL};
+		init_revisions(&revs, NULL);
+		revs.diffopt.flags.recursive = 1;
+
+		setup_revisions(2, revs_argv, &revs, NULL);
+
+		if (c->parents)
+			diff_tree_oid(&c->parents->item->object.oid, &c->object.oid, "", &revs.diffopt);
+		else
+			diff_tree_oid(NULL, &c->object.oid, "", &revs.diffopt);
+		diffcore_std(&revs.diffopt);
+
+		if (diff_queued_diff.nr <= 512) {
+			struct hashmap pathmap;
+			struct pathmap_hash_entry* e;
+			struct hashmap_iter iter;
+			hashmap_init(&pathmap, NULL, NULL, 0);
+
+			for (i = 0; i < diff_queued_diff.nr; i++) {
+			    const char* path = diff_queued_diff.queue[i]->two->path;
+			    const char* p = path;
+
+			    /*
+			     * Add each leading directory of the changed file, i.e. for
+			     * 'dir/subdir/file' add 'dir' and 'dir/subdir' as well, so
+			     * the Bloom filter could be used to speed up commands like
+			     * 'git log dir/subdir', too.
+			     *
+			     * Note that directories are added without the trailing '/'.
+			     */
+			    do {
+					char* last_slash = strrchr(p, '/');
+					FLEX_ALLOC_STR(e, path, path);
+					hashmap_entry_init(&e->entry, strhash(p));
+					hashmap_add(&pathmap, &e->entry);
+
+					if (!last_slash)
+					    last_slash = (char*)p;
+					*last_slash = '\0';
+
+			    } while (*p);
+
+			    diff_free_filepair(diff_queued_diff.queue[i]);
+			}
+
+			filter->len = (hashmap_get_size(&pathmap) * settings.bits_per_entry + BITS_PER_BLOCK - 1) / BITS_PER_BLOCK;
+			filter->data = xcalloc(sizeof(uint64_t), filter->len);
+
+			hashmap_for_each_entry(&pathmap, &iter, e, entry) {
+			    struct bloom_key key;
+			    fill_bloom_key(e->path, strlen(e->path), &key, &settings);
+			    add_key_to_filter(&key, filter, &settings);
+			}
+
+			hashmap_free_entries(&pathmap, struct pathmap_hash_entry, entry);
+		} else {
+			filter->data = NULL;
+			filter->len = 0;
+		}
+
+		free(diff_queued_diff.queue);
+		DIFF_QUEUE_CLEAR(&diff_queued_diff);
+	}
 
 	return filter;
 }
