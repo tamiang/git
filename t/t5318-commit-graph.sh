@@ -160,6 +160,12 @@ test_expect_success 'commit-graph verify with the --no-progress option' '
 	test_line_count = 0 err
 '
 
+test_expect_success 'commit-graph write accepts --bloom option' '
+	cd "$TRASH_DIRECTORY/full" &&
+	git commit-graph write --bloom 2>err &&
+	test_line_count = 0 err
+'
+
 # Current graph structure:
 #
 #   __M3___

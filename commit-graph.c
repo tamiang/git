@@ -794,7 +794,8 @@ struct write_commit_graph_context {
 	unsigned append:1,
 		 report_progress:1,
 		 split:1,
-		 check_oids:1;
+		 check_oids:1,
+		 bloom:1;
 
 	const struct split_commit_graph_opts *split_opts;
 };
@@ -1791,6 +1792,7 @@ int write_commit_graph(const char *obj_dir,
 	ctx->split = flags & COMMIT_GRAPH_WRITE_SPLIT ? 1 : 0;
 	ctx->check_oids = flags & COMMIT_GRAPH_WRITE_CHECK_OIDS ? 1 : 0;
 	ctx->split_opts = split_opts;
+	ctx->bloom = flags & COMMIT_GRAPH_WRITE_BLOOM_FILTERS ? 1 : 0;
 
 	if (ctx->split) {
 		struct commit_graph *g;
