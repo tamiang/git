@@ -125,11 +125,18 @@ static void fill_filter_from_graph(struct commit_graph *g,
 				   struct bloom_filter *filter,
 				   struct commit *c)
 {
-	uint32_t prev_index = 0;
-	uint32_t next_index = get_be32(g->chunk_bloom_indexes + 4 * c->graph_pos);
+	uint32_t lex_pos, prev_index, next_index;
 
-	if (c->graph_pos > 0)
-		prev_index = get_be32(g->chunk_bloom_indexes + 4 * (c->graph_pos - 1));
+	while (c->graph_pos < g->num_commits_in_base)
+		g = g->base_graph;
+
+	lex_pos = c->graph_pos - g->num_commits_in_base;
+
+	next_index = get_be32(g->chunk_bloom_indexes + 4 * lex_pos);
+	if (lex_pos)
+		prev_index = get_be32(g->chunk_bloom_indexes + 4 * (lex_pos - 1));
+	else
+		prev_index = 0;
 
 	filter->len = next_index - prev_index;
 	filter->data = (uint64_t *)(g->chunk_bloom_data + 8 * prev_index + 12);
