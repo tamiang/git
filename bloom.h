@@ -36,7 +36,8 @@ struct bloom_key {
 void load_bloom_filters(void);
 
 struct bloom_filter *get_bloom_filter(struct repository *r,
-				      struct commit *c);
+				      struct commit *c,
+				      int compute_if_null);
 
 void fill_bloom_key(const char *data,
 		    int len,
