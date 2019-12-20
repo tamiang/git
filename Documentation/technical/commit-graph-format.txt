@@ -17,6 +17,9 @@ metadata, including:
 - The parents of the commit, stored using positional references within
   the graph file.
 
+- The bloom filter of the commit carrying the paths that were changed between
+  the commit and its first parent.
+
 These positional references are stored as unsigned 32-bit integers
 corresponding to the array position within the list of commit OIDs. Due
 to some special constants we use to track parents, we can store at most
@@ -92,6 +95,20 @@ CHUNK DATA:
       on. Starting at that array position, iterate through this list of commit
       positions for the parents until reaching a value with the most-significant
       bit on. The other bits correspond to the position of the last parent.
+
+  Bloom Filter Index (ID: {'B', 'I', 'D', 'X'}) [Optional]
+      For each commit we store the offset of its bloom filter in the BDAT chunk
+      as follows:
+      BIDX[i] = number of 8-byte words in all the bloom filters from commit 0 to
+		commit i (inclusive)
+
+  Bloom Filter Data (ID: {'B', 'D', 'A', 'T'}) [Optional]
+      * It starts with three 32 bit integers for the
+	    - version of the hash algorithm being used
+	    - the number of hashes used in the computation
+	    - the number of bits per entry
+	  * The rest of the chunk is the concatenation of all the computed bloom 
+	  filters for the commits in lexicographic order.
 
   Base Graphs List (ID: {'B', 'A', 'S', 'E'}) [Optional]
       This list of H-byte hashes describe a set of B commit-graph files that
