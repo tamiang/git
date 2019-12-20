@@ -44,4 +44,8 @@ void fill_bloom_key(const char *data,
 		    struct bloom_key *key,
 		    struct bloom_filter_settings *settings);
 
+int bloom_filter_contains(struct bloom_filter *filter,
+			  struct bloom_key *key,
+			  struct bloom_filter_settings *settings);
+
 #endif
