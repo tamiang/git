@@ -226,6 +226,8 @@ struct bloom_filter *get_bloom_filter(struct repository *r,
 
 		hashmap_free_entries(&pathmap, struct pathmap_hash_entry, entry);
 	} else {
+		for (i = 0; i < diff_queued_diff.nr; i++)
+			diff_free_filepair(diff_queued_diff.queue[i]);
 		filter->data = NULL;
 		filter->len = 0;
 	}
