@@ -154,8 +154,7 @@ struct bloom_filter *get_bloom_filter(struct repository *r,
 	struct bloom_filter *filter;
 	struct bloom_filter_settings settings = DEFAULT_BLOOM_FILTER_SETTINGS;
 	int i;
-	struct rev_info revs;
-	const char *revs_argv[] = {NULL, "HEAD", NULL};
+	struct diff_options diffopt;
 
 	filter = bloom_filter_slab_at(&bloom_filters, c);
 
@@ -170,16 +169,15 @@ struct bloom_filter *get_bloom_filter(struct repository *r,
 	if (filter->data || !compute_if_null)
 			return filter;
 
-	init_revisions(&revs, NULL);
-	revs.diffopt.flags.recursive = 1;
-
-	setup_revisions(2, revs_argv, &revs, NULL);
+	repo_diff_setup(r, &diffopt);
+	diffopt.flags.recursive = 1;
+	diff_setup_done(&diffopt);
 
 	if (c->parents)
-		diff_tree_oid(&c->parents->item->object.oid, &c->object.oid, "", &revs.diffopt);
+		diff_tree_oid(&c->parents->item->object.oid, &c->object.oid, "", &diffopt);
 	else
-		diff_tree_oid(NULL, &c->object.oid, "", &revs.diffopt);
-	diffcore_std(&revs.diffopt);
+		diff_tree_oid(NULL, &c->object.oid, "", &diffopt);
+	diffcore_std(&diffopt);
 
 	if (diff_queued_diff.nr <= 512) {
 		struct hashmap pathmap;
