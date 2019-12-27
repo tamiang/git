@@ -161,6 +161,12 @@ struct diff_options {
 	int dirstat_permille;
 	int setup;
 	int abbrev;
+
+	/* If non-zero, then stop computing after this many changes. */
+	int max_changes;
+	/* For internal use only. */
+	int num_changes;
+
 	int ita_invisible_in_index;
 /* white-space error highlighting */
 #define WSEH_NEW (1<<12)
