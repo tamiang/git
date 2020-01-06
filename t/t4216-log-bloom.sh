@@ -54,7 +54,7 @@ graph_read_expect() {
 	num_commits: $1
 	chunks: oid_fanout oid_lookup commit_metadata bloom_indexes bloom_data$OPTIONAL
 	EOF
-	test-tool read-graph >output &&
+	git commit-graph read >output &&
 	test_cmp expect output
 }
 
