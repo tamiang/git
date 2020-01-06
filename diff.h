@@ -161,6 +161,7 @@ struct diff_options {
 	int dirstat_permille;
 	int setup;
 	int abbrev;
+	int skip_batch_download_objects;
 
 	/* If non-zero, then stop computing after this many changes. */
 	int max_changes;
