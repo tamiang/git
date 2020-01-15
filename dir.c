@@ -1290,6 +1290,9 @@ static struct path_pattern *last_matching_pattern_from_list(const char *pathname
 	return res;
 }
 
+static int get_dtype(struct dirent *de, struct index_state *istate,
+		     const char *path, int len);
+
 /*
  * Scan the list of patterns to determine if the ordered list
  * of patterns matches on 'pathname'.
@@ -1930,6 +1933,28 @@ static int resolve_dtype(int dtype, struct index_state *istate,
 	return dtype;
 }
 
+static int get_dtype(struct dirent *de, struct index_state *istate,
+		     const char *path, int len)
+{
+	int dtype = de ? DTYPE(de) : DT_UNKNOWN;
+	struct stat st;
+
+	if (dtype != DT_UNKNOWN)
+		return dtype;
+	dtype = get_index_dtype(istate, path, len);
+	if (dtype != DT_UNKNOWN)
+		return dtype;
+	if (lstat(path, &st))
+		return dtype;
+	if (S_ISREG(st.st_mode))
+		return DT_REG;
+	if (S_ISDIR(st.st_mode))
+		return DT_DIR;
+	if (S_ISLNK(st.st_mode))
+		return DT_LNK;
+	return dtype;
+}
+
 static enum path_treatment treat_one_path(struct dir_struct *dir,
 					  struct untracked_cache_dir *untracked,
 					  struct index_state *istate,
@@ -2369,6 +2394,15 @@ static int treat_leading_path(struct dir_struct *dir,
 			      const char *path, int len,
 			      const struct pathspec *pathspec)
 {
+	/*
+	 * WARNING WARNING WARNING:
+	 *
+	 * Any updates to the traversal logic here may need corresponding
+	 * updates in read_directory_recursive().  See 777b420347 (dir:
+	 * synchronize treat_leading_path() and read_directory_recursive(),
+	 * 2019-12-19) and its parent commit for details.
+	 */
+
 	struct strbuf sb = STRBUF_INIT;
 	struct strbuf subdir = STRBUF_INIT;
 	int prevlen, baselen;
