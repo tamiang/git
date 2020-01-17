@@ -1379,7 +1379,7 @@ static int do_fetch(struct transport *transport,
 
 	if (tags == TAGS_DEFAULT && autotags)
 		transport_set_option(transport, TRANS_OPT_FOLLOWTAGS, "1");
-	if (prune) {
+	if (prune && update_remote_refs) {
 		/*
 		 * We only prune based on refspecs specified
 		 * explicitly (via command line or configuration); we

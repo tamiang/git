@@ -174,6 +174,28 @@ test_expect_success 'fetch --prune --tags with refspec prunes based on refspec' 
 	git rev-parse sometag
 '
 
+test_expect_success 'fetch --no-update-remote-refs keeps existing refs' '
+	cd "$TRASH_DIRECTORY" &&
+	git clone "$D" remote-refs &&
+	git -C remote-refs rev-parse remotes/origin/master >old &&
+	git -C remote-refs update-ref refs/remotes/origin/master master~1 &&
+	git -C remote-refs rev-parse remotes/origin/master >new &&
+	git -C remote-refs fetch --no-update-remote-refs origin &&
+	git -C remote-refs rev-parse remotes/origin/master >actual &&
+	test_cmp new actual &&
+	git -C remote-refs fetch origin &&
+	git -C remote-refs rev-parse remotes/origin/master >actual &&
+	test_cmp old actual
+'
+
+test_expect_success 'fetch --no-update-remote-refs --prune does not remove refs' '
+	git -C remote-refs update-ref refs/remotes/origin/foo/otherbranch master &&
+	git -C remote-refs fetch --prune --no-update-remote-refs origin &&
+	git -C remote-refs rev-parse remotes/origin/foo/otherbranch &&
+	git -C remote-refs fetch --prune origin &&
+	test_must_fail git -C remote-refs rev-parse remotes/origin/foo/otherbranch
+'
+
 test_expect_success 'fetch tags when there is no tags' '
 
     cd "$D" &&
