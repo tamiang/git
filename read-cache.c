@@ -1321,7 +1321,8 @@ static int add_index_entry_with_check(struct index_state *istate, struct cache_e
 
 	if (!ok_to_add)
 		return -1;
-	if (!verify_path(ce->name, ce->ce_mode))
+	if (!(ce->ce_flags & (CE_NEW_SKIP_WORKTREE | CE_SKIP_WORKTREE)) &&
+	    !verify_path(ce->name, ce->ce_mode))
 		return error(_("invalid path '%s'"), ce->name);
 
 	if (!skip_df_check &&
