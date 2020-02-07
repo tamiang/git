@@ -124,8 +124,9 @@ void add_key_to_filter(struct bloom_key *key,
 	for (i = 0; i < settings->num_hashes; i++) {
 		uint64_t hash_mod = key->hashes[i] % mod;
 		uint64_t block_pos = hash_mod / BITS_PER_WORD;
+		uint64_t bit = get_bitmask(hash_mod);
 
-		filter->data[block_pos] |= get_bitmask(hash_mod);
+		filter->data[block_pos] |= htonll(bit);
 	}
 }
 
@@ -269,7 +270,8 @@ int bloom_filter_contains(struct bloom_filter *filter,
 	for (i = 0; i < settings->num_hashes; i++) {
 		uint64_t hash_mod = key->hashes[i] % mod;
 		uint64_t block_pos = hash_mod / BITS_PER_WORD;
-		if (!(filter->data[block_pos] & get_bitmask(hash_mod)))
+		uint64_t bit = get_bitmask(hash_mod);
+		if (!(filter->data[block_pos] & htonll(bit)))
 			return 0;
 	}
 

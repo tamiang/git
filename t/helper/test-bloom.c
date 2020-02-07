@@ -23,7 +23,7 @@ static void print_bloom_filter(struct bloom_filter *filter) {
 	printf("Filter_Length:%d\n", filter->len);
 	printf("Filter_Data:");
 	for (i = 0; i < filter->len; i++){
-		printf("%"PRIx64"|", filter->data[i]);
+		printf("%"PRIx64"|", ntohll(filter->data[i]));
 	}
 	printf("\n");
 }
