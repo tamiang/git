@@ -202,7 +202,7 @@ static int write_patterns_to_sparse_checkout(
 
 int write_patterns_and_update(struct pattern_list *pl)
 {
-        return write_patterns_to_sparse_checkout(pl, 1);
+	return write_patterns_to_sparse_checkout(pl, 1);
 }
 
 void insert_recursive_pattern(struct pattern_list *pl, struct strbuf *path)
@@ -264,6 +264,9 @@ int load_in_tree_from_config(struct repository *r, struct string_list *sl)
 	struct string_list_item *item;
 	const struct string_list *cl = repo_config_get_value_multi(r, SPARSE_CHECKOUT_IN_TREE);
 
+	if (!cl)
+		return 1;
+
 	for_each_string_list_item(item, cl)
 		string_list_insert(sl, item->string);
 
@@ -310,11 +313,14 @@ int load_in_tree_pattern_list(struct index_state *istate, struct string_list *sl
 			if (next)
 				*next = '\0';
 
-			strbuf_reset(&path);
-			strbuf_addch(&path, '/');
-			strbuf_addstr(&path, cur);
+			if (next > cur + 1) {
+				strbuf_reset(&path);
+				strbuf_addch(&path, '/');
+				strbuf_addstr(&path, cur);
 
-			insert_recursive_pattern(pl, &path);
+			fprintf(stderr, "adding %s\n", path.buf);
+				insert_recursive_pattern(pl, &path);
+			}
 
 			if (next)
 				cur = next + 1;
