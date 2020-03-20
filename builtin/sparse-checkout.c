@@ -175,6 +175,7 @@ static char const * const builtin_sparse_checkout_set_usage[] = {
 
 static struct sparse_checkout_set_opts {
 	int use_stdin;
+	int in_tree;
 } set_opts;
 
 static void add_patterns_from_input(struct pattern_list *pl,
@@ -239,17 +240,11 @@ static void add_patterns_cone_mode(int argc, const char **argv,
 	struct pattern_entry *pe;
 	struct hashmap_iter iter;
 	struct pattern_list existing;
-	char *sparse_filename = get_sparse_checkout_filename();
 
 	add_patterns_from_input(pl, argc, argv);
 
-	memset(&existing, 0, sizeof(existing));
-	existing.use_cone_patterns = core_sparse_checkout_cone;
-
-	if (add_patterns_from_file_to_list(sparse_filename, "", 0,
-					   &existing, NULL))
+	if (load_sparse_checkout_patterns(&existing))
 		die(_("unable to load existing sparse-checkout patterns"));
-	free(sparse_filename);
 
 	hashmap_for_each_entry(&existing.recursive_hashmap, &iter, pe, ent) {
 		if (!hashmap_contains_parent(&pl->recursive_hashmap,
@@ -312,12 +307,52 @@ static int modify_pattern_list(int argc, const char **argv, enum modify_type m)
 	return result;
 }
 
+static int modify_in_tree_list(int argc, const char **argv, enum modify_type m)
+{
+	int result = 0;
+	int i;
+	struct string_list sl = STRING_LIST_INIT_DUP;
+	struct pattern_list pl;
+
+	switch(m) {
+	case ADD:
+		if (load_in_tree_from_config(the_repository, &sl))
+			return 1;
+		if (!sl.nr)
+			warning(_("the existing in-tree config has no entries; this overwriting existing sparse-checkout definition."));
+		load_sparse_checkout_patterns(&pl);
+		break;
+		
+	case REPLACE:
+		memset(&pl, 0, sizeof(pl));
+		hashmap_init(&pl.recursive_hashmap, pl_hashmap_cmp, NULL, 0);
+		hashmap_init(&pl.parent_hashmap, pl_hashmap_cmp, NULL, 0);
+		break;
+	}
+
+	for (i = 0; i < argc; i++)
+		string_list_insert(&sl, argv[i]);
+
+	if (load_in_tree_pattern_list(the_repository->index, &sl, &pl) ||
+	    write_patterns_and_update(&pl) ||
+	    set_in_tree_config(the_repository, &sl))
+		result = 1;
+
+	string_list_clear(&sl, 0);
+	clear_pattern_list(&pl);
+
+	return result;
+}
+
 static int sparse_checkout_set(int argc, const char **argv, const char *prefix,
 			       enum modify_type m)
 {
 	static struct option builtin_sparse_checkout_set_options[] = {
 		OPT_BOOL(0, "stdin", &set_opts.use_stdin,
 			 N_("read patterns from standard in")),
+		OPT_BOOL_F(0, "in-tree", &set_opts.in_tree,
+			 N_("use paths in the tree to specify lists of directories"),
+			 PARSE_OPT_NONEG),
 		OPT_END(),
 	};
 
@@ -328,6 +363,8 @@ static int sparse_checkout_set(int argc, const char **argv, const char *prefix,
 			     builtin_sparse_checkout_set_usage,
 			     PARSE_OPT_KEEP_UNKNOWN);
 
+	if (set_opts.in_tree)
+		return modify_in_tree_list(argc, argv, m);
 	return modify_pattern_list(argc, argv, m);
 }
 

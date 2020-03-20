@@ -8,10 +8,27 @@
 #include "strbuf.h"
 #include "string-list.h"
 #include "unpack-trees.h"
+#include "object-store.h"
 
 char *get_sparse_checkout_filename(void)
 {
 	return git_pathdup("info/sparse-checkout");
+}
+
+int load_sparse_checkout_patterns(struct pattern_list *pl)
+{
+	int result = 0;
+	char *sparse_filename = get_sparse_checkout_filename();
+
+	memset(pl, 0, sizeof(*pl));
+	pl->use_cone_patterns = core_sparse_checkout_cone;
+
+	if (add_patterns_from_file_to_list(sparse_filename, "", 0,
+					   pl, NULL))
+		result = 1;
+
+	free(sparse_filename);
+	return result;
 }
 
 void write_patterns_to_file(FILE *fp, struct pattern_list *pl)
@@ -139,13 +156,15 @@ static void write_cone_to_file(FILE *fp, struct pattern_list *pl)
 	}
 }
 
-int write_patterns_and_update(struct pattern_list *pl)
+static int write_patterns_to_sparse_checkout(
+			struct pattern_list *pl,
+			int refresh_workdir)
 {
 	char *sparse_filename;
 	FILE *fp;
 	int fd;
 	struct lock_file lk = LOCK_INIT;
-	int result;
+	int result = 0;
 
 	sparse_filename = get_sparse_checkout_filename();
 
@@ -155,7 +174,8 @@ int write_patterns_and_update(struct pattern_list *pl)
 	fd = hold_lock_file_for_update(&lk, sparse_filename,
 				      LOCK_DIE_ON_ERROR);
 
-	result = update_working_directory(pl);
+	if (refresh_workdir)
+		result = update_working_directory(pl);
 	if (result) {
 		rollback_lock_file(&lk);
 		free(sparse_filename);
@@ -178,6 +198,11 @@ int write_patterns_and_update(struct pattern_list *pl)
 	clear_pattern_list(pl);
 
 	return 0;
+}
+
+int write_patterns_and_update(struct pattern_list *pl)
+{
+        return write_patterns_to_sparse_checkout(pl, 1);
 }
 
 void insert_recursive_pattern(struct pattern_list *pl, struct strbuf *path)
@@ -230,4 +255,124 @@ void strbuf_to_cone_pattern(struct strbuf *line, struct pattern_list *pl)
 		strbuf_insertstr(line, 0, "/");
 
 	insert_recursive_pattern(pl, line);
+}
+
+#define SPARSE_CHECKOUT_IN_TREE "sparse-checkout.intree"
+
+int load_in_tree_from_config(struct repository *r, struct string_list *sl)
+{
+	struct string_list_item *item;
+	const struct string_list *cl = repo_config_get_value_multi(r, SPARSE_CHECKOUT_IN_TREE);
+
+	for_each_string_list_item(item, cl)
+		string_list_insert(sl, item->string);
+
+	return 0;
+}
+
+int load_in_tree_pattern_list(struct index_state *istate, struct string_list *sl, struct pattern_list *pl)
+{
+	struct string_list_item *item;
+	struct strbuf path = STRBUF_INIT;
+
+	pl->use_cone_patterns = 1;
+
+	for_each_string_list_item(item, sl) {
+		struct object_id *oid;
+		enum object_type type;
+		char *buf, *cur, *end;
+		unsigned long size;
+		int pos = index_name_pos(istate, item->string, strlen(item->string));
+
+		if (pos < 0) {
+			warning(_("did not find cache entry with name '%s'; not updating sparse-checkout"),
+				item->string);
+			return 1;
+		}
+
+		oid = &istate->cache[pos]->oid;
+		type = oid_object_info(the_repository, oid, NULL);
+
+		if (type != OBJ_BLOB) {
+			warning(_("expected a file at '%s'; not updating sparse-checkout"),
+				oid_to_hex(oid));
+			return 1;
+		}
+
+		buf = read_object_file(oid, &type, &size);
+		end = buf + size;
+
+		for (cur = buf; cur < end; ) {
+			char *next;
+
+			next = memchr(cur, '\n', end - cur);
+
+			if (next)
+				*next = '\0';
+
+			strbuf_reset(&path);
+			strbuf_addch(&path, '/');
+			strbuf_addstr(&path, cur);
+
+			insert_recursive_pattern(pl, &path);
+
+			if (next)
+				cur = next + 1;
+			else
+				break;
+		}
+
+		free(buf);
+	}
+
+	strbuf_release(&path);
+
+	return 0;
+}
+
+int set_in_tree_config(struct repository *r, struct string_list *sl)
+{
+	struct string_list_item *item;
+	char *local_config = git_pathdup("config");
+
+	/* clear existing values */
+	git_config_set_multivar_in_file_gently(local_config,
+					       SPARSE_CHECKOUT_IN_TREE, NULL, NULL, 1);
+
+	for_each_string_list_item(item, sl)
+		git_config_set_multivar_in_file_gently(
+			local_config, SPARSE_CHECKOUT_IN_TREE,
+			item->string, CONFIG_REGEX_NONE, 0);
+
+	free(local_config);
+	return 0;
+}
+
+int update_in_tree_sparse_checkout(struct repository *r, struct index_state *istate)
+{
+	struct string_list paths = STRING_LIST_INIT_DUP;
+	struct pattern_list temp;
+
+	/* If we do not have this config, skip this step! */
+	if (load_in_tree_from_config(r, &paths) ||
+	    !paths.nr) {
+		return 0;
+	}
+
+	/* Check diff for paths over from/to. If any changed, reload */
+	/* or for now, reload always! */
+	memset(&temp, 0, sizeof(temp));
+	hashmap_init(&temp.recursive_hashmap, pl_hashmap_cmp, NULL, 0);
+	hashmap_init(&temp.parent_hashmap, pl_hashmap_cmp, NULL, 0);
+
+	if (load_in_tree_pattern_list(istate, &paths, &temp)) {
+		warning("load_in_tree_pattern_list failed");
+		return 1;
+	}
+	if (write_patterns_to_sparse_checkout(&temp, 0)) {
+		warning("write_patterns_and_update failed");
+		return 1;
+	}
+
+	return 0;
 }

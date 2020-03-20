@@ -561,4 +561,79 @@ test_expect_success MINGW 'cone mode replaces backslashes with slashes' '
 	check_files repo/deep a deeper1
 '
 
+test_expect_success 'in-tree cone mode basics' '
+	cat >folder1 <<-\EOF &&
+	folder1
+	EOF
+	cat >folder2 <<-\EOF &&
+	folder2
+	EOF
+	cat >deeper1 <<-\EOF &&
+	deep/deeper1
+	EOF
+	cat >f1d1 <<-\EOF &&
+	deep/deeper1
+	folder1
+	EOF
+	mkdir repo/.sparse &&
+	for file in folder1 folder2 deeper1 f1d1
+	do
+		cp $file repo/.sparse/ || return 1
+	done &&
+	git -C repo add .sparse &&
+	git -C repo commit -m "Add sparse specifications" &&
+
+	git -C repo sparse-checkout set --in-tree .sparse/folder1 &&
+	git -C repo sparse-checkout list >actual &&
+	test_cmp folder1 actual &&
+	git -C repo config --get-all sparse-checkout.inTree >actual-config &&
+	echo .sparse/folder1 >expect-config &&
+	test_cmp expect-config actual-config &&
+	check_files repo a folder1 &&
+
+	git -C repo sparse-checkout set --in-tree .sparse/folder2 &&
+	git -C repo sparse-checkout list >actual &&
+	test_cmp folder2 actual &&
+	git -C repo config --get-all sparse-checkout.inTree >actual-config &&
+	echo .sparse/folder2 >expect-config &&
+	test_cmp expect-config actual-config &&
+	check_files repo a folder2 &&
+
+	git -C repo sparse-checkout set --in-tree .sparse/deeper1 &&
+	git -C repo sparse-checkout list >actual &&
+	test_cmp deeper1 actual &&
+	git -C repo config --get-all sparse-checkout.inTree >actual-config &&
+	echo .sparse/deeper1 >expect-config &&
+	test_cmp expect-config actual-config &&
+	check_files repo a deep &&
+
+	git -C repo sparse-checkout set --in-tree .sparse/folder1 .sparse/deeper1 &&
+	git -C repo sparse-checkout list >actual &&
+	test_cmp f1d1 actual &&
+	git -C repo config --get-all sparse-checkout.inTree >actual-config &&
+	echo .sparse/deeper1 >expect-config &&
+	echo .sparse/folder1 >>expect-config &&
+	test_cmp expect-config actual-config &&
+	check_files repo a deep folder1
+'
+
+test_expect_success 'in-tree cone mode "add"' '
+	git -C repo sparse-checkout set --in-tree .sparse/folder1 &&
+	git -C repo sparse-checkout list >actual &&
+	test_cmp folder1 actual &&
+	git -C repo config --get-all sparse-checkout.inTree >actual-config &&
+	echo .sparse/folder1 >expect-config &&
+	test_cmp expect-config actual-config &&
+	check_files repo a folder1 &&
+
+	git -C repo sparse-checkout add --in-tree .sparse/deeper1 &&
+	git -C repo sparse-checkout list >actual &&
+	test_cmp f1d1 actual &&
+	git -C repo config --get-all sparse-checkout.inTree >actual-config &&
+	echo .sparse/deeper1 >expect-config &&
+	echo .sparse/folder1 >>expect-config &&
+	test_cmp expect-config actual-config &&
+	check_files repo a deep folder1
+'
+
 test_done
