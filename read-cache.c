@@ -3058,7 +3058,6 @@ static int commit_locked_index(struct lock_file *lk)
 		return commit_lock_file(lk);
 }
 
-int updating_sparse_checkout = 0;
 static int do_write_locked_index(struct index_state *istate, struct lock_file *lock,
 				 unsigned flags)
 {
@@ -3082,11 +3081,7 @@ static int do_write_locked_index(struct index_state *istate, struct lock_file *l
 	else
 		ret = close_lock_file_gently(lock);
 
-	if (!updating_sparse_checkout) {
-		updating_sparse_checkout = 1;
-		update_in_tree_sparse_checkout(r, istate);
-		updating_sparse_checkout = 0;
-	}
+	update_in_tree_sparse_checkout(r, istate);
 
 	run_hook_le(NULL, "post-index-change",
 			istate->updated_workdir ? "1" : "0",
