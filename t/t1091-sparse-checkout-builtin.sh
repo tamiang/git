@@ -283,7 +283,7 @@ test_expect_success 'revert to old sparse-checkout on bad update' '
 	echo update >repo/deep/deeper2/a &&
 	cp repo/.git/info/sparse-checkout expect &&
 	test_must_fail git -C repo sparse-checkout set deep/deeper1 2>err &&
-	test_i18ngrep "Cannot update sparse checkout" err &&
+	test_i18ngrep "cannot set sparse-checkout patterns" err &&
 	test_cmp repo/.git/info/sparse-checkout expect &&
 	check_files repo/deep a deeper1 deeper2
 '
@@ -313,6 +313,18 @@ test_expect_success '.gitignore should not warn about cone mode' '
 	echo "**/bin/*" >repo/.gitignore &&
 	git -C repo reset --hard 2>err &&
 	test_i18ngrep ! "disabling cone patterns" err
+'
+
+test_expect_success 'sparse-checkout (init|set|disable) fails with dirty status' '
+	git clone repo dirty &&
+	echo dirty >dirty/folder1/a &&
+	test_must_fail git -C dirty sparse-checkout init &&
+	test_must_fail git -C dirty sparse-checkout set /folder2/* /deep/deeper1/* &&
+	test_must_fail git -C dirty sparse-checkout disable &&
+	git -C dirty reset --hard &&
+	git -C dirty sparse-checkout init &&
+	git -C dirty sparse-checkout set /folder2/* /deep/deeper1/* &&
+	git -C dirty sparse-checkout disable
 '
 
 test_expect_success 'cone mode: set with core.ignoreCase=true' '
