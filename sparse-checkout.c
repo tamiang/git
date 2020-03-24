@@ -352,7 +352,7 @@ int update_in_tree_sparse_checkout(struct repository *r, struct index_state *ist
 	if (load_in_tree_pattern_list(istate, &paths, &temp)) {
 		warning("load_in_tree_pattern_list failed");
 		result = 1;
-	} else if (write_patterns_to_sparse_checkout(&temp, 0)) {
+	} else if (write_patterns_to_sparse_checkout(&temp, 1)) {
 		warning("write_patterns_and_update failed");
 		result = 1;
 	}
