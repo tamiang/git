@@ -27,6 +27,7 @@
 #include "progress.h"
 #include "virtualfilesystem.h"
 #include "gvfs.h"
+#include "sparse-checkout.h"
 
 /* Mask for the name length in ce_flags in the on-disk index */
 
@@ -3093,15 +3094,16 @@ static int do_write_locked_index(struct index_state *istate, struct lock_file *l
 				 unsigned flags)
 {
 	int ret;
+	struct repository *r = the_repository;
 
 	/*
 	 * TODO trace2: replace "the_repository" with the actual repo instance
 	 * that is associated with the given "istate".
 	 */
-	trace2_region_enter_printf("index", "do_write_index", the_repository,
+	trace2_region_enter_printf("index", "do_write_index", r,
 				   "%s", lock->tempfile->filename.buf);
 	ret = do_write_index(istate, lock->tempfile, 0);
-	trace2_region_leave_printf("index", "do_write_index", the_repository,
+	trace2_region_leave_printf("index", "do_write_index", r,
 				   "%s", lock->tempfile->filename.buf);
 
 	if (ret)
@@ -3110,6 +3112,8 @@ static int do_write_locked_index(struct index_state *istate, struct lock_file *l
 		ret = commit_locked_index(lock);
 	else
 		ret = close_lock_file_gently(lock);
+
+	update_in_tree_sparse_checkout(r, istate);
 
 	run_hook_le(NULL, "post-index-change",
 			istate->updated_workdir ? "1" : "0",
