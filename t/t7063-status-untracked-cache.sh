@@ -89,10 +89,6 @@ dthree/
 dtwo/
 three
 /done/ 0000000000000000000000000000000000000000 recurse valid
-/dthree/ 0000000000000000000000000000000000000000 recurse check_only valid
-three
-/dtwo/ 0000000000000000000000000000000000000000 recurse check_only valid
-two
 EOF
 
 test_expect_success 'status first time (empty cache)' '
@@ -152,10 +148,10 @@ A  two
 EOF
 	test_cmp ../status.expect ../actual &&
 	cat >../trace.expect <<EOF &&
-node creation: 0
+node creation: 2
 gitignore invalidation: 0
 directory invalidation: 1
-opendir: 1
+opendir: 3
 EOF
 	test_cmp ../trace.expect ../trace
 
@@ -174,10 +170,6 @@ dtwo/
 four
 three
 /done/ 0000000000000000000000000000000000000000 recurse valid
-/dthree/ 0000000000000000000000000000000000000000 recurse check_only valid
-three
-/dtwo/ 0000000000000000000000000000000000000000 recurse check_only valid
-two
 EOF
 	test_cmp ../expect ../actual
 '
@@ -199,7 +191,7 @@ A  two
 EOF
 	test_cmp ../status.expect ../actual &&
 	cat >../trace.expect <<EOF &&
-node creation: 0
+node creation: 2
 gitignore invalidation: 1
 directory invalidation: 1
 opendir: 4
@@ -221,10 +213,6 @@ dthree/
 dtwo/
 three
 /done/ 0000000000000000000000000000000000000000 recurse valid
-/dthree/ 0000000000000000000000000000000000000000 recurse check_only valid
-three
-/dtwo/ 0000000000000000000000000000000000000000 recurse check_only valid
-two
 EOF
 	test_cmp ../expect ../actual
 '
@@ -240,11 +228,12 @@ A  done/one
 A  one
 A  two
 ?? .gitignore
+?? dthree/
 ?? dtwo/
 EOF
 	test_cmp ../status.expect ../actual &&
 	cat >../trace.expect <<EOF &&
-node creation: 0
+node creation: 2
 gitignore invalidation: 1
 directory invalidation: 0
 opendir: 4
@@ -261,11 +250,9 @@ exclude_per_dir .gitignore
 flags 00000006
 / e6fcc8f2ee31bae321d66afd183fcb7237afae6e recurse valid
 .gitignore
+dthree/
 dtwo/
 /done/ 0000000000000000000000000000000000000000 recurse valid
-/dthree/ 0000000000000000000000000000000000000000 recurse check_only valid
-/dtwo/ 0000000000000000000000000000000000000000 recurse check_only valid
-two
 EOF
 	test_cmp ../expect ../actual
 '
@@ -280,9 +267,6 @@ exclude_per_dir .gitignore
 flags 00000006
 / e6fcc8f2ee31bae321d66afd183fcb7237afae6e recurse
 /done/ 0000000000000000000000000000000000000000 recurse valid
-/dthree/ 0000000000000000000000000000000000000000 recurse check_only valid
-/dtwo/ 0000000000000000000000000000000000000000 recurse check_only valid
-two
 EOF
 	test_cmp ../expect ../actual
 '
@@ -295,15 +279,16 @@ test_expect_success 'status after the move' '
 A  done/one
 A  one
 ?? .gitignore
+?? dthree/
 ?? dtwo/
 ?? two
 EOF
 	test_cmp ../status.expect ../actual &&
 	cat >../trace.expect <<EOF &&
-node creation: 0
+node creation: 2
 gitignore invalidation: 0
 directory invalidation: 0
-opendir: 1
+opendir: 3
 EOF
 	test_cmp ../trace.expect ../trace
 '
@@ -317,12 +302,10 @@ exclude_per_dir .gitignore
 flags 00000006
 / e6fcc8f2ee31bae321d66afd183fcb7237afae6e recurse valid
 .gitignore
+dthree/
 dtwo/
 two
 /done/ 0000000000000000000000000000000000000000 recurse valid
-/dthree/ 0000000000000000000000000000000000000000 recurse check_only valid
-/dtwo/ 0000000000000000000000000000000000000000 recurse check_only valid
-two
 EOF
 	test_cmp ../expect ../actual
 '
@@ -337,9 +320,6 @@ exclude_per_dir .gitignore
 flags 00000006
 / e6fcc8f2ee31bae321d66afd183fcb7237afae6e recurse
 /done/ 0000000000000000000000000000000000000000 recurse valid
-/dthree/ 0000000000000000000000000000000000000000 recurse check_only valid
-/dtwo/ 0000000000000000000000000000000000000000 recurse check_only valid
-two
 EOF
 	test_cmp ../expect ../actual
 '
@@ -353,14 +333,15 @@ A  done/one
 A  one
 A  two
 ?? .gitignore
+?? dthree/
 ?? dtwo/
 EOF
 	test_cmp ../status.expect ../actual &&
 	cat >../trace.expect <<EOF &&
-node creation: 0
+node creation: 2
 gitignore invalidation: 0
 directory invalidation: 0
-opendir: 1
+opendir: 3
 EOF
 	test_cmp ../trace.expect ../trace
 '
@@ -374,11 +355,9 @@ exclude_per_dir .gitignore
 flags 00000006
 / e6fcc8f2ee31bae321d66afd183fcb7237afae6e recurse valid
 .gitignore
+dthree/
 dtwo/
 /done/ 0000000000000000000000000000000000000000 recurse valid
-/dthree/ 0000000000000000000000000000000000000000 recurse check_only valid
-/dtwo/ 0000000000000000000000000000000000000000 recurse check_only valid
-two
 EOF
 	test_cmp ../expect ../actual
 '
@@ -397,14 +376,15 @@ test_expect_success 'status after commit' '
 	git status --porcelain >../actual &&
 	cat >../status.expect <<EOF &&
 ?? .gitignore
+?? dthree/
 ?? dtwo/
 EOF
 	test_cmp ../status.expect ../actual &&
 	cat >../trace.expect <<EOF &&
-node creation: 0
+node creation: 2
 gitignore invalidation: 0
 directory invalidation: 0
-opendir: 2
+opendir: 4
 EOF
 	test_cmp ../trace.expect ../trace
 '
@@ -418,11 +398,9 @@ exclude_per_dir .gitignore
 flags 00000006
 / e6fcc8f2ee31bae321d66afd183fcb7237afae6e recurse valid
 .gitignore
+dthree/
 dtwo/
 /done/ 0000000000000000000000000000000000000000 recurse valid
-/dthree/ 0000000000000000000000000000000000000000 recurse check_only valid
-/dtwo/ 0000000000000000000000000000000000000000 recurse check_only valid
-two
 EOF
 	test_cmp ../expect ../actual
 '
@@ -456,14 +434,15 @@ test_expect_success 'test sparse status with untracked cache' '
  M done/two
 ?? .gitignore
 ?? done/five
+?? dthree/
 ?? dtwo/
 EOF
 	test_cmp ../status.expect ../status.actual &&
 	cat >../trace.expect <<EOF &&
-node creation: 0
+node creation: 2
 gitignore invalidation: 1
 directory invalidation: 2
-opendir: 2
+opendir: 4
 EOF
 	test_cmp ../trace.expect ../trace
 '
@@ -477,12 +456,10 @@ exclude_per_dir .gitignore
 flags 00000006
 / e6fcc8f2ee31bae321d66afd183fcb7237afae6e recurse valid
 .gitignore
+dthree/
 dtwo/
 /done/ 1946f0437f90c5005533cbe1736a6451ca301714 recurse valid
 five
-/dthree/ 0000000000000000000000000000000000000000 recurse check_only valid
-/dtwo/ 0000000000000000000000000000000000000000 recurse check_only valid
-two
 EOF
 	test_cmp ../expect ../actual
 '
@@ -496,6 +473,7 @@ test_expect_success 'test sparse status again with untracked cache' '
  M done/two
 ?? .gitignore
 ?? done/five
+?? dthree/
 ?? dtwo/
 EOF
 	test_cmp ../status.expect ../status.actual &&
@@ -524,6 +502,7 @@ test_expect_success 'test sparse status with untracked cache and subdir' '
 ?? .gitignore
 ?? done/five
 ?? done/sub/
+?? dthree/
 ?? dtwo/
 EOF
 	test_cmp ../status.expect ../status.actual &&
@@ -545,17 +524,11 @@ exclude_per_dir .gitignore
 flags 00000006
 / e6fcc8f2ee31bae321d66afd183fcb7237afae6e recurse valid
 .gitignore
+dthree/
 dtwo/
 /done/ 1946f0437f90c5005533cbe1736a6451ca301714 recurse valid
 five
 sub/
-/done/sub/ 0000000000000000000000000000000000000000 recurse check_only valid
-sub/
-/done/sub/sub/ 0000000000000000000000000000000000000000 recurse check_only valid
-file
-/dthree/ 0000000000000000000000000000000000000000 recurse check_only valid
-/dtwo/ 0000000000000000000000000000000000000000 recurse check_only valid
-two
 EOF
 	test_cmp ../expect-from-test-dump ../actual
 '
@@ -584,6 +557,7 @@ A  dtwo/two
 ?? .gitignore
 ?? done/five
 ?? done/sub/
+?? dthree/
 EOF
 	test_cmp ../status.expect ../status.actual
 '
@@ -596,6 +570,7 @@ test_expect_success 'move entry in subdir from cached to untracked' '
 ?? .gitignore
 ?? done/five
 ?? done/sub/
+?? dthree/
 ?? dtwo/
 EOF
 	test_cmp ../status.expect ../status.actual
