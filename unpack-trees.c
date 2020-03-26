@@ -378,6 +378,7 @@ static int check_updates(struct unpack_trees_options *o)
 	state.quiet = 1;
 	state.refresh_cache = 1;
 	state.istate = index;
+	clone_checkout_metadata(&state.meta, &o->meta, NULL);
 
 	if (!o->update || o->dry_run) {
 		remove_marked_cache_entries(index, 0);
@@ -1861,9 +1862,6 @@ static void invalidate_ce_path(const struct cache_entry *ce,
 /*
  * Check that checking out ce->sha1 in subdir ce->name is not
  * going to overwrite any working files.
- *
- * Currently, git does not checkout subprojects during a superproject
- * checkout, so it is not going to overwrite anything.
  */
 static int verify_clean_submodule(const char *old_sha1,
 				  const struct cache_entry *ce,
@@ -2113,7 +2111,7 @@ static int merged_entry(const struct cache_entry *ce,
 		}
 		invalidate_ce_path(merge, o);
 
-		if (submodule_from_ce(ce)) {
+		if (submodule_from_ce(ce) && file_exists(ce->name)) {
 			int ret = check_submodule_move_head(ce, NULL,
 							    oid_to_hex(&ce->oid),
 							    o);
@@ -2142,7 +2140,7 @@ static int merged_entry(const struct cache_entry *ce,
 			invalidate_ce_path(old, o);
 		}
 
-		if (submodule_from_ce(ce)) {
+		if (submodule_from_ce(ce) && file_exists(ce->name)) {
 			int ret = check_submodule_move_head(ce, oid_to_hex(&old->oid),
 							    oid_to_hex(&ce->oid),
 							    o);

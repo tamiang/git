@@ -809,9 +809,10 @@ int cmd_rev_parse(int argc, const char **argv, const char *prefix)
 				continue;
 			}
 			if (!strcmp(arg, "--show-superproject-working-tree")) {
-				const char *superproject = get_superproject_working_tree();
-				if (superproject)
-					puts(superproject);
+				struct strbuf superproject = STRBUF_INIT;
+				if (get_superproject_working_tree(&superproject))
+					puts(superproject.buf);
+				strbuf_release(&superproject);
 				continue;
 			}
 			if (!strcmp(arg, "--show-prefix")) {
@@ -858,7 +859,10 @@ int cmd_rev_parse(int argc, const char **argv, const char *prefix)
 					if (!gitdir && !prefix)
 						gitdir = ".git";
 					if (gitdir) {
-						puts(real_path(gitdir));
+						struct strbuf realpath = STRBUF_INIT;
+						strbuf_realpath(&realpath, gitdir, 1);
+						puts(realpath.buf);
+						strbuf_release(&realpath);
 						continue;
 					}
 				}
