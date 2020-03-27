@@ -1744,10 +1744,16 @@ static void expire_commit_graphs(struct write_commit_graph_context *ctx)
 
 		stat(path.buf, &st);
 
-		if (st.st_mtime > expire_time)
+		fprintf(stderr, "found graph: %s\n", path.buf);
+
+		if (st.st_mtime > expire_time) {
+	fprintf(stderr, "   mtime = %ld > %ld\n", st.st_mtime, expire_time);
 			continue;
-		if (path.len < 6 || strcmp(path.buf + path.len - 6, ".graph"))
+		}
+		if (path.len < 6 || strcmp(path.buf + path.len - 6, ".graph")) {
+	fprintf(stderr, "path too small or doesn't end in '.graph'?\n");
 			continue;
+}
 
 		for (i = 0; i < ctx->num_commit_graphs_after; i++) {
 			if (!strcmp(ctx->commit_graph_filenames_after[i],
@@ -1759,6 +1765,8 @@ static void expire_commit_graphs(struct write_commit_graph_context *ctx)
 
 		if (!found)
 			unlink(path.buf);
+		else
+			fprintf(stderr, "found!\n");
 	}
 
 out:
