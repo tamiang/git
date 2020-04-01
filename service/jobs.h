@@ -20,4 +20,9 @@ struct job_description {
 
 int setup_and_run_job_loop(void);
 
+int run_commit_graph_job(const char *repo);
+int run_fetch_job(const char *repo);
+int run_loose_objects_job(const char *repo);
+int run_multi_pack_index_job(const char *repo);
+
 #endif

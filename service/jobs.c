@@ -14,34 +14,6 @@ struct job_list {
 	size_t alloc;
 };
 
-static int run_commit_graph_job(struct job_description *job,
-				const char *repo)
-{
-	fprintf(stderr, "COMMIT_GRAPH on %s\n", repo);
-	return 0;
-}
-
-static int run_fetch_job(struct job_description *job,
-			 const char *repo)
-{
-	fprintf(stderr, "FETCH on %s\n", repo);
-	return 0;
-}
-
-static int run_loose_objects_job(struct job_description *job,
-				 const char *repo)
-{
-	fprintf(stderr, "LOOSE_OBJECTS on %s\n", repo);
-	return 0;
-}
-
-static int run_multi_pack_index_job(struct job_description *job,
-				    const char *repo)
-{
-	fprintf(stderr, "MULTI_PACK_INDEX on %s\n", repo);
-	return 0;
-}
-
 static char *config_name(const char *prefix,
 			 enum job_id id,
 			 const char *postfix)
@@ -117,10 +89,10 @@ static int try_get_timestamp(enum job_id id,
 	proc_out = xfdopen(config_proc->out, "r");
 
 	/* if there is no line, leave the value as given */
-	if (!strbuf_getline(&last_run_line, proc_out)) {
+	if (!strbuf_getline(&last_run_line, proc_out))
 		*t = atol(last_run_line.buf);
-		strbuf_release(&last_run_line);
-	}
+
+	strbuf_release(&last_run_line);
 
 	fclose(proc_out);
 
@@ -216,19 +188,19 @@ static int run_job(struct job_description *job,
 
 	switch (job->id) {
 	case COMMIT_GRAPH:
-		result = run_commit_graph_job(job, repo);
+		result = run_commit_graph_job(repo);
 		break;
 
 	case FETCH:
-		result = run_fetch_job(job, repo);
+		result = run_fetch_job(repo);
 		break;
 
 	case LOOSE_OBJECTS:
-		result = run_loose_objects_job(job, repo);
+		result = run_loose_objects_job(repo);
 		break;
 
 	case MULTI_PACK_INDEX:
-		result = run_multi_pack_index_job(job, repo);
+		result = run_multi_pack_index_job(repo);
 		break;
 
 	default:
