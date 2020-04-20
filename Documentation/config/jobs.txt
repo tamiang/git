@@ -1,0 +1,9 @@
+jobs.post-command.enabled::
+	Toggle whether maintenance processes should start at the end of
+	some Git commands. By default, Git runs `git gc --auto` at the
+	end of some common commands, such as `git fetch` or `git commit`.
+	The `gc.auto` config option can disable the `git gc --auto`
+	command from doing any meaningful work, but the process is still
+	launched despite that option. When `jobs.post-command.enabled`
+	is `false`, then these processes will not start at all. The
+	default value is `true`.

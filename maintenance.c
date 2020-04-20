@@ -1,4 +1,5 @@
 #include "git-compat-util.h"
+#include "config.h"
 #include "packfile.h"
 #include "repository.h"
 #include "run-command.h"
@@ -9,6 +10,12 @@ void post_command_maintenance(struct repository *r, int flags,
 {
 	struct argv_array argv_gc_auto = ARGV_ARRAY_INIT;
 	struct child_process proc = CHILD_PROCESS_INIT;
+	int post_command_enabled = 1;
+
+	repo_config_get_bool(r, "jobs.post-command.enabled", &post_command_enabled);
+
+	if (!post_command_enabled)
+		return;
 
 	argv_array_pushl(&argv_gc_auto, "gc", "--auto", NULL);
 	if (flags & MAINTENANCE_QUIET)
