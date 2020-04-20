@@ -1,0 +1,54 @@
+Maintenance Jobs Design Document
+--------------------------------
+
+```
+git maintenance run
+	[--trigger=(post-command|background)]
+	[--quiet]
+```
+
+Run configured jobs based on the given trigger.
+
+By default, the `post-command` trigger is used 
+
+
+
+Steps to create new maintenance jobs
+------------------------------------
+
+ * Lib-ify `git gc --auto` calls.
+
+ * Allow disabling post-command maintenance through config.
+
+ * Create `git maintenance` builtin.
+
+ * `git maintenance run --trigger=post-command` call `git gc --auto`,
+   replace `git gc --auto` calls.
+
+ * Implement new jobs with different post-command trigger config:
+
+   - Commit-graph
+   - Loose objects
+   - Multi-pack-index
+   - Background fetch (disables post-command trigger)
+
+ * Implement `background` triggers, based on time by default.
+
+   - Configure timing triggers.
+   - Allow alternate triggers for more frequent runs?
+
+ * Advanced config options:
+
+   - Loose objects batch size
+   - Multi-pack-index batch size
+   - Background fetch refspec(s)
+
+ * `git maintenance run-all` scans config for which repos to run it on,
+   then launches `git maintenance run --trigger=background` on each.
+
+ * `git maintenance start` initializes maintenance on the current repo.
+
+   - Customize frequency
+   - Try for all platforms
+
+ * `git maintenance stop [--all]` stops schedule on current (all) repo(s).
