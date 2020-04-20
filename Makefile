@@ -912,6 +912,7 @@ LIB_OBJS += log-tree.o
 LIB_OBJS += ls-refs.o
 LIB_OBJS += mailinfo.o
 LIB_OBJS += mailmap.o
+LIB_OBJS += maintenance.o
 LIB_OBJS += match-trees.o
 LIB_OBJS += mem-pool.o
 LIB_OBJS += merge.o

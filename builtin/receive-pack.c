@@ -28,6 +28,7 @@
 #include "protocol.h"
 #include "commit-reach.h"
 #include "worktree.h"
+#include "maintenance.h"
 
 static const char * const receive_pack_usage[] = {
 	N_("git receive-pack <git-dir>"),
@@ -1925,6 +1926,11 @@ static int delete_only(struct command *commands)
 	return 1;
 }
 
+static void redirect_err(struct child_process *proc)
+{
+	copy_to_sideband(proc->err, -1, NULL);
+}
+
 int cmd_receive_pack(int argc, const char **argv, const char *prefix)
 {
 	int advertise_refs = 0;
@@ -2030,23 +2036,15 @@ int cmd_receive_pack(int argc, const char **argv, const char *prefix)
 		run_update_post_hook(commands);
 		string_list_clear(&push_options, 0);
 		if (auto_gc) {
-			const char *argv_gc_auto[] = {
-				"gc", "--auto", "--quiet", NULL,
-			};
-			struct child_process proc = CHILD_PROCESS_INIT;
+			int flags = MAINTENANCE_REDIRECT_ERROR;
+			post_process_func ppf = NULL;
 
-			proc.no_stdin = 1;
-			proc.stdout_to_stderr = 1;
-			proc.err = use_sideband ? -1 : 0;
-			proc.git_cmd = 1;
-			proc.argv = argv_gc_auto;
-
-			close_object_store(the_repository->objects);
-			if (!start_command(&proc)) {
-				if (use_sideband)
-					copy_to_sideband(proc.err, -1, NULL);
-				finish_command(&proc);
+			if (quiet) {
+				flags |= MAINTENANCE_QUIET;
+				ppf = redirect_err;
 			}
+
+			post_command_maintenance(the_repository, flags, ppf);
 		}
 		if (auto_update_server_info)
 			update_server_info(0);
