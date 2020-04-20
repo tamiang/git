@@ -40,6 +40,7 @@
 #include "branch.h"
 #include "commit-reach.h"
 #include "wt-status.h"
+#include "maintenance.h"
 
 #define DEFAULT_TWOHEAD (1<<0)
 #define DEFAULT_OCTOPUS (1<<1)
@@ -447,15 +448,9 @@ static void finish(struct commit *head_commit,
 		if (verbosity >= 0 && !merge_msg.len)
 			printf(_("No merge message -- not updating HEAD\n"));
 		else {
-			const char *argv_gc_auto[] = { "gc", "--auto", NULL };
 			update_ref(reflog_message.buf, "HEAD", new_head, head,
 				   0, UPDATE_REFS_DIE_ON_ERR);
-			/*
-			 * We ignore errors in 'gc --auto', since the
-			 * user should see them.
-			 */
-			close_object_store(the_repository->objects);
-			run_command_v_opt(argv_gc_auto, RUN_GIT_CMD);
+			post_command_maintenance(the_repository, 0, NULL);
 		}
 	}
 	if (new_head && show_diffstat) {

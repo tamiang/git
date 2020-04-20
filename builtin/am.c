@@ -33,6 +33,7 @@
 #include "string-list.h"
 #include "packfile.h"
 #include "repository.h"
+#include "maintenance.h"
 
 /**
  * Returns the length of the first line of msg.
@@ -1691,7 +1692,6 @@ static int do_interactive(struct am_state *state)
  */
 static void am_run(struct am_state *state, int resume)
 {
-	const char *argv_gc_auto[] = {"gc", "--auto", NULL};
 	struct strbuf sb = STRBUF_INIT;
 
 	unlink(am_path(state, "dirtyindex"));
@@ -1795,8 +1795,7 @@ next:
 	 */
 	if (!state->rebasing) {
 		am_destroy(state);
-		close_object_store(the_repository->objects);
-		run_command_v_opt(argv_gc_auto, RUN_GIT_CMD);
+		post_command_maintenance(the_repository, 0, NULL);
 	}
 }
 

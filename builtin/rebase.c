@@ -27,6 +27,7 @@
 #include "branch.h"
 #include "sequencer.h"
 #include "rebase-interactive.h"
+#include "maintenance.h"
 
 static char const * const builtin_rebase_usage[] = {
 	N_("git rebase [-i] [options] [--exec <cmd>] "
@@ -763,17 +764,13 @@ static int apply_autostash(struct rebase_options *opts)
 static int finish_rebase(struct rebase_options *opts)
 {
 	struct strbuf dir = STRBUF_INIT;
-	const char *argv_gc_auto[] = { "gc", "--auto", NULL };
 	int ret = 0;
 
 	delete_ref(NULL, "REBASE_HEAD", NULL, REF_NO_DEREF);
 	apply_autostash(opts);
-	close_object_store(the_repository->objects);
-	/*
-	 * We ignore errors in 'gc --auto', since the
-	 * user should see them.
-	 */
-	run_command_v_opt(argv_gc_auto, RUN_GIT_CMD);
+	
+	post_command_maintenance(the_repository, 0, NULL);
+
 	if (opts->type == REBASE_MERGE) {
 		struct replay_opts replay = REPLAY_OPTS_INIT;
 

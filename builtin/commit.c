@@ -36,6 +36,7 @@
 #include "help.h"
 #include "commit-reach.h"
 #include "commit-graph.h"
+#include "maintenance.h"
 
 static const char * const builtin_commit_usage[] = {
 	N_("git commit [<options>] [--] <pathspec>..."),
@@ -1494,7 +1495,6 @@ static int git_commit_config(const char *k, const char *v, void *cb)
 
 int cmd_commit(int argc, const char **argv, const char *prefix)
 {
-	const char *argv_gc_auto[] = {"gc", "--auto", NULL};
 	static struct wt_status s;
 	static struct option builtin_commit_options[] = {
 		OPT__QUIET(&quiet, N_("suppress summary after successful commit")),
@@ -1705,7 +1705,7 @@ int cmd_commit(int argc, const char **argv, const char *prefix)
 		return 1;
 
 	repo_rerere(the_repository, 0);
-	run_command_v_opt(argv_gc_auto, RUN_GIT_CMD);
+	post_command_maintenance(the_repository, 0, NULL);
 	run_commit_hook(use_editor, get_index_file(), "post-commit", NULL);
 	if (amend && !no_post_rewrite) {
 		commit_post_rewrite(the_repository, current_head, &oid);

@@ -27,6 +27,7 @@
 #include "branch.h"
 #include "promisor-remote.h"
 #include "commit-graph.h"
+#include "maintenance.h"
 
 #define FORCED_UPDATES_DELAY_WARNING_IN_MS (10 * 1000)
 
@@ -1759,7 +1760,6 @@ int cmd_fetch(int argc, const char **argv, const char *prefix)
 	struct remote *remote = NULL;
 	int result = 0;
 	int prune_tags_ok = 1;
-	struct argv_array argv_gc_auto = ARGV_ARRAY_INIT;
 
 	packet_trace_identity("fetch");
 
@@ -1884,15 +1884,10 @@ int cmd_fetch(int argc, const char **argv, const char *prefix)
 					     NULL);
 	}
 
-	close_object_store(the_repository->objects);
-
-	if (enable_auto_gc) {
-		argv_array_pushl(&argv_gc_auto, "gc", "--auto", NULL);
-		if (verbosity < 0)
-			argv_array_push(&argv_gc_auto, "--quiet");
-		run_command_v_opt(argv_gc_auto.argv, RUN_GIT_CMD);
-		argv_array_clear(&argv_gc_auto);
-	}
+	if (enable_auto_gc)
+		post_command_maintenance(the_repository,
+					 verbosity < 0 ? MAINTENANCE_QUIET : 0,
+					 NULL);
 
 	return result;
 }
