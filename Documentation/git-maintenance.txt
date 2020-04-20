@@ -1,0 +1,29 @@
+git-maintenance(1)
+==================
+
+NAME
+----
+git-maintenance - Run or manage maintenance tasks
+
+
+SYNOPSIS
+--------
+[verse]
+'git maintenance run [<options>]'
+
+
+DESCRIPTION
+-----------
+
+As a Git repository grows, the performance of some Git commands can
+suffer due to accumulated data or out-of-date caches. The maintenance
+command allows users to run tasks that organize this data and sync some
+caches. The following subcommands are available:
+
+run::
+	Run the maintenance tasks based on some start conditions. This
+	currently runs `git gc --auto`.
+
+GIT
+---
+Part of the linkgit:git[1] suite

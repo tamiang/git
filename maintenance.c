@@ -14,7 +14,7 @@ void post_command_maintenance(struct repository *r, int flags,
 
 	repo_config_get_bool(r, "jobs.post-command.enabled", &post_command_enabled);
 
-	if (!post_command_enabled)
+	if (!post_command_enabled || !(flags & MAINTENANCE_OVERRIDE_CONFIG))
 		return;
 
 	argv_array_pushl(&argv_gc_auto, "gc", "--auto", NULL);

@@ -7,11 +7,11 @@ test_description='basic git gc tests
 
 test_expect_success 'disable post-command step' '
 	git init to-gc &&
-	GIT_TRACE2_EVENT="$TRASH_DIRECTORY/trace2" git -C to-gc commit --allow-empty -m "one" &&
+	GIT_TRACE2_EVENT="$TRASH_DIRECTORY/trace2" git -C to-gc maintenance run &&
 	grep "\"git\",\"gc\",\"--auto\"" trace2  &&
 	rm -f trace2 &&
 	git -C to-gc config jobs.post-command.enabled false &&
-	GIT_TRACE2_EVENT="$TRASH_DIRECTORY/trace2" git -C to-gc commit --allow-empty -m "two" &&
+	GIT_TRACE2_EVENT="$TRASH_DIRECTORY/trace2" git -C to-gc maintenance run &&
 	! grep "\"git\",\"gc\",\"--auto\"" trace2
 '
 

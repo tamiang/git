@@ -1089,6 +1089,7 @@ BUILTIN_OBJS += builtin/ls-remote.o
 BUILTIN_OBJS += builtin/ls-tree.o
 BUILTIN_OBJS += builtin/mailinfo.o
 BUILTIN_OBJS += builtin/mailsplit.o
+BUILTIN_OBJS += builtin/maintenance.o
 BUILTIN_OBJS += builtin/merge.o
 BUILTIN_OBJS += builtin/merge-base.o
 BUILTIN_OBJS += builtin/merge-file.o
