@@ -977,8 +977,10 @@ void init_pathspec_bloom_fields(struct repository *r,
 
 	for (i = 0; i < pathspec->nr; i++) {
 		struct pathspec_item *pi = &pathspec->items[i];
-		const char *path = pi->match;
+		const char *path = pi->match, *p;
 		size_t len = pi->len;
+		int path_component_nr = 0, j;
+		uint32_t *hashes;
 
 		/*
 		 * Pathspec parsing has normalized away any consecutive
@@ -988,13 +990,28 @@ void init_pathspec_bloom_fields(struct repository *r,
 		if (path[len - 1] == '/')
 			len--;
 
-		pi->modified_path_bloom_hashes_nr = graph->num_modified_path_bloom_hashes;
+		p = path;
+		do {
+			p = strchrnul(p + 1, '/');
+			path_component_nr++;
+		} while (p - path < len);
+
+		pi->modified_path_bloom_hashes_nr = path_component_nr * graph->num_modified_path_bloom_hashes;
 		ALLOC_ARRAY(pi->modified_path_bloom_hashes,
 			    pi->modified_path_bloom_hashes_nr);
 
-		compute_modified_path_bloom_hashes_for_path(path, len,
-				graph->num_modified_path_bloom_hashes,
-				pi->modified_path_bloom_hashes);
+		p = path;
+		hashes = pi->modified_path_bloom_hashes +
+			 pi->modified_path_bloom_hashes_nr;
+		for (j = 0; j < path_component_nr; j++) {
+			p = strchrnul(p + 1, '/');
+
+			hashes -= graph->num_modified_path_bloom_hashes;
+			compute_modified_path_bloom_hashes_for_path(path,
+					p - path,
+					graph->num_modified_path_bloom_hashes,
+					hashes);
+		}
 	}
 
 	pathspec->can_use_modified_path_bloom_filters = 1;
