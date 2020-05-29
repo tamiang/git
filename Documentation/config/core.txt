@@ -594,6 +594,19 @@ core.modifiedPathBloomFilters::
 	commit-graph file to speed up pathspec-limited revision walks.
 	Defaults to false.
 
+core.modifiedPathBloomFiltersForAllMergeParents::
+	EXPERIMENTAL!!!
+	If true, then Git will store Bloom filters for all parents of
+	merge commits in the commit-graph file.
+	This has no impact on repositories with linear history.  In
+	repositories with lots of merge commits this considerably
+	increases the runtime of writing the commit-graph file and its
+	size.  It has little benefit in pathspec-limited revision walks
+	with the default history simplification, but can speed up
+	`--full-history` considerably.
+	Defaults to false, ignored if `core.modifiedPathBloomFilters` is
+	false.
+
 core.useReplaceRefs::
 	If set to `false`, behave as if the `--no-replace-objects`
 	option was given on the command line. See linkgit:git[1] and

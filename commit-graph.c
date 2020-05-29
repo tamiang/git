@@ -65,12 +65,23 @@ struct modified_path_bloom_filter_info {
 	 * -1 before that.
 	 */
 	uint64_t offset;
+	uint32_t merge_index_pos;
+	struct modified_path_bloom_filter_info *next;
 };
 
 static void free_modified_path_bloom_filter_info_in_slab(
 		struct modified_path_bloom_filter_info *bfi)
 {
+	/* The instance got as parameter is on the slab, don't free() it. */
 	bloom_filter_free(&bfi->filter);
+	bfi = bfi->next;
+	/* The rest is in a linked list, and must be free()d. */
+	while (bfi) {
+		struct modified_path_bloom_filter_info *prev = bfi;
+		bloom_filter_free(&bfi->filter);
+		bfi = bfi->next;
+		free(prev);
+	}
 }
 
 define_commit_slab(modified_path_bloom_filters,
@@ -1115,7 +1126,8 @@ struct write_commit_graph_context {
 	const struct split_commit_graph_opts *split_opts;
 
 	struct modified_path_bloom_filter_context {
-		unsigned use_modified_path_bloom_filters:1;
+		unsigned use_modified_path_bloom_filters:1,
+			 all_merge_parents:1;
 		unsigned int num_hashes;
 		/*
 		 * Number of paths to be added to "embedded" modified path
@@ -1143,6 +1155,7 @@ struct write_commit_graph_context {
 
 		/* Excluding embedded modified path Bloom filters */
 		uint64_t total_filter_size;
+		uint32_t num_merge_index_entries;
 
 		/* Used to find identical modified path Bloom filters */
 		struct hashmap dedup_hashmap;
@@ -1361,28 +1374,70 @@ static int write_graph_chunk_modified_path_bloom_filters(struct hashfile *f,
 
 		bfi = modified_path_bloom_filters_peek(
 				&modified_path_bloom_filters, commit);
+		for (; bfi; bfi = bfi->next) {
+			if (bfi->duplicate_of)
+				continue;
+			if (!bfi->filter.nr_bits)
+				continue;
+			if (bfi->filter.nr_bits == GRAPH_MODIFIED_PATH_BLOOM_FILTER_EMBEDDED_NR_BITS)
+				continue;
 
-		if (!bfi)
+			if (offset >> 62)
+				BUG("offset %lu is too large for the Modified Path Bloom Filter Index chunk",
+				    offset);
+
+			bfi->offset = offset;
+
+			filter_size = bloom_filter_bytes(&bfi->filter);
+
+			hashwrite_be32(f, bfi->filter.nr_bits);
+			hashwrite(f, bfi->filter.bits, filter_size);
+
+			offset += sizeof(uint32_t) + filter_size;
+		}
+	}
+	return 0;
+}
+
+static int write_graph_chunk_modified_path_bloom_merge_index(
+		struct hashfile *f, struct write_commit_graph_context *ctx)
+{
+	const uint64_t no_bloom_filter = GRAPH_MODIFIED_PATH_BLOOM_FILTER_NONE;
+	uint32_t pos = 0;
+	int i;
+
+	for (i = 0; i < ctx->commits.nr; i++) {
+		struct commit *commit = ctx->commits.list[i];
+		struct modified_path_bloom_filter_info *bfi;
+
+		display_progress(ctx->progress, ++ctx->progress_cnt);
+
+		bfi = modified_path_bloom_filters_peek(
+				&modified_path_bloom_filters, commit);
+
+		if (!bfi || !bfi->next)
+			/* No merge index entries for this commit. */
 			continue;
-		if (bfi->duplicate_of)
-			continue;
-		if (!bfi->filter.nr_bits)
-			continue;
-		if (bfi->filter.nr_bits == GRAPH_MODIFIED_PATH_BLOOM_FILTER_EMBEDDED_NR_BITS)
-			continue;
 
-		if (offset >> 62)
-			BUG("offset %lu is too large for the Modified Path Bloom Filter Index chunk",
-			    offset);
-
-		bfi->offset = offset;
-
-		filter_size = bloom_filter_bytes(&bfi->filter);
-
-		hashwrite_be32(f, bfi->filter.nr_bits);
-		hashwrite(f, bfi->filter.bits, filter_size);
-
-		offset += sizeof(uint32_t) + filter_size;
+		do {
+			if (bfi->duplicate_of) {
+				uint64_t offset = htonll(bfi->duplicate_of->offset);
+				hashwrite(f, &offset, sizeof(offset));
+			} else if (!bfi->filter.nr_bits) {
+				hashwrite(f, &no_bloom_filter,
+					  sizeof(no_bloom_filter));
+			} else if (bfi->filter.nr_bits == GRAPH_MODIFIED_PATH_BLOOM_FILTER_EMBEDDED_NR_BITS) {
+				uint8_t filterdata[sizeof(uint64_t)];
+				memcpy(filterdata, bfi->filter.bits, sizeof(filterdata));
+				filterdata[0] |= 1 << 7;
+				hashwrite(f, filterdata, sizeof(filterdata));
+			} else if (bfi->offset != -1) {
+				uint64_t offset = htonll(bfi->offset);
+				hashwrite(f, &offset, sizeof(offset));
+			} else
+				BUG("modified path Bloom filter offset is still -1?!");
+			bfi->merge_index_pos = pos++;
+		} while ((bfi = bfi->next));
 	}
 	return 0;
 }
@@ -1403,7 +1458,19 @@ static int write_graph_chunk_modified_path_bloom_index(struct hashfile *f,
 		bfi = modified_path_bloom_filters_peek(
 				&modified_path_bloom_filters, commit);
 
-		if (!bfi || !bfi->filter.nr_bits) {
+		if (!bfi) {
+			hashwrite(f, &no_bloom_filter, sizeof(no_bloom_filter));
+		} else if (bfi->next) {
+			uint8_t filterdata[sizeof(uint64_t)];
+			if (!commit->parents->next)
+				BUG("uh-oh #1");
+			if (bfi->merge_index_pos == -1)
+				BUG("uh-oh #2");
+			memset(filterdata, 0, sizeof(filterdata));
+			filterdata[0] |= 1 << 6;
+			((uint32_t*)filterdata)[1] = htonl(bfi->merge_index_pos);
+			hashwrite(f, filterdata, sizeof(filterdata));
+		} else if (!bfi->filter.nr_bits) {
 			hashwrite(f, &no_bloom_filter, sizeof(no_bloom_filter));
 		} else if (bfi->filter.nr_bits == GRAPH_MODIFIED_PATH_BLOOM_FILTER_EMBEDDED_NR_BITS) {
 			uint8_t filterdata[sizeof(uint64_t)];
@@ -1618,13 +1685,17 @@ static int handle_duplicate_modified_path_bloom_filter(
 
 static void create_modified_path_bloom_filter(
 		struct modified_path_bloom_filter_context *mpbfctx,
-		struct commit *commit)
+		struct commit *commit, int nth_parent)
 {
 	struct modified_path_bloom_filter_info *bfi;
 	struct object_id *parent_oid;
 	uintmax_t path_component_count;
+	int i;
 
 	if (!mpbfctx->use_modified_path_bloom_filters)
+		return;
+	if (nth_parent &&
+	    !mpbfctx->all_merge_parents)
 		return;
 
 	/*
@@ -1635,11 +1706,25 @@ static void create_modified_path_bloom_filter(
 	 */
 	bfi = modified_path_bloom_filters_peek(&modified_path_bloom_filters,
 					       commit);
-	if (bfi && bfi->filter.nr_bits)
+	for (i = 0; i < nth_parent && bfi; i++, bfi = bfi->next);
+	if (i == nth_parent && bfi && bfi->filter.nr_bits)
 		return;
 
-	parent_oid = commit->parents ? &commit->parents->item->object.oid :
-				       NULL;
+	if (commit->parents) {
+		struct commit_list *p;
+		for (i = 0, p = commit->parents;
+		     i < nth_parent && p;
+		     i++, p = p->next);
+		if (!p)
+			BUG("couldn't find %dth parent of commit %s\n",
+			    nth_parent + 1, oid_to_hex(&commit->object.oid));
+		parent_oid = &p->item->object.oid;
+	} else {
+		if (nth_parent)
+			BUG("looking for the %dth parent of commit %s with no parents",
+			    nth_parent + 1, oid_to_hex(&commit->object.oid));
+		parent_oid = NULL;
+	}
 	mpbfctx->hashes_nr = 0;
 	strbuf_reset(&mpbfctx->prev_path);
 	diff_tree_oid(parent_oid, &commit->object.oid, "", &mpbfctx->diffopt);
@@ -1647,7 +1732,23 @@ static void create_modified_path_bloom_filter(
 
 	bfi = modified_path_bloom_filters_at(&modified_path_bloom_filters,
 					     commit);
+	if (!nth_parent) {
+		/* This is the right bloom_filter_info instance. */
+		if (mpbfctx->all_merge_parents &&
+		    commit->parents && commit->parents->next)
+			mpbfctx->num_merge_index_entries++;
+	} else {
+		/* i is one step ahead of bfi */
+		for (i = 1; i < nth_parent && bfi; i++, bfi = bfi->next);
+		if (bfi->next)
+			BUG("Huh?!?");
+		bfi->next = xcalloc(1, sizeof(*bfi));
+		bfi = bfi->next;
+		mpbfctx->num_merge_index_entries++;
+	}
+
 	bfi->offset = -1;
+	bfi->merge_index_pos = -1;
 	if (path_component_count > mpbfctx->embedded_limit)
 		bloom_filter_init(&bfi->filter, mpbfctx->num_hashes,
 				  path_component_count);
@@ -1667,10 +1768,20 @@ static void create_modified_path_bloom_filter(
 static void add_missing_parents(struct write_commit_graph_context *ctx, struct commit *commit)
 {
 	struct commit_list *parent;
+	int nth_parent;
 
-	create_modified_path_bloom_filter(&ctx->mpbfctx, commit);
+	if (!commit->parents) {
+		/* root commit */
+		create_modified_path_bloom_filter(&ctx->mpbfctx, commit, 0);
+		return;
+	}
 
-	for (parent = commit->parents; parent; parent = parent->next) {
+	for (parent = commit->parents, nth_parent = 0;
+	     parent;
+	     parent = parent->next, nth_parent++) {
+		create_modified_path_bloom_filter(&ctx->mpbfctx, commit,
+						  nth_parent);
+
 		if (!(parent->item->object.flags & REACHABLE)) {
 			ALLOC_GROW(ctx->oids.list, ctx->oids.nr + 1, ctx->oids.alloc);
 			oidcpy(&ctx->oids.list[ctx->oids.nr], &(parent->item->object.oid));
@@ -2077,6 +2188,13 @@ static int write_commit_graph_file(struct write_commit_graph_context *ctx)
 			chunks[chunks_nr].id = GRAPH_CHUNKID_MODIFIED_PATH_BLOOM_FILTERS;
 			chunks[chunks_nr].size = ctx->mpbfctx.total_filter_size;
 			chunks[chunks_nr].write_fn = write_graph_chunk_modified_path_bloom_filters;
+			chunks_nr++;
+		}
+		if (ctx->mpbfctx.num_merge_index_entries) {
+			ALLOC_GROW(chunks, chunks_nr + 1, chunks_alloc);
+			chunks[chunks_nr].id = GRAPH_CHUNKID_MODIFIED_PATH_BLOOM_FILTER_MERGE_INDEX;
+			chunks[chunks_nr].size = ctx->mpbfctx.num_merge_index_entries * sizeof(uint64_t);
+			chunks[chunks_nr].write_fn = write_graph_chunk_modified_path_bloom_merge_index;
 			chunks_nr++;
 		}
 		ALLOC_GROW(chunks, chunks_nr + 1, chunks_alloc);
@@ -2487,6 +2605,9 @@ int write_commit_graph(const char *obj_dir,
 		warning("not writing modified path Bloom filters with --split");
 	} else if (res) {
 		ctx->mpbfctx.use_modified_path_bloom_filters = 1;
+		if (!git_config_get_bool("core.modifiedPathBloomFiltersForAllMergeParents", &res) &&
+		    res)
+			ctx->mpbfctx.all_merge_parents = 1;
 		ctx->mpbfctx.num_hashes = GRAPH_MODIFIED_PATH_BLOOM_FILTER_DEFAULT_NR_HASHES;
 		ctx->mpbfctx.embedded_limit = GRAPH_MODIFIED_PATH_BLOOM_FILTER_EMBEDDED_NR_BITS / (ctx->mpbfctx.num_hashes * 10 / 7);
 
