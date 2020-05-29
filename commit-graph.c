@@ -1474,11 +1474,22 @@ static int write_commit_graph_file(struct write_commit_graph_context *ctx)
 			progress_title.buf,
 			chunks_nr * ctx->commits.nr);
 	}
-	for (i = 0; i < chunks_nr; i++)
+	chunk_offset = f->total + f->offset;
+	for (i = 0; i < chunks_nr; i++) {
+		uint64_t end_offset;
+
 		if (chunks[i].write_fn(f, ctx)) {
 			ret = -1;
 			goto cleanup;
 		}
+
+		end_offset = f->total + f->offset;
+		if (end_offset - chunk_offset != chunks[i].size)
+			BUG("expected to write %lu bytes to chunk %08x, but wrote %lu instead",
+			    chunks[i].size, chunks[i].id,
+			    end_offset - chunk_offset);
+		chunk_offset = end_offset;
+	}
 	stop_progress(&ctx->progress);
 	strbuf_release(&progress_title);
 
