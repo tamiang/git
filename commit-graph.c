@@ -1703,6 +1703,9 @@ static void create_modified_path_bloom_filter(
 	 * (a commit can be present in multiple pack files, or multiple
 	 * refs can point to the same commit) so check first whether we have
 	 * already created a modified path Bloom filter for it.
+	 *
+	 * TODO: with '--reachable' we can now be sure that we only look at
+	 * each commit only once, so this is unnecessary in that code path.
 	 */
 	bfi = modified_path_bloom_filters_peek(&modified_path_bloom_filters,
 					       commit);
@@ -1889,16 +1892,6 @@ static void compute_generation_numbers(struct write_commit_graph_context *ctx)
 		}
 	}
 	stop_progress(&ctx->progress);
-}
-
-static int add_ref_to_list(const char *refname,
-			   const struct object_id *oid,
-			   int flags, void *cb_data)
-{
-	struct string_list *list = (struct string_list *)cb_data;
-
-	string_list_append(list, oid_to_hex(oid));
-	return 0;
 }
 
 static int fill_oids_from_packs(struct write_commit_graph_context *ctx,
@@ -2773,14 +2766,99 @@ int write_commit_graph_reachable(const char *obj_dir,
 				 enum commit_graph_write_flags flags,
 				 const struct split_commit_graph_opts *split_opts)
 {
-	struct string_list list = STRING_LIST_INIT_DUP;
-	int result;
+	struct write_commit_graph_context *ctx;
+	struct rev_info revs;
+	const char *revs_argv[] = { NULL, "--all", NULL };
+	struct commit *commit;
+	int result = 0;
 
-	for_each_ref(add_ref_to_list, &list);
-	result = write_commit_graph(obj_dir, NULL, &list,
-				    flags, split_opts);
+	ctx = init_write_commit_graph_context(obj_dir, flags, split_opts);
+	if (!ctx)
+		return 0;
 
-	string_list_clear(&list, 0);
+	/*
+	 * Some git commands write a commit-graph in-process at the end,
+	 * prevent their revision walk to interfere with ours.
+	 */
+	clear_object_flags(SEEN | ADDED | SHOWN | TOPO_WALK_EXPLORED |
+			   TOPO_WALK_INDEGREE | UNINTERESTING);
+
+	init_revisions(&revs, NULL);
+	setup_revisions(ARRAY_SIZE(revs_argv) - 1, revs_argv, &revs, NULL);
+	if (prepare_revision_walk(&revs)) {
+		error(_("revision walk setup failed"));
+		result = -1;
+		goto cleanup;
+	}
+
+	if (ctx->report_progress)
+		ctx->progress = start_delayed_progress(
+				_("Gathering commit info"),
+				0);
+	while ((commit = get_revision(&revs))) {
+		display_progress(ctx->progress, ctx->oids.nr + 1);
+		ALLOC_GROW(ctx->oids.list, ctx->oids.nr + 1, ctx->oids.alloc);
+		oidcpy(&ctx->oids.list[ctx->oids.nr], &commit->object.oid);
+		ctx->oids.nr++;
+
+		if (!commit->parents) {
+			create_modified_path_bloom_filter(&ctx->mpbfctx,
+							  commit, 0);
+		} else {
+			struct commit_list *parent;
+			int nth_parent;
+
+			for (parent = commit->parents, nth_parent = 0;
+			     parent;
+			     parent = parent->next, nth_parent++)
+				create_modified_path_bloom_filter(&ctx->mpbfctx,
+								  commit, nth_parent);
+		}
+	}
+	stop_progress(&ctx->progress);
+
+	if (ctx->oids.nr >= GRAPH_EDGE_LAST_MASK) {
+		error(_("the commit graph format cannot write %d commits"), ctx->oids.nr);
+		result = -1;
+		goto cleanup;
+	}
+
+	QSORT(ctx->oids.list, ctx->oids.nr, oid_compare);
+
+	/*
+	 * TODO: the revision walking loop above could fill ctx->commits
+	 * straight away, counting extra edges as well.
+	 */
+	ctx->commits.alloc = ctx->oids.nr;
+	ALLOC_ARRAY(ctx->commits.list, ctx->commits.alloc);
+
+	/*
+	 * Despite its unassuming name, this function removes duplicate
+	 * commits/oids and, worse, it does counts extra edges as well.
+	 */
+	copy_oids_to_commits(ctx);
+
+	if (!ctx->commits.nr)
+		goto cleanup;
+
+	if (ctx->split) {
+		split_graph_merge_strategy(ctx);
+
+		merge_commit_graphs(ctx);
+	} else
+		ctx->num_commit_graphs_after = 1;
+
+	compute_generation_numbers(ctx);
+
+	result = write_commit_graph_file(ctx);
+
+	if (ctx->split)
+		mark_commit_graphs(ctx);
+
+	expire_commit_graphs(ctx);
+
+cleanup:
+	free_write_commit_graph_context(ctx);
 	return result;
 }
 
