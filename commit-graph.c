@@ -21,6 +21,7 @@
 #define GRAPH_CHUNKID_DATA 0x43444154 /* "CDAT" */
 #define GRAPH_CHUNKID_EXTRAEDGES 0x45444745 /* "EDGE" */
 #define GRAPH_CHUNKID_BASE 0x42415345 /* "BASE" */
+#define GRAPH_CHUNKID_MODIFIED_PATH_BLOOM_FILTER_INDEX 0x4d504249 /* "MPBI" */
 
 #define GRAPH_DATA_WIDTH (the_hash_algo->rawsz + 16)
 
@@ -32,6 +33,10 @@
 #define GRAPH_PARENT_NONE 0x70000000
 
 #define GRAPH_LAST_EDGE 0x80000000
+
+#define GRAPH_MODIFIED_PATH_BLOOM_FILTER_NONE 0xffffffffffffffff
+
+#define GRAPH_MODIFIED_PATH_BLOOM_FILTER_DEFAULT_NR_HASHES 7
 
 #define GRAPH_HEADER_SIZE 8
 #define GRAPH_FANOUT_SIZE (4 * 256)
@@ -791,6 +796,11 @@ struct write_commit_graph_context {
 		 check_oids:1;
 
 	const struct split_commit_graph_opts *split_opts;
+
+	struct modified_path_bloom_filter_context {
+		unsigned use_modified_path_bloom_filters:1;
+		unsigned int num_hashes;
+	} mpbfctx;
 };
 
 static int write_graph_chunk_fanout(struct hashfile *f,
@@ -986,6 +996,20 @@ static int write_graph_chunk_extra_edges(struct hashfile *f,
 		}
 
 		list++;
+	}
+	return 0;
+}
+
+static int write_graph_chunk_modified_path_bloom_index(struct hashfile *f,
+		struct write_commit_graph_context *ctx)
+{
+	const uint64_t no_bloom_filter = GRAPH_MODIFIED_PATH_BLOOM_FILTER_NONE;
+	int i;
+
+	hashwrite(f, &ctx->mpbfctx.num_hashes, sizeof(uint8_t));
+	for (i = 0; i < ctx->commits.nr; i++) {
+		display_progress(ctx->progress, ++ctx->progress_cnt);
+		hashwrite(f, &no_bloom_filter, sizeof(no_bloom_filter));
 	}
 	return 0;
 }
@@ -1428,6 +1452,14 @@ static int write_commit_graph_file(struct write_commit_graph_context *ctx)
 		chunks[chunks_nr].write_fn = write_graph_chunk_extra_edges;
 		chunks_nr++;
 	}
+	if (ctx->mpbfctx.use_modified_path_bloom_filters) {
+		ALLOC_GROW(chunks, chunks_nr + 1, chunks_alloc);
+		chunks[chunks_nr].id = GRAPH_CHUNKID_MODIFIED_PATH_BLOOM_FILTER_INDEX;
+		chunks[chunks_nr].size = sizeof(uint8_t) +
+					 ctx->commits.nr * sizeof(uint64_t);
+		chunks[chunks_nr].write_fn = write_graph_chunk_modified_path_bloom_index;
+		chunks_nr++;
+	}
 	if (ctx->num_commit_graphs_after > 1) {
 		ALLOC_GROW(chunks, chunks_nr + 1, chunks_alloc);
 		chunks[chunks_nr].id = GRAPH_CHUNKID_BASE;
@@ -1823,6 +1855,14 @@ int write_commit_graph(const char *obj_dir,
 	ctx->split = flags & COMMIT_GRAPH_WRITE_SPLIT ? 1 : 0;
 	ctx->check_oids = flags & COMMIT_GRAPH_WRITE_CHECK_OIDS ? 1 : 0;
 	ctx->split_opts = split_opts;
+
+	git_config_get_bool("core.modifiedPathBloomFilters", &res);
+	if (res && ctx->split) {
+		warning("not writing modified path Bloom filters with --split");
+	} else if (res) {
+		ctx->mpbfctx.use_modified_path_bloom_filters = 1;
+		ctx->mpbfctx.num_hashes = GRAPH_MODIFIED_PATH_BLOOM_FILTER_DEFAULT_NR_HASHES;
+	}
 
 	if (ctx->split) {
 		struct commit_graph *g;

@@ -588,6 +588,12 @@ core.commitGraph::
 	to parse the graph structure of commits. Defaults to true. See
 	linkgit:git-commit-graph[1] for more information.
 
+core.modifiedPathBloomFilters::
+	EXPERIMENTAL!!
+	If true, then Git will store and use Bloom filters in the
+	commit-graph file to speed up pathspec-limited revision walks.
+	Defaults to false.
+
 core.useReplaceRefs::
 	If set to `false`, behave as if the `--no-replace-objects`
 	option was given on the command line. See linkgit:git[1] and
