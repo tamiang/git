@@ -26,6 +26,7 @@
 #define GRAPH_CHUNKID_EXTRAEDGES 0x45444745 /* "EDGE" */
 #define GRAPH_CHUNKID_BASE 0x42415345 /* "BASE" */
 #define GRAPH_CHUNKID_MODIFIED_PATH_BLOOM_FILTER_INDEX 0x4d504249 /* "MPBI" */
+#define GRAPH_CHUNKID_MODIFIED_PATH_BLOOM_FILTERS 0x4d504246 /* "MPBF" */
 #define GRAPH_CHUNKID_MODIFIED_PATH_BLOOM_FILTER_EXCLUDES 0x4d504258 /* "MPBX" */
 
 #define GRAPH_DATA_WIDTH (the_hash_algo->rawsz + 16)
@@ -56,6 +57,12 @@
 
 struct modified_path_bloom_filter_info {
 	struct bloom_filter filter;
+	/*
+	 * The offset relative to the start of the Modified Path Bloom
+	 * Filters chunk where this Bloom filter has been written,
+	 * -1 before that.
+	 */
+	uint64_t offset;
 };
 
 static void free_modified_path_bloom_filter_info_in_slab(
@@ -1019,6 +1026,9 @@ struct write_commit_graph_context {
 		 */
 		uint32_t *hashes;
 		int hashes_nr, hashes_alloc;
+
+		/* Excluding embedded modified path Bloom filters */
+		uint64_t total_filter_size;
 	} mpbfctx;
 };
 
@@ -1219,6 +1229,43 @@ static int write_graph_chunk_extra_edges(struct hashfile *f,
 	return 0;
 }
 
+static int write_graph_chunk_modified_path_bloom_filters(struct hashfile *f,
+		struct write_commit_graph_context *ctx)
+{
+	uint64_t offset = 0;
+	int i;
+
+	for (i = 0; i < ctx->commits.nr; i++) {
+		struct commit *commit = ctx->commits.list[i];
+		struct modified_path_bloom_filter_info *bfi;
+		unsigned int filter_size;
+
+		display_progress(ctx->progress, ++ctx->progress_cnt);
+
+		bfi = modified_path_bloom_filters_peek(
+				&modified_path_bloom_filters, commit);
+
+		if (!bfi || !bfi->filter.nr_bits)
+			continue;
+		if (bfi->filter.nr_bits == GRAPH_MODIFIED_PATH_BLOOM_FILTER_EMBEDDED_NR_BITS)
+			continue;
+
+		if (offset >> 62)
+			BUG("offset %lu is too large for the Modified Path Bloom Filter Index chunk",
+			    offset);
+
+		bfi->offset = offset;
+
+		filter_size = bloom_filter_bytes(&bfi->filter);
+
+		hashwrite_be32(f, bfi->filter.nr_bits);
+		hashwrite(f, bfi->filter.bits, filter_size);
+
+		offset += sizeof(uint32_t) + filter_size;
+	}
+	return 0;
+}
+
 static int write_graph_chunk_modified_path_bloom_index(struct hashfile *f,
 		struct write_commit_graph_context *ctx)
 {
@@ -1247,8 +1294,11 @@ static int write_graph_chunk_modified_path_bloom_index(struct hashfile *f,
 			 */
 			filterdata[0] |= 1 << 7;
 			hashwrite(f, filterdata, sizeof(filterdata));
+		} else if (bfi->offset != -1) {
+			uint64_t offset = htonll(bfi->offset);
+			hashwrite(f, &offset, sizeof(offset));
 		} else
-			BUG("writing non-embedded Bloom filters is not implemented yet");
+			BUG("modified path Bloom filter offset is still -1?!");
 	}
 	return 0;
 }
@@ -1424,17 +1474,20 @@ static void create_modified_path_bloom_filter(
 	diff_tree_oid(parent_oid, &commit->object.oid, "", &mpbfctx->diffopt);
 	path_component_count = mpbfctx->hashes_nr / mpbfctx->num_hashes;
 
+	bfi = modified_path_bloom_filters_at(&modified_path_bloom_filters,
+					     commit);
+	bfi->offset = -1;
 	if (path_component_count > mpbfctx->embedded_limit) {
-		/* Not implemented yet. */
-	} else {
-		bfi = modified_path_bloom_filters_at(
-				&modified_path_bloom_filters, commit);
-
+		bloom_filter_init(&bfi->filter, mpbfctx->num_hashes,
+				  path_component_count);
+		mpbfctx->total_filter_size += sizeof(uint32_t) +
+					      bloom_filter_bytes(&bfi->filter);
+	} else
 		bloom_filter_init_with_size(&bfi->filter,
 				GRAPH_MODIFIED_PATH_BLOOM_FILTER_EMBEDDED_NR_BITS);
-		bloom_filter_set_bits(&bfi->filter, mpbfctx->hashes,
-				      mpbfctx->hashes_nr);
-	}
+
+	bloom_filter_set_bits(&bfi->filter, mpbfctx->hashes,
+			      mpbfctx->hashes_nr);
 }
 
 static void add_missing_parents(struct write_commit_graph_context *ctx, struct commit *commit)
@@ -1845,6 +1898,13 @@ static int write_commit_graph_file(struct write_commit_graph_context *ctx)
 		chunks_nr++;
 	}
 	if (ctx->mpbfctx.use_modified_path_bloom_filters) {
+		if (ctx->mpbfctx.total_filter_size) {
+			ALLOC_GROW(chunks, chunks_nr + 1, chunks_alloc);
+			chunks[chunks_nr].id = GRAPH_CHUNKID_MODIFIED_PATH_BLOOM_FILTERS;
+			chunks[chunks_nr].size = ctx->mpbfctx.total_filter_size;
+			chunks[chunks_nr].write_fn = write_graph_chunk_modified_path_bloom_filters;
+			chunks_nr++;
+		}
 		ALLOC_GROW(chunks, chunks_nr + 1, chunks_alloc);
 		chunks[chunks_nr].id = GRAPH_CHUNKID_MODIFIED_PATH_BLOOM_FILTER_INDEX;
 		chunks[chunks_nr].size = sizeof(uint8_t) +
