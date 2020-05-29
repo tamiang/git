@@ -2570,19 +2570,16 @@ out:
 	strbuf_release(&path);
 }
 
-int write_commit_graph(const char *obj_dir,
-		       struct string_list *pack_indexes,
-		       struct string_list *commit_hex,
-		       enum commit_graph_write_flags flags,
-		       const struct split_commit_graph_opts *split_opts)
+static struct write_commit_graph_context *init_write_commit_graph_context(
+		const char *obj_dir, enum commit_graph_write_flags flags,
+		const struct split_commit_graph_opts *split_opts)
 {
 	struct write_commit_graph_context *ctx;
-	uint32_t i, count_distinct = 0;
 	size_t len;
 	int res = 0;
 
 	if (!commit_graph_compatible(the_repository))
-		return 0;
+		return NULL;
 
 	ctx = xcalloc(1, sizeof(struct write_commit_graph_context));
 	ctx->r = the_repository;
@@ -2637,6 +2634,7 @@ int write_commit_graph(const char *obj_dir,
 		}
 
 		if (ctx->num_commit_graphs_before) {
+			int i;
 			ALLOC_ARRAY(ctx->commit_graph_filenames_before, ctx->num_commit_graphs_before);
 			i = ctx->num_commit_graphs_before;
 			g = ctx->r->objects->commit_graph;
@@ -2664,8 +2662,64 @@ int write_commit_graph(const char *obj_dir,
 		ctx->oids.alloc = 1024;
 	ALLOC_ARRAY(ctx->oids.list, ctx->oids.alloc);
 
+	return ctx;
+}
+
+static void free_write_commit_graph_context(
+		struct write_commit_graph_context *ctx)
+{
+	free(ctx->graph_name);
+	free(ctx->commits.list);
+	free(ctx->oids.list);
+	free(ctx->obj_dir);
+
+	if (ctx->commit_graph_filenames_after) {
+		int i;
+		for (i = 0; i < ctx->num_commit_graphs_after; i++) {
+			free(ctx->commit_graph_filenames_after[i]);
+			free(ctx->commit_graph_hash_after[i]);
+		}
+
+		for (i = 0; i < ctx->num_commit_graphs_before; i++)
+			free(ctx->commit_graph_filenames_before[i]);
+
+		free(ctx->commit_graph_filenames_after);
+		free(ctx->commit_graph_filenames_before);
+		free(ctx->commit_graph_hash_after);
+	}
+
+	if (ctx->mpbfctx.use_modified_path_bloom_filters) {
+		deep_clear_modified_path_bloom_filters(
+				&modified_path_bloom_filters,
+				free_modified_path_bloom_filter_info_in_slab);
+		strbuf_release(&ctx->mpbfctx.prev_path);
+		free(ctx->mpbfctx.hashed_prefix_lengths);
+		free(ctx->mpbfctx.hashes);
+		hashmap_free_entries(&ctx->mpbfctx.dedup_hashmap,
+				struct modified_path_bloom_filter_dedup_entry,
+				entry);
+	}
+
+	free(ctx);
+}
+
+int write_commit_graph(const char *obj_dir,
+		       struct string_list *pack_indexes,
+		       struct string_list *commit_hex,
+		       enum commit_graph_write_flags flags,
+		       const struct split_commit_graph_opts *split_opts)
+{
+	struct write_commit_graph_context *ctx;
+	uint32_t count_distinct = 0;
+	int res = 0;
+
+	ctx = init_write_commit_graph_context(obj_dir, flags, split_opts);
+	if (!ctx)
+		return 0;
+
 	if (ctx->append && ctx->r->objects->commit_graph) {
 		struct commit_graph *g = ctx->r->objects->commit_graph;
+		int i;
 		for (i = 0; i < g->num_commits; i++) {
 			const unsigned char *hash = g->chunk_oid_lookup + g->hash_len * i;
 			hashcpy(ctx->oids.list[ctx->oids.nr++].hash, hash);
@@ -2726,39 +2780,7 @@ int write_commit_graph(const char *obj_dir,
 	expire_commit_graphs(ctx);
 
 cleanup:
-	free(ctx->graph_name);
-	free(ctx->commits.list);
-	free(ctx->oids.list);
-	free(ctx->obj_dir);
-
-	if (ctx->commit_graph_filenames_after) {
-		for (i = 0; i < ctx->num_commit_graphs_after; i++) {
-			free(ctx->commit_graph_filenames_after[i]);
-			free(ctx->commit_graph_hash_after[i]);
-		}
-
-		for (i = 0; i < ctx->num_commit_graphs_before; i++)
-			free(ctx->commit_graph_filenames_before[i]);
-
-		free(ctx->commit_graph_filenames_after);
-		free(ctx->commit_graph_filenames_before);
-		free(ctx->commit_graph_hash_after);
-	}
-
-	if (ctx->mpbfctx.use_modified_path_bloom_filters) {
-		deep_clear_modified_path_bloom_filters(
-				&modified_path_bloom_filters,
-				free_modified_path_bloom_filter_info_in_slab);
-		strbuf_release(&ctx->mpbfctx.prev_path);
-		free(ctx->mpbfctx.hashed_prefix_lengths);
-		free(ctx->mpbfctx.hashes);
-		hashmap_free_entries(&ctx->mpbfctx.dedup_hashmap,
-				struct modified_path_bloom_filter_dedup_entry,
-				entry);
-	}
-
-	free(ctx);
-
+	free_write_commit_graph_context(ctx);
 	return res;
 }
 
