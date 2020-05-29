@@ -1348,9 +1348,12 @@ static int write_graph_chunk_base(struct hashfile *f,
 	return 0;
 }
 
+typedef int (*chunk_write_fn)(struct hashfile *f,
+			      struct write_commit_graph_context *ctx);
 struct chunk_info {
 	uint32_t id;
 	uint64_t size;
+	chunk_write_fn write_fn;
 };
 
 static int write_commit_graph_file(struct write_commit_graph_context *ctx)
@@ -1406,31 +1409,37 @@ static int write_commit_graph_file(struct write_commit_graph_context *ctx)
 	ALLOC_GROW(chunks, chunks_nr + 1, chunks_alloc);
 	chunks[chunks_nr].id = GRAPH_CHUNKID_OIDFANOUT;
 	chunks[chunks_nr].size = GRAPH_FANOUT_SIZE;
+	chunks[chunks_nr].write_fn = write_graph_chunk_fanout;
 	chunks_nr++;
 	ALLOC_GROW(chunks, chunks_nr + 1, chunks_alloc);
 	chunks[chunks_nr].id = GRAPH_CHUNKID_OIDLOOKUP;
 	chunks[chunks_nr].size = hashsz * ctx->commits.nr;
+	chunks[chunks_nr].write_fn = write_graph_chunk_oids;
 	chunks_nr++;
 	ALLOC_GROW(chunks, chunks_nr + 1, chunks_alloc);
 	chunks[chunks_nr].id = GRAPH_CHUNKID_DATA;
 	chunks[chunks_nr].size = (hashsz + 16) * ctx->commits.nr;
+	chunks[chunks_nr].write_fn = write_graph_chunk_data;
 	chunks_nr++;
 	if (ctx->num_extra_edges) {
 		ALLOC_GROW(chunks, chunks_nr + 1, chunks_alloc);
 		chunks[chunks_nr].id = GRAPH_CHUNKID_EXTRAEDGES;
 		chunks[chunks_nr].size = 4 * ctx->num_extra_edges;
+		chunks[chunks_nr].write_fn = write_graph_chunk_extra_edges;
 		chunks_nr++;
 	}
 	if (ctx->num_commit_graphs_after > 1) {
 		ALLOC_GROW(chunks, chunks_nr + 1, chunks_alloc);
 		chunks[chunks_nr].id = GRAPH_CHUNKID_BASE;
 		chunks[chunks_nr].size = hashsz * (ctx->num_commit_graphs_after - 1);
+		chunks[chunks_nr].write_fn = write_graph_chunk_base;
 		chunks_nr++;
 	}
 
 	ALLOC_GROW(chunks, chunks_nr + 1, chunks_alloc);
 	chunks[chunks_nr].id = 0;
 	chunks[chunks_nr].size = 0;
+	chunks[chunks_nr].write_fn = NULL;
 	/*
 	 * Do not increase 'chunks_nr', so it still reflects the number of
 	 * actual chunks, without the Chunk Lookup table's terminating label.
@@ -1465,16 +1474,11 @@ static int write_commit_graph_file(struct write_commit_graph_context *ctx)
 			progress_title.buf,
 			chunks_nr * ctx->commits.nr);
 	}
-	write_graph_chunk_fanout(f, ctx);
-	write_graph_chunk_oids(f, ctx);
-	write_graph_chunk_data(f, ctx);
-	if (ctx->num_extra_edges)
-		write_graph_chunk_extra_edges(f, ctx);
-	if (ctx->num_commit_graphs_after > 1 &&
-	    write_graph_chunk_base(f, ctx)) {
-		ret = -1;
-		goto cleanup;
-	}
+	for (i = 0; i < chunks_nr; i++)
+		if (chunks[i].write_fn(f, ctx)) {
+			ret = -1;
+			goto cleanup;
+		}
 	stop_progress(&ctx->progress);
 	strbuf_release(&progress_title);
 
