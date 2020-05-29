@@ -1023,9 +1023,9 @@ static void compute_modified_path_bloom_hashes_for_path(const char *path,
 void init_pathspec_bloom_fields(struct repository *r,
 				struct pathspec *pathspec)
 {
-	const unsigned bloom_compatible_magic = PATHSPEC_LITERAL;
+	const unsigned bloom_compatible_magic = PATHSPEC_LITERAL | PATHSPEC_GLOB;
 	struct commit_graph *graph = r->objects->commit_graph;
-	int i;
+	int i, can_use_modified_path_bloom_filters;
 
 	if (!graph)
 		return;
@@ -1033,15 +1033,14 @@ void init_pathspec_bloom_fields(struct repository *r,
 		return;
 	if (!pathspec->nr)
 		return;
-	if (pathspec->has_wildcard)
-		return;
 	if (pathspec->magic & ~bloom_compatible_magic)
 		return;
 
+	can_use_modified_path_bloom_filters = 1;
 	for (i = 0; i < pathspec->nr; i++) {
 		struct pathspec_item *pi = &pathspec->items[i];
 		const char *path = pi->match, *p;
-		size_t len = pi->len;
+		size_t nowildcard_len = pi->nowildcard_len;
 		int path_component_nr = 0, j;
 		uint32_t *hashes;
 		struct bloom_filter embedded_bf;
@@ -1051,14 +1050,29 @@ void init_pathspec_bloom_fields(struct repository *r,
 		 * slashes, but a trailing slash might still be present,
 		 * "remove" it.
 		 */
-		if (path[len - 1] == '/')
-			len--;
+		if (path[nowildcard_len - 1] == '/')
+			nowildcard_len--;
 
 		p = path;
 		do {
 			p = strchrnul(p + 1, '/');
-			path_component_nr++;
-		} while (p - path < len);
+			if (p - path <= nowildcard_len)
+				path_component_nr++;
+		} while (p - path < nowildcard_len);
+		/*
+		 * If a pathspec uses wildcards but has wildcard-less
+		 * leading directories, then we can use modified path Bloom
+		 * filters to skip commits that don't modify those leading
+		 * directories.
+		 * However, if there is even one pathspec that has a wilcard
+		 * in its first path component, then we have no choice but
+		 * to run tree-diff anyway, so don't bother with Bloom
+		 * filters at all in that case.
+		 */
+		if (!path_component_nr) {
+			can_use_modified_path_bloom_filters = 0;
+			break;
+		}
 
 		pi->modified_path_bloom_hashes_nr = path_component_nr * graph->num_modified_path_bloom_hashes;
 		ALLOC_ARRAY(pi->modified_path_bloom_hashes,
@@ -1084,7 +1098,17 @@ void init_pathspec_bloom_fields(struct repository *r,
 				      pi->modified_path_bloom_hashes_nr);
 	}
 
-	pathspec->can_use_modified_path_bloom_filters = 1;
+	if (can_use_modified_path_bloom_filters) {
+		pathspec->can_use_modified_path_bloom_filters = 1;
+	} else {
+		int j;
+		for (j = 0; j < i; j++) {
+			struct pathspec_item *pi = &pathspec->items[j];
+			FREE_AND_NULL(pi->modified_path_bloom_hashes);
+			pi->modified_path_bloom_hashes_nr = 0;
+			pi->modified_path_bloom_mask = 0;
+		}
+	}
 }
 
 struct packed_commit_list {
