@@ -64,6 +64,7 @@ struct pathspec {
 		 */
 		uint32_t modified_path_bloom_hashes_nr;
 		uint32_t *modified_path_bloom_hashes;
+		uint64_t modified_path_bloom_mask;
 	} *items;
 };
 

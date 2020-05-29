@@ -918,10 +918,16 @@ enum bloom_result check_modified_path_bloom_filter(struct repository *r,
 	for (i = 0; i < pathspec->nr; i++) {
 		struct pathspec_item *pi = &pathspec->items[i];
 
-		if (bloom_filter_check_bits(&bf,
+		if (bf.nr_bits == GRAPH_MODIFIED_PATH_BLOOM_FILTER_EMBEDDED_NR_BITS) {
+			/* Gross!  And potential alignment issues?! */
+			if ((*((const uint64_t*)bf.bits) & pi->modified_path_bloom_mask) == pi->modified_path_bloom_mask)
+				return BLOOM_POSSIBLY_YES;
+		} else {
+			if (bloom_filter_check_bits(&bf,
 					pi->modified_path_bloom_hashes,
 					pi->modified_path_bloom_hashes_nr))
-			return BLOOM_POSSIBLY_YES;
+				return BLOOM_POSSIBLY_YES;
+		}
 	}
 
 	return BLOOM_DEFINITELY_NOT;
@@ -981,6 +987,7 @@ void init_pathspec_bloom_fields(struct repository *r,
 		size_t len = pi->len;
 		int path_component_nr = 0, j;
 		uint32_t *hashes;
+		struct bloom_filter embedded_bf;
 
 		/*
 		 * Pathspec parsing has normalized away any consecutive
@@ -1012,6 +1019,12 @@ void init_pathspec_bloom_fields(struct repository *r,
 					graph->num_modified_path_bloom_hashes,
 					hashes);
 		}
+
+		embedded_bf.nr_bits = GRAPH_MODIFIED_PATH_BLOOM_FILTER_EMBEDDED_NR_BITS;
+		embedded_bf.bits = (uint8_t*) &pi->modified_path_bloom_mask;
+		bloom_filter_set_bits(&embedded_bf,
+				      pi->modified_path_bloom_hashes,
+				      pi->modified_path_bloom_hashes_nr);
 	}
 
 	pathspec->can_use_modified_path_bloom_filters = 1;

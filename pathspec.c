@@ -408,6 +408,7 @@ static void init_pathspec_item(struct pathspec_item *item, unsigned flags,
 	item->attr_match_nr = 0;
 	item->modified_path_bloom_hashes_nr = 0;
 	item->modified_path_bloom_hashes = NULL;
+	item->modified_path_bloom_mask = 0;
 
 	/* PATHSPEC_LITERAL_PATH ignores magic */
 	if (flags & PATHSPEC_LITERAL_PATH) {
