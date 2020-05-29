@@ -67,6 +67,8 @@ struct modified_path_bloom_filter_info {
 	uint64_t offset;
 	uint32_t merge_index_pos;
 	struct modified_path_bloom_filter_info *next;
+	/* TODO: need better names for 'next' and 'next_commit_bfi' */
+	struct modified_path_bloom_filter_info *next_commit_bfi;
 };
 
 static void free_modified_path_bloom_filter_info_in_slab(
@@ -1159,6 +1161,10 @@ struct write_commit_graph_context {
 
 		/* Used to find identical modified path Bloom filters */
 		struct hashmap dedup_hashmap;
+
+		/* To chain up Bloom filters in history order */
+		struct modified_path_bloom_filter_info *first_commit_bfi;
+		struct modified_path_bloom_filter_info *prev_commit_bfi;
 	} mpbfctx;
 };
 
@@ -1363,18 +1369,18 @@ static int write_graph_chunk_modified_path_bloom_filters(struct hashfile *f,
 		struct write_commit_graph_context *ctx)
 {
 	uint64_t offset = 0;
-	int i;
+	struct modified_path_bloom_filter_info *next_commit_bfi;
 
-	for (i = 0; i < ctx->commits.nr; i++) {
-		struct commit *commit = ctx->commits.list[i];
-		struct modified_path_bloom_filter_info *bfi;
-		unsigned int filter_size;
+	next_commit_bfi = ctx->mpbfctx.first_commit_bfi;
+	while (next_commit_bfi) {
+		struct modified_path_bloom_filter_info *bfi = next_commit_bfi;
+
+		next_commit_bfi = next_commit_bfi->next_commit_bfi;
 
 		display_progress(ctx->progress, ++ctx->progress_cnt);
 
-		bfi = modified_path_bloom_filters_peek(
-				&modified_path_bloom_filters, commit);
 		for (; bfi; bfi = bfi->next) {
+			unsigned int filter_size;
 			if (bfi->duplicate_of)
 				continue;
 			if (!bfi->filter.nr_bits)
@@ -1761,6 +1767,14 @@ static void create_modified_path_bloom_filter(
 
 	bloom_filter_set_bits(&bfi->filter, mpbfctx->hashes,
 			      mpbfctx->hashes_nr);
+
+	if (!mpbfctx->first_commit_bfi) {
+		mpbfctx->first_commit_bfi = bfi;
+		mpbfctx->prev_commit_bfi = bfi;
+	} else if (!nth_parent) {
+		mpbfctx->prev_commit_bfi->next_commit_bfi = bfi;
+		mpbfctx->prev_commit_bfi = bfi;
+	}
 
 	if (path_component_count > mpbfctx->embedded_limit &&
 	    !handle_duplicate_modified_path_bloom_filter(mpbfctx, bfi))
