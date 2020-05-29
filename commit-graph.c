@@ -26,6 +26,7 @@
 #define GRAPH_CHUNKID_EXTRAEDGES 0x45444745 /* "EDGE" */
 #define GRAPH_CHUNKID_BASE 0x42415345 /* "BASE" */
 #define GRAPH_CHUNKID_MODIFIED_PATH_BLOOM_FILTER_INDEX 0x4d504249 /* "MPBI" */
+#define GRAPH_CHUNKID_MODIFIED_PATH_BLOOM_FILTER_MERGE_INDEX 0x4d50424d /* "MPBM" */
 #define GRAPH_CHUNKID_MODIFIED_PATH_BLOOM_FILTERS 0x4d504246 /* "MPBF" */
 #define GRAPH_CHUNKID_MODIFIED_PATH_BLOOM_FILTER_EXCLUDES 0x4d504258 /* "MPBX" */
 
@@ -325,6 +326,15 @@ struct commit_graph *parse_commit_graph(void *graph_map, int fd,
 			else {
 				graph->chunk_mpbf_index = data + chunk_offset;
 				graph->chunk_mpbf_index_size = next_chunk_offset - chunk_offset;
+			}
+			break;
+
+		case GRAPH_CHUNKID_MODIFIED_PATH_BLOOM_FILTER_MERGE_INDEX:
+			if (graph->chunk_mpbf_merge_index)
+				chunk_repeated = 1;
+			else {
+				graph->chunk_mpbf_merge_index = data + chunk_offset;
+				graph->chunk_mpbf_merge_index_size = next_chunk_offset - chunk_offset;
 			}
 			break;
 
@@ -869,11 +879,44 @@ static int load_modified_path_bloom_filter_from_graph(
 		bf->bits = (uint8_t*) bloom_index;
 		return 1;
 	} else if (bloom_index[0] & (1 << 6)) {
-		/*
-		 * Modified path Bloom filters for second..nth parents of
-		 * merge commits are not implemented yet.
-		 */
-		return 0;
+		struct commit_list *p;
+		uint32_t pos;
+		int found = 0;
+
+		pos = get_be32(bloom_index + sizeof(uint32_t));
+
+		if (!graph->chunk_mpbf_merge_index)
+			BUG("commit %s refers to position %u in the Modified Path Bloom Filter Merge Index chunk, but that chunk is missing",
+			    oid_to_hex(&commit->object.oid), pos);
+
+		for (p = commit->parents; p; p = p->next, pos++)
+			if (p->item == parent) {
+				found = 1;
+				break;
+			}
+		if (!found)
+			BUG("commit %s has no parent %s\n",
+			    oid_to_hex(&commit->object.oid),
+			    oid_to_hex(&parent->object.oid));
+
+		if (pos * sizeof(uint64_t) > graph->chunk_mpbf_merge_index_size)
+			BUG("commit %s and parent %s refer to position %u in the Modified Path Bloom Filter Merge Index chunk, but that's too large for a chunk of size %lu bytes",
+			    oid_to_hex(&commit->object.oid),
+			    oid_to_hex(&parent->object.oid), pos,
+			    graph->chunk_mpbf_merge_index_size);
+		bloom_index = graph->chunk_mpbf_merge_index + sizeof(uint64_t) * pos;
+		if (bloom_index[0] & (1 << 7)) {
+			uint64_t v;
+			memcpy(&v, bloom_index, sizeof(v));
+			if (v == GRAPH_MODIFIED_PATH_BLOOM_FILTER_NONE)
+				return 0;
+
+			/* embedded modified path Bloom filter */
+			bf->nr_bits = GRAPH_MODIFIED_PATH_BLOOM_FILTER_EMBEDDED_NR_BITS;
+			bf->bits = (uint8_t*) bloom_index;
+			return 1;
+		} else
+			offset = get_be64(bloom_index);
 	} else {
 		if (!first_parent)
 			return 0;
