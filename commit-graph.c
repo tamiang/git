@@ -1355,12 +1355,13 @@ static int write_commit_graph_file(struct write_commit_graph_context *ctx)
 	int fd;
 	struct hashfile *f;
 	struct lock_file lk = LOCK_INIT;
-	struct chunk_info chunks[6];
+	struct chunk_info *chunks = NULL;
+	int chunks_nr = 0, chunks_alloc = 0;
 	const unsigned hashsz = the_hash_algo->rawsz;
 	struct strbuf progress_title = STRBUF_INIT;
-	int num_chunks = 3;
 	uint64_t chunk_offset;
 	struct object_id file_hash;
+	int ret = 0;
 
 	if (ctx->split) {
 		struct strbuf tmp_file = STRBUF_INIT;
@@ -1398,35 +1399,48 @@ static int write_commit_graph_file(struct write_commit_graph_context *ctx)
 		f = hashfd(lk.tempfile->fd, lk.tempfile->filename.buf);
 	}
 
-	chunks[0].id = GRAPH_CHUNKID_OIDFANOUT;
-	chunks[0].size = GRAPH_FANOUT_SIZE;
-	chunks[1].id = GRAPH_CHUNKID_OIDLOOKUP;
-	chunks[1].size = hashsz * ctx->commits.nr;
-	chunks[2].id = GRAPH_CHUNKID_DATA;
-	chunks[2].size = (hashsz + 16) * ctx->commits.nr;
+	ALLOC_GROW(chunks, chunks_nr + 1, chunks_alloc);
+	chunks[chunks_nr].id = GRAPH_CHUNKID_OIDFANOUT;
+	chunks[chunks_nr].size = GRAPH_FANOUT_SIZE;
+	chunks_nr++;
+	ALLOC_GROW(chunks, chunks_nr + 1, chunks_alloc);
+	chunks[chunks_nr].id = GRAPH_CHUNKID_OIDLOOKUP;
+	chunks[chunks_nr].size = hashsz * ctx->commits.nr;
+	chunks_nr++;
+	ALLOC_GROW(chunks, chunks_nr + 1, chunks_alloc);
+	chunks[chunks_nr].id = GRAPH_CHUNKID_DATA;
+	chunks[chunks_nr].size = (hashsz + 16) * ctx->commits.nr;
+	chunks_nr++;
 	if (ctx->num_extra_edges) {
-		chunks[num_chunks].id = GRAPH_CHUNKID_EXTRAEDGES;
-		chunks[num_chunks].size = 4 * ctx->num_extra_edges;
-		num_chunks++;
+		ALLOC_GROW(chunks, chunks_nr + 1, chunks_alloc);
+		chunks[chunks_nr].id = GRAPH_CHUNKID_EXTRAEDGES;
+		chunks[chunks_nr].size = 4 * ctx->num_extra_edges;
+		chunks_nr++;
 	}
 	if (ctx->num_commit_graphs_after > 1) {
-		chunks[num_chunks].id = GRAPH_CHUNKID_BASE;
-		chunks[num_chunks].size = hashsz * (ctx->num_commit_graphs_after - 1);
-		num_chunks++;
+		ALLOC_GROW(chunks, chunks_nr + 1, chunks_alloc);
+		chunks[chunks_nr].id = GRAPH_CHUNKID_BASE;
+		chunks[chunks_nr].size = hashsz * (ctx->num_commit_graphs_after - 1);
+		chunks_nr++;
 	}
 
-	chunks[num_chunks].id = 0;
-	chunks[num_chunks].size = 0;
+	ALLOC_GROW(chunks, chunks_nr + 1, chunks_alloc);
+	chunks[chunks_nr].id = 0;
+	chunks[chunks_nr].size = 0;
+	/*
+	 * Do not increase 'chunks_nr', so it still reflects the number of
+	 * actual chunks, without the Chunk Lookup table's terminating label.
+	 */
 
 	hashwrite_be32(f, GRAPH_SIGNATURE);
 
 	hashwrite_u8(f, GRAPH_VERSION);
 	hashwrite_u8(f, oid_version());
-	hashwrite_u8(f, num_chunks);
+	hashwrite_u8(f, chunks_nr);
 	hashwrite_u8(f, ctx->num_commit_graphs_after - 1);
 
-	chunk_offset = 8 + (num_chunks + 1) * GRAPH_CHUNKLOOKUP_WIDTH;
-	for (i = 0; i <= num_chunks; i++) {
+	chunk_offset = 8 + (chunks_nr + 1) * GRAPH_CHUNKLOOKUP_WIDTH;
+	for (i = 0; i <= chunks_nr; i++) {
 		uint32_t chunk_write[3];
 
 		chunk_write[0] = htonl(chunks[i].id);
@@ -1441,11 +1455,11 @@ static int write_commit_graph_file(struct write_commit_graph_context *ctx)
 		strbuf_addf(&progress_title,
 			    Q_("Writing out commit graph in %d pass",
 			       "Writing out commit graph in %d passes",
-			       num_chunks),
-			    num_chunks);
+			       chunks_nr),
+			    chunks_nr);
 		ctx->progress = start_delayed_progress(
 			progress_title.buf,
-			num_chunks * ctx->commits.nr);
+			chunks_nr * ctx->commits.nr);
 	}
 	write_graph_chunk_fanout(f, ctx);
 	write_graph_chunk_oids(f, hashsz, ctx);
@@ -1454,7 +1468,8 @@ static int write_commit_graph_file(struct write_commit_graph_context *ctx)
 		write_graph_chunk_extra_edges(f, ctx);
 	if (ctx->num_commit_graphs_after > 1 &&
 	    write_graph_chunk_base(f, ctx)) {
-		return -1;
+		ret = -1;
+		goto cleanup;
 	}
 	stop_progress(&ctx->progress);
 	strbuf_release(&progress_title);
@@ -1481,7 +1496,8 @@ static int write_commit_graph_file(struct write_commit_graph_context *ctx)
 
 		if (!chainf) {
 			error(_("unable to open commit-graph chain file"));
-			return -1;
+			ret = -1;
+			goto cleanup;
 		}
 
 		if (ctx->base_graph_name) {
@@ -1493,7 +1509,8 @@ static int write_commit_graph_file(struct write_commit_graph_context *ctx)
 
 				if (result) {
 					error(_("failed to rename base commit-graph file"));
-					return -1;
+					ret = -1;
+					goto cleanup;
 				}
 			}
 		} else {
@@ -1513,13 +1530,16 @@ static int write_commit_graph_file(struct write_commit_graph_context *ctx)
 
 		if (result) {
 			error(_("failed to rename temporary commit-graph file"));
-			return -1;
+			ret = -1;
+			goto cleanup;
 		}
 	}
 
 	commit_lock_file(&lk);
 
-	return 0;
+cleanup:
+	free(chunks);
+	return ret;
 }
 
 static void split_graph_merge_strategy(struct write_commit_graph_context *ctx)
