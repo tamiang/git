@@ -1901,21 +1901,6 @@ static int add_ref_to_list(const char *refname,
 	return 0;
 }
 
-int write_commit_graph_reachable(const char *obj_dir,
-				 enum commit_graph_write_flags flags,
-				 const struct split_commit_graph_opts *split_opts)
-{
-	struct string_list list = STRING_LIST_INIT_DUP;
-	int result;
-
-	for_each_ref(add_ref_to_list, &list);
-	result = write_commit_graph(obj_dir, NULL, &list,
-				    flags, split_opts);
-
-	string_list_clear(&list, 0);
-	return result;
-}
-
 static int fill_oids_from_packs(struct write_commit_graph_context *ctx,
 				struct string_list *pack_indexes)
 {
@@ -2782,6 +2767,21 @@ int write_commit_graph(const char *obj_dir,
 cleanup:
 	free_write_commit_graph_context(ctx);
 	return res;
+}
+
+int write_commit_graph_reachable(const char *obj_dir,
+				 enum commit_graph_write_flags flags,
+				 const struct split_commit_graph_opts *split_opts)
+{
+	struct string_list list = STRING_LIST_INIT_DUP;
+	int result;
+
+	for_each_ref(add_ref_to_list, &list);
+	result = write_commit_graph(obj_dir, NULL, &list,
+				    flags, split_opts);
+
+	string_list_clear(&list, 0);
+	return result;
 }
 
 #define VERIFY_COMMIT_GRAPH_ERROR_HASH 2
