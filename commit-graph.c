@@ -57,6 +57,7 @@
 
 struct modified_path_bloom_filter_info {
 	struct bloom_filter filter;
+	struct modified_path_bloom_filter_info *duplicate_of;
 	/*
 	 * The offset relative to the start of the Modified Path Bloom
 	 * Filters chunk where this Bloom filter has been written,
@@ -1099,6 +1100,9 @@ struct write_commit_graph_context {
 
 		/* Excluding embedded modified path Bloom filters */
 		uint64_t total_filter_size;
+
+		/* Used to find identical modified path Bloom filters */
+		struct hashmap dedup_hashmap;
 	} mpbfctx;
 };
 
@@ -1315,7 +1319,11 @@ static int write_graph_chunk_modified_path_bloom_filters(struct hashfile *f,
 		bfi = modified_path_bloom_filters_peek(
 				&modified_path_bloom_filters, commit);
 
-		if (!bfi || !bfi->filter.nr_bits)
+		if (!bfi)
+			continue;
+		if (bfi->duplicate_of)
+			continue;
+		if (!bfi->filter.nr_bits)
 			continue;
 		if (bfi->filter.nr_bits == GRAPH_MODIFIED_PATH_BLOOM_FILTER_EMBEDDED_NR_BITS)
 			continue;
@@ -1364,6 +1372,9 @@ static int write_graph_chunk_modified_path_bloom_index(struct hashfile *f,
 			 */
 			filterdata[0] |= 1 << 7;
 			hashwrite(f, filterdata, sizeof(filterdata));
+		} else if (bfi->duplicate_of) {
+			uint64_t offset = htonll(bfi->duplicate_of->offset);
+			hashwrite(f, &offset, sizeof(offset));
 		} else if (bfi->offset != -1) {
 			uint64_t offset = htonll(bfi->offset);
 			hashwrite(f, &offset, sizeof(offset));
@@ -1515,6 +1526,53 @@ static void file_change_cb(struct diff_options *options,
 	handle_modified_file(options->change_fn_data, fullpath);
 }
 
+struct modified_path_bloom_filter_dedup_entry {
+	struct hashmap_entry entry;
+	struct modified_path_bloom_filter_info *bfi;
+};
+
+static int modified_path_bloom_filter_dedup_cmp(const void *unused_cmp_data,
+		const struct hashmap_entry *he1,
+		const struct hashmap_entry *he2,
+		const void *unused_keydata)
+{
+	const struct modified_path_bloom_filter_dedup_entry *a, *b;
+
+	a = container_of(he1, const struct modified_path_bloom_filter_dedup_entry, entry);
+	b = container_of(he2, const struct modified_path_bloom_filter_dedup_entry, entry);
+
+	if (a->bfi->filter.nr_bits != b->bfi->filter.nr_bits)
+		return 1;
+
+	return memcmp(a->bfi->filter.bits, b->bfi->filter.bits,
+		      bloom_filter_bytes(&a->bfi->filter));
+}
+
+static int handle_duplicate_modified_path_bloom_filter(
+		struct modified_path_bloom_filter_context *mpbfctx,
+		struct modified_path_bloom_filter_info *bfi)
+{
+	struct modified_path_bloom_filter_dedup_entry *e, stack_entry;
+	unsigned int h;
+
+	h = memhash(bfi->filter.bits, bloom_filter_bytes(&bfi->filter));
+	hashmap_entry_init(&stack_entry.entry, h);
+	stack_entry.bfi = bfi;
+
+	e = hashmap_get_entry(&mpbfctx->dedup_hashmap, &stack_entry, entry,
+			      NULL);
+	if (e) {
+		bfi->duplicate_of = e->bfi;
+		return 1;
+	} else {
+		e = xmalloc(sizeof(*e));
+		hashmap_entry_init(&e->entry, h);
+		e->bfi = bfi;
+		hashmap_add(&mpbfctx->dedup_hashmap, &e->entry);
+		return 0;
+	}
+}
+
 static void create_modified_path_bloom_filter(
 		struct modified_path_bloom_filter_context *mpbfctx,
 		struct commit *commit)
@@ -1547,17 +1605,20 @@ static void create_modified_path_bloom_filter(
 	bfi = modified_path_bloom_filters_at(&modified_path_bloom_filters,
 					     commit);
 	bfi->offset = -1;
-	if (path_component_count > mpbfctx->embedded_limit) {
+	if (path_component_count > mpbfctx->embedded_limit)
 		bloom_filter_init(&bfi->filter, mpbfctx->num_hashes,
 				  path_component_count);
-		mpbfctx->total_filter_size += sizeof(uint32_t) +
-					      bloom_filter_bytes(&bfi->filter);
-	} else
+	else
 		bloom_filter_init_with_size(&bfi->filter,
 				GRAPH_MODIFIED_PATH_BLOOM_FILTER_EMBEDDED_NR_BITS);
 
 	bloom_filter_set_bits(&bfi->filter, mpbfctx->hashes,
 			      mpbfctx->hashes_nr);
+
+	if (path_component_count > mpbfctx->embedded_limit &&
+	    !handle_duplicate_modified_path_bloom_filter(mpbfctx, bfi))
+		mpbfctx->total_filter_size += sizeof(uint32_t) +
+					      bloom_filter_bytes(&bfi->filter);
 }
 
 static void add_missing_parents(struct write_commit_graph_context *ctx, struct commit *commit)
@@ -2396,6 +2457,8 @@ int write_commit_graph(const char *obj_dir,
 		diff_setup_done(&ctx->mpbfctx.diffopt);
 
 		strbuf_init(&ctx->mpbfctx.prev_path, PATH_MAX);
+		hashmap_init(&ctx->mpbfctx.dedup_hashmap,
+			     modified_path_bloom_filter_dedup_cmp, NULL, 0);
 	}
 
 	if (ctx->split) {
@@ -2525,6 +2588,9 @@ cleanup:
 		strbuf_release(&ctx->mpbfctx.prev_path);
 		free(ctx->mpbfctx.hashed_prefix_lengths);
 		free(ctx->mpbfctx.hashes);
+		hashmap_free_entries(&ctx->mpbfctx.dedup_hashmap,
+				struct modified_path_bloom_filter_dedup_entry,
+				entry);
 	}
 
 	free(ctx);
