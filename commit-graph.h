@@ -2,14 +2,15 @@
 #define COMMIT_GRAPH_H
 
 #include "git-compat-util.h"
-#include "repository.h"
-#include "string-list.h"
-#include "cache.h"
+#include "hash.h"
 
 #define GIT_TEST_COMMIT_GRAPH "GIT_TEST_COMMIT_GRAPH"
 #define GIT_TEST_COMMIT_GRAPH_DIE_ON_LOAD "GIT_TEST_COMMIT_GRAPH_DIE_ON_LOAD"
 
 struct commit;
+struct repository;
+struct raw_object_store;
+struct string_list;
 
 char *get_commit_graph_filename(const char *obj_dir);
 int open_commit_graph(const char *graph_file, int *fd, struct stat *st);
