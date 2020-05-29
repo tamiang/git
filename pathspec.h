@@ -32,6 +32,7 @@ struct pathspec {
 	unsigned int has_wildcard:1;
 	unsigned int recursive:1;
 	unsigned int recurse_submodules:1;
+	unsigned int can_use_modified_path_bloom_filters:1;
 	unsigned magic;
 	int max_depth;
 	struct pathspec_item {
@@ -52,6 +53,17 @@ struct pathspec {
 			} match_mode;
 		} *attr_match;
 		struct attr_check *attr_check;
+
+		/*
+		 * These fields are only relevant during pathspec-limited
+		 * revision walks, init_pathspec_item() leaves them
+		 * zero-initialized, but copy_pathspec() copies them,
+		 * and clear_pathspec() releases the allocated memory.
+		 * IOW: they are only valid if 'struct pathspec's
+		 * 'can_use_modified_path_bloom_filters' bit is set.
+		 */
+		uint32_t modified_path_bloom_hashes_nr;
+		uint32_t *modified_path_bloom_hashes;
 	} *items;
 };
 

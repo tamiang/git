@@ -11,6 +11,8 @@ struct commit;
 struct repository;
 struct raw_object_store;
 struct string_list;
+struct bloom_filter;
+struct pathspec;
 
 char *get_commit_graph_filename(const char *obj_dir);
 int open_commit_graph(const char *graph_file, int *fd, struct stat *st);
@@ -38,6 +40,12 @@ void load_commit_graph_info(struct repository *r, struct commit *item);
 struct tree *get_commit_tree_in_graph(struct repository *r,
 				      const struct commit *c);
 
+enum bloom_result check_modified_path_bloom_filter(struct repository *r,
+		struct pathspec *pathspec, struct commit *parent,
+		struct commit *commit);
+void init_pathspec_bloom_fields(struct repository *r,
+		struct pathspec *pathspec);
+
 struct commit_graph {
 	int graph_fd;
 
@@ -59,6 +67,11 @@ struct commit_graph {
 	const unsigned char *chunk_commit_data;
 	const unsigned char *chunk_extra_edges;
 	const unsigned char *chunk_base_graphs;
+	const unsigned char *chunk_mpbf_index;
+	uint64_t chunk_mpbf_index_size;
+	const unsigned char *chunk_mpbf_excludes;
+
+	uint8_t num_modified_path_bloom_hashes;
 };
 
 struct commit_graph *load_commit_graph_one_fd_st(int fd, struct stat *st);

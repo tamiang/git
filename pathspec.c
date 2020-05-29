@@ -406,6 +406,8 @@ static void init_pathspec_item(struct pathspec_item *item, unsigned flags,
 	item->attr_check = NULL;
 	item->attr_match = NULL;
 	item->attr_match_nr = 0;
+	item->modified_path_bloom_hashes_nr = 0;
+	item->modified_path_bloom_hashes = NULL;
 
 	/* PATHSPEC_LITERAL_PATH ignores magic */
 	if (flags & PATHSPEC_LITERAL_PATH) {
@@ -679,6 +681,12 @@ void copy_pathspec(struct pathspec *dst, const struct pathspec *src)
 		}
 
 		d->attr_check = attr_check_dup(s->attr_check);
+
+		ALLOC_ARRAY(d->modified_path_bloom_hashes,
+			    d->modified_path_bloom_hashes_nr);
+		COPY_ARRAY(d->modified_path_bloom_hashes,
+			   s->modified_path_bloom_hashes,
+			   d->modified_path_bloom_hashes_nr);
 	}
 }
 
@@ -689,6 +697,7 @@ void clear_pathspec(struct pathspec *pathspec)
 	for (i = 0; i < pathspec->nr; i++) {
 		free(pathspec->items[i].match);
 		free(pathspec->items[i].original);
+		free(pathspec->items[i].modified_path_bloom_hashes);
 
 		for (j = 0; j < pathspec->items[i].attr_match_nr; j++)
 			free(pathspec->items[i].attr_match[j].value);

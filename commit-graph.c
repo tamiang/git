@@ -26,6 +26,7 @@
 #define GRAPH_CHUNKID_EXTRAEDGES 0x45444745 /* "EDGE" */
 #define GRAPH_CHUNKID_BASE 0x42415345 /* "BASE" */
 #define GRAPH_CHUNKID_MODIFIED_PATH_BLOOM_FILTER_INDEX 0x4d504249 /* "MPBI" */
+#define GRAPH_CHUNKID_MODIFIED_PATH_BLOOM_FILTER_EXCLUDES 0x4d504258 /* "MPBX" */
 
 #define GRAPH_DATA_WIDTH (the_hash_algo->rawsz + 16)
 
@@ -308,6 +309,23 @@ struct commit_graph *parse_commit_graph(void *graph_map, int fd,
 				chunk_repeated = 1;
 			else
 				graph->chunk_base_graphs = data + chunk_offset;
+			break;
+
+		case GRAPH_CHUNKID_MODIFIED_PATH_BLOOM_FILTER_INDEX:
+			if (graph->chunk_mpbf_index)
+				chunk_repeated = 1;
+			else {
+				graph->chunk_mpbf_index = data + chunk_offset;
+				graph->chunk_mpbf_index_size = next_chunk_offset - chunk_offset;
+			}
+			break;
+
+		case GRAPH_CHUNKID_MODIFIED_PATH_BLOOM_FILTER_EXCLUDES:
+			if (graph->chunk_mpbf_excludes)
+				chunk_repeated = 1;
+			else
+				graph->chunk_mpbf_excludes = data + chunk_offset;
+			break;
 		}
 
 		if (chunk_repeated) {
@@ -322,6 +340,29 @@ struct commit_graph *parse_commit_graph(void *graph_map, int fd,
 	if (verify_commit_graph_lite(graph)) {
 		free(graph);
 		return NULL;
+	}
+
+	if (graph->chunk_mpbf_index) {
+		int res = 0;
+		git_config_get_bool("core.modifiedPathBloomFilters", &res);
+		if (res) {
+			uint64_t expected_size = sizeof(uint8_t) +
+						 graph->num_commits * sizeof(uint64_t);
+			if (graph->chunk_mpbf_index_size != expected_size)
+				BUG(_("for %u commits the Modified Path Bloom Filter Index chunk should be %ld bytes, but it's %ld"),
+				    graph->num_commits, expected_size,
+				    graph->chunk_mpbf_index_size);
+			graph->num_modified_path_bloom_hashes = *graph->chunk_mpbf_index;
+			if (!graph->num_modified_path_bloom_hashes)
+				BUG(_("Modified Path Bloom Filter Index chunk using 0 hashes"));
+			if (graph->chunk_mpbf_excludes)
+				/*
+				 * Modified Path Bloom Filter Excludes are
+				 * not supported yet.
+				 */
+				graph->chunk_mpbf_index = NULL;
+		} else
+			graph->chunk_mpbf_index = NULL;
 	}
 
 	return graph;
@@ -777,6 +818,68 @@ struct tree *get_commit_tree_in_graph(struct repository *r, const struct commit 
 	return get_commit_tree_in_graph_one(r, r->objects->commit_graph, c);
 }
 
+static int load_modified_path_bloom_filter_from_graph(
+		struct commit_graph *graph, struct commit *commit,
+		struct commit *parent, struct bloom_filter *bf)
+{
+	const uint8_t *bloom_index;
+	int first_parent = 0;
+
+	if (commit->graph_pos == COMMIT_NOT_FROM_GRAPH)
+		return 0;
+	if (!graph)
+		return 0;
+	if (!graph->chunk_mpbf_index)
+		return 0;
+
+	if (!commit->parents || commit->parents->item == parent)
+		first_parent = 1;
+
+	bloom_index = graph->chunk_mpbf_index + sizeof(uint8_t) +
+		      sizeof(uint64_t) * commit->graph_pos;
+
+	if (bloom_index[0] & (1 << 7)) {
+		uint64_t v;
+		if (!first_parent)
+			return 0;
+		memcpy(&v, bloom_index, sizeof(v));
+		if (v == GRAPH_MODIFIED_PATH_BLOOM_FILTER_NONE)
+			return 0;
+
+		/* embedded modified path Bloom filter */
+		bf->nr_bits = GRAPH_MODIFIED_PATH_BLOOM_FILTER_EMBEDDED_NR_BITS;
+		bf->bits = (uint8_t*) bloom_index;
+		return 1;
+	}
+	/* support for non-embedded Bloom filters is not implemented yet. */
+	return 0;
+}
+
+enum bloom_result check_modified_path_bloom_filter(struct repository *r,
+		struct pathspec *pathspec, struct commit *parent,
+		struct commit *commit)
+{
+	struct bloom_filter bf;
+	int i;
+
+	if (!pathspec->can_use_modified_path_bloom_filters)
+		return BLOOM_CANT_TELL;
+	if (!load_modified_path_bloom_filter_from_graph(r->objects->commit_graph,
+							commit, parent, &bf))
+		return BLOOM_CANT_TELL;
+
+	for (i = 0; i < pathspec->nr; i++) {
+		struct pathspec_item *pi = &pathspec->items[i];
+
+		if (bloom_filter_check_bits(&bf,
+					pi->modified_path_bloom_hashes,
+					pi->modified_path_bloom_hashes_nr))
+			return BLOOM_POSSIBLY_YES;
+	}
+
+	return BLOOM_DEFINITELY_NOT;
+}
+
 static uint32_t modified_path_bloom_seeds[] = {
 	0xe83c5163U,
 	0x3b376b0cU,
@@ -805,6 +908,49 @@ static void compute_modified_path_bloom_hashes_for_path(const char *path,
 		h2 += i;
 		hashes[i] = h1;
 	}
+}
+
+void init_pathspec_bloom_fields(struct repository *r,
+				struct pathspec *pathspec)
+{
+	const unsigned bloom_compatible_magic = PATHSPEC_LITERAL;
+	struct commit_graph *graph = r->objects->commit_graph;
+	int i;
+
+	if (!graph)
+		return;
+	if (!graph->chunk_mpbf_index)
+		return;
+	if (!pathspec->nr)
+		return;
+	if (pathspec->has_wildcard)
+		return;
+	if (pathspec->magic & ~bloom_compatible_magic)
+		return;
+
+	for (i = 0; i < pathspec->nr; i++) {
+		struct pathspec_item *pi = &pathspec->items[i];
+		const char *path = pi->match;
+		size_t len = pi->len;
+
+		/*
+		 * Pathspec parsing has normalized away any consecutive
+		 * slashes, but a trailing slash might still be present,
+		 * "remove" it.
+		 */
+		if (path[len - 1] == '/')
+			len--;
+
+		pi->modified_path_bloom_hashes_nr = graph->num_modified_path_bloom_hashes;
+		ALLOC_ARRAY(pi->modified_path_bloom_hashes,
+			    pi->modified_path_bloom_hashes_nr);
+
+		compute_modified_path_bloom_hashes_for_path(path, len,
+				graph->num_modified_path_bloom_hashes,
+				pi->modified_path_bloom_hashes);
+	}
+
+	pathspec->can_use_modified_path_bloom_filters = 1;
 }
 
 struct packed_commit_list {

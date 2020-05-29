@@ -29,6 +29,7 @@
 #include "prio-queue.h"
 #include "hashmap.h"
 #include "utf8.h"
+#include "bloom-filter.h"
 
 volatile show_early_output_fn_t show_early_output;
 
@@ -629,6 +630,7 @@ static int rev_compare_tree(struct rev_info *revs,
 {
 	struct tree *t1 = get_commit_tree(parent);
 	struct tree *t2 = get_commit_tree(commit);
+	enum bloom_result bloom_ret;
 
 	if (!t1)
 		return REV_TREE_NEW;
@@ -653,6 +655,12 @@ static int rev_compare_tree(struct rev_info *revs,
 			return REV_TREE_SAME;
 	}
 
+	bloom_ret = check_modified_path_bloom_filter(revs->repo,
+						     &revs->pruning.pathspec,
+						     parent, commit);
+	if (bloom_ret == BLOOM_DEFINITELY_NOT)
+		return REV_TREE_SAME;
+
 	tree_difference = REV_TREE_SAME;
 	revs->pruning.flags.has_changes = 0;
 	diff_tree_oid(&t1->object.oid, &t2->object.oid, "", &revs->pruning);
@@ -662,9 +670,16 @@ static int rev_compare_tree(struct rev_info *revs,
 static int rev_same_tree_as_empty(struct rev_info *revs, struct commit *commit)
 {
 	struct tree *t1 = get_commit_tree(commit);
+	enum bloom_result bloom_ret;
 
 	if (!t1)
 		return 0;
+
+	bloom_ret = check_modified_path_bloom_filter(revs->repo,
+						     &revs->pruning.pathspec,
+						     NULL, commit);
+	if (bloom_ret == BLOOM_DEFINITELY_NOT)
+		return 1;
 
 	tree_difference = REV_TREE_SAME;
 	revs->pruning.flags.has_changes = 0;
@@ -3376,6 +3391,9 @@ int prepare_revision_walk(struct rev_info *revs)
 		simplify_merges(revs);
 	if (revs->children.name)
 		set_children(revs);
+
+	init_pathspec_bloom_fields(revs->repo, &revs->pruning.pathspec);
+
 	return 0;
 }
 
