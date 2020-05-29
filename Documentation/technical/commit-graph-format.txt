@@ -99,6 +99,131 @@ CHUNK DATA:
       file's OID Lookup chunk is equal to i plus the number of commits in all
       base graphs.  If B is non-zero, this chunk must exist.
 
+  Modified Path Bloom Filter Index (ID: {'M', 'P', 'B', 'I'}) [Optional]
+    2 + (N * 8) bytes
+
+    * 1-byte number (K) of hashes per path
+
+    * An array of 8 byte entries, one for each N commits stored in the
+      commit-graph, with the ith entry associated to the ith commit in the
+      OID Lookup chunk.
+      Each entry should be interpreted as follows:
+
+      - If all bits in the 8 bytes are set, then there is no modified path
+	Bloom filter stored for this commit.
+
+	Thou shalt not store a modified path Bloom filter for a commit that
+	modifies a submodule (gitlink file)!
+
+      - If the most significant bit of the first byte is set, then the
+	remaining 63 bits represent the bit array of an "embedded" Bloom
+	filter containing the set of paths that were modified between the
+	associated commit and its first parent, or in case of a root commit
+	between the associated commit and the empty tree.  All embedded
+	modified path Bloom filters use the same hashing scheme that is
+	used in the Modified Path Bloom Filters chunk, see below.
+
+      - If the second most significant bit of the first byte is set, then
+	the last four bytes form an array position into the Modified Path
+	Bloom Filter Merge Index chunk.  The remaining bits in the first
+	four bytes should be set to 0.  This can optionally be used to
+	store Bloom filters for all parents of merge commits.
+	[TODO: Only the last four bytes?  Shouldn't that be last 62 bits?!]
+
+      - If the two most significant bits of the first byte are unset, then
+	the entry represents an 8 byte offset pointing to a Bloom filter
+	in the Modified Path Bloom Filters chunk, which contains the set
+	of paths that were modified between the associated commit and its
+	first parent, or in case of a root commit between the associated
+	commit and the empty tree.  This offset is relative to the start
+	of the Modified Path Bloom Filters chunk.  Multiple entries can
+	point to the same offset.
+
+  Modified Path Bloom Filter Merge Index (ID: {'M', 'P', 'B', 'M'}) [Optional]
+      An array of 8 byte entries.
+      If a merge commit's entry in the Modified Path Bloom Filter Index
+      chunk stores an array position into this chunk, then the entry at
+      that position is associated with that merge commit and its first
+      parent, the next entry with that merge commit and its second parent,
+      etc. for all parents of that merge commit.
+
+      Each entry should be interpreted as follows, similar to the entries
+      in the Modified Path Bloom Filter Index chunk:
+
+      - If all bits in the 8 bytes are set, then there is no modified path
+	Bloom filter stored for the associated merge commit and its
+	corresponding parent.
+
+      - If the MSB of the first byte is set, then the remaining 63 bits
+	represent the bit array of an "embedded" Bloom filter containing
+	the set of paths that were modified between the associated merge
+	commit and its corresponding parent.  All embedded modified path
+	Bloom filters use the same hashing scheme that is used in the
+	Modified Path Bloom Filters chunk, see below.
+
+      - If the most significant bit of the first byte is unset, then the
+	entry represents an 8 byte offset pointing to a Bloom filter in
+	the Modified Path Bloom Filters chunk, which contains the set of
+	paths that were modified between the associated merge commit and
+	its corresponding parent.  This offset is relative to the start of
+	the Modified Path Bloom Filters chunk.  Multiple entries can point
+	to the same offset.
+
+      This chunk should not exist if the commit-graph file doesn't contain
+      a Modified Path Bloom Filter Index chunk.  This chunk can be omitted
+      if the Modified Path Bloom Filter Index doesn't contain any array
+      indexes pointing into it.  This chunk can be omitted even when the
+      commit-graph contains merge commits.
+
+  Modified Path Bloom Filters (ID: {'M', 'P', 'B', 'F'}) [Optional]
+      A number of consecuive modified path Bloom filters of varying sizes.
+      Each Bloom filter consists of 4 + M bytes:
+
+      - The first 4 bytes specify the number of m bits in the Bloom
+	filter's bit array.
+
+      - The next M bytes hold the Bloom filter's bit array of m bits.
+
+      The bits in the array are indexed in network byte order, i.e. the
+      array's 0th bit is the least significant bit of the last byte, and
+      the (m-1)th bit is in the first byte.  If m is not a multiple of 8,
+      then the unused leading bits should be set to 0.
+
+      For each path (including leading directories) modified between a
+      commit and its parent K bit positions should be set using the
+      following hashing scheme:
+
+	for i in [0, K)
+	  bit_pos[i] = (hash1 + i * hash2 + (i * i * i - i) / 6) % m
+
+      where hash1 and hash2 are the 32 bit MurmurHash3 hashes of the path
+      with seeds 0xe83c5163 and 0x3b376b0c, respectively.  These bit
+      positions should be calculated using 32 bit unsigned integer
+      arithmetic.  The directory separator is a single '/'.  Directories
+      should be added without a trailing '/'.
+
+      The order of Bloom filters in this chunk is unspecified.  Multiple
+      entries in the Modified Path Bloom Filter Index or Modified Path
+      Bloom Filter Merge Index chunks can point to the same Bloom filter
+      in this chunk.
+
+      This chunk should not exist if the commit-graph doesn't contain a
+      Modified Path Bloom Filter Index chunk.  This chunk can be omitted
+      if neither the Modified Path Bloom Filter Index nor the Modified
+      Path Bloom Filter Merge Index chunks contain any offsets pointing
+      into it.
+
+  Modified Path Bloom Filter Excludes (ID: {'M', 'P', 'B', 'X'}) [Optional]
+      A number of consecutive null terminated strings in memcmp() order.
+      Paths in these strings should not be added to any modified path
+      Bloom filters.
+      [TODO: Clarify!  Only literal matches, or should we support
+      globbing/patterns as well?  Only full match, or leading directories
+      as well?]
+
+      This chunk should not exist if the commit-graph doesn't contain a
+      Modified Path Bloom Filter Index chunk.
+
 TRAILER:
 
 	H-byte HASH-checksum of all of the above.
