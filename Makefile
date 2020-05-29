@@ -853,6 +853,7 @@ LIB_OBJS += commit.o
 LIB_OBJS += commit-graph.o
 LIB_OBJS += commit-reach.o
 LIB_OBJS += compat/obstack.o
+LIB_OBJS += compat/PMurHash.o
 LIB_OBJS += compat/terminal.o
 LIB_OBJS += config.o
 LIB_OBJS += connect.o
