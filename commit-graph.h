@@ -69,6 +69,8 @@ struct commit_graph {
 	const unsigned char *chunk_base_graphs;
 	const unsigned char *chunk_mpbf_index;
 	uint64_t chunk_mpbf_index_size;
+	const unsigned char *chunk_mpbf_filters;
+	uint64_t chunk_mpbf_filters_size;
 	const unsigned char *chunk_mpbf_excludes;
 
 	uint8_t num_modified_path_bloom_hashes;

@@ -327,6 +327,15 @@ struct commit_graph *parse_commit_graph(void *graph_map, int fd,
 			}
 			break;
 
+		case GRAPH_CHUNKID_MODIFIED_PATH_BLOOM_FILTERS:
+			if (graph->chunk_mpbf_filters)
+				chunk_repeated = 1;
+			else {
+				graph->chunk_mpbf_filters = data + chunk_offset;
+				graph->chunk_mpbf_filters_size = next_chunk_offset - chunk_offset;
+			}
+			break;
+
 		case GRAPH_CHUNKID_MODIFIED_PATH_BLOOM_FILTER_EXCLUDES:
 			if (graph->chunk_mpbf_excludes)
 				chunk_repeated = 1;
@@ -830,6 +839,7 @@ static int load_modified_path_bloom_filter_from_graph(
 		struct commit *parent, struct bloom_filter *bf)
 {
 	const uint8_t *bloom_index;
+	uint64_t offset;
 	int first_parent = 0;
 
 	if (commit->graph_pos == COMMIT_NOT_FROM_GRAPH)
@@ -857,9 +867,39 @@ static int load_modified_path_bloom_filter_from_graph(
 		bf->nr_bits = GRAPH_MODIFIED_PATH_BLOOM_FILTER_EMBEDDED_NR_BITS;
 		bf->bits = (uint8_t*) bloom_index;
 		return 1;
+	} else if (bloom_index[0] & (1 << 6)) {
+		/*
+		 * Modified path Bloom filters for second..nth parents of
+		 * merge commits are not implemented yet.
+		 */
+		return 0;
+	} else {
+		if (!first_parent)
+			return 0;
+		offset = get_be64(bloom_index);
 	}
-	/* support for non-embedded Bloom filters is not implemented yet. */
-	return 0;
+
+	if (!graph->chunk_mpbf_filters)
+		BUG("commit %s refers to offset %lu of the Modified Path Bloom Filters chunk, but that chunk is missing",
+		    oid_to_hex(&commit->object.oid), offset);
+
+	if (offset + sizeof(uint32_t) >= graph->chunk_mpbf_filters_size)
+		BUG("commit %s refers to offset %lu of the Modified Path Bloom Filters chunk, but that's too large for chunk of size %lu bytes",
+		    oid_to_hex(&commit->object.oid), offset,
+		    graph->chunk_mpbf_filters_size);
+
+	bf->nr_bits = get_be32(graph->chunk_mpbf_filters + offset);
+	if (!bf->nr_bits)
+		BUG("commit %s has a modified path Bloom filter at offset %lu, which has zero size",
+		    oid_to_hex(&commit->object.oid), offset);
+	if (offset + sizeof(uint32_t) + bloom_filter_bytes(bf) > graph->chunk_mpbf_filters_size)
+		BUG("commit %s has a modified path Bloom filter of %u bits at offset %lu, which doesn't fit into a Modified Path Bloom Filters chunk of %lu bytes",
+		    oid_to_hex(&commit->object.oid), bf->nr_bits, offset,
+		    graph->chunk_mpbf_filters_size);
+	/* Casting away const-ness :( */
+	bf->bits = (uint8_t*)(graph->chunk_mpbf_filters + offset + sizeof(uint32_t));
+
+	return 1;
 }
 
 enum bloom_result check_modified_path_bloom_filter(struct repository *r,
