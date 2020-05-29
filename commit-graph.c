@@ -14,6 +14,8 @@
 #include "hashmap.h"
 #include "replace-object.h"
 #include "progress.h"
+#include "bloom-filter.h"
+#include "commit-slab.h"
 
 #define GRAPH_SIGNATURE 0x43475048 /* "CGPH" */
 #define GRAPH_CHUNKID_OIDFANOUT 0x4f494446 /* "OIDF" */
@@ -46,6 +48,20 @@
 
 /* Remember to update object flag allocation in object.h */
 #define REACHABLE       (1u<<15)
+
+struct modified_path_bloom_filter_info {
+	struct bloom_filter filter;
+};
+
+static void free_modified_path_bloom_filter_info_in_slab(
+		struct modified_path_bloom_filter_info *bfi)
+{
+	bloom_filter_free(&bfi->filter);
+}
+
+define_commit_slab(modified_path_bloom_filters,
+		   struct modified_path_bloom_filter_info);
+static struct modified_path_bloom_filters modified_path_bloom_filters;
 
 char *get_commit_graph_filename(const char *obj_dir)
 {
@@ -1008,8 +1024,18 @@ static int write_graph_chunk_modified_path_bloom_index(struct hashfile *f,
 
 	hashwrite(f, &ctx->mpbfctx.num_hashes, sizeof(uint8_t));
 	for (i = 0; i < ctx->commits.nr; i++) {
+		struct commit *commit = ctx->commits.list[i];
+		struct modified_path_bloom_filter_info *bfi;
+
 		display_progress(ctx->progress, ++ctx->progress_cnt);
-		hashwrite(f, &no_bloom_filter, sizeof(no_bloom_filter));
+
+		bfi = modified_path_bloom_filters_peek(
+				&modified_path_bloom_filters, commit);
+
+		if (!bfi || !bfi->filter.nr_bits)
+			hashwrite(f, &no_bloom_filter, sizeof(no_bloom_filter));
+		else
+			BUG("writing proper Bloom filters is not implemented yet");
 	}
 	return 0;
 }
@@ -1864,6 +1890,9 @@ int write_commit_graph(const char *obj_dir,
 		ctx->mpbfctx.num_hashes = GRAPH_MODIFIED_PATH_BLOOM_FILTER_DEFAULT_NR_HASHES;
 	}
 
+		init_modified_path_bloom_filters(&modified_path_bloom_filters);
+	}
+
 	if (ctx->split) {
 		struct commit_graph *g;
 		prepare_commit_graph(ctx->r);
@@ -1983,6 +2012,11 @@ cleanup:
 		free(ctx->commit_graph_filenames_before);
 		free(ctx->commit_graph_hash_after);
 	}
+
+	if (ctx->mpbfctx.use_modified_path_bloom_filters)
+		deep_clear_modified_path_bloom_filters(
+				&modified_path_bloom_filters,
+				free_modified_path_bloom_filter_info_in_slab);
 
 	free(ctx);
 
