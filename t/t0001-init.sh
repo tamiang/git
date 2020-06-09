@@ -464,4 +464,20 @@ test_expect_success MINGW 'redirect std handles' '
 	grep "Needed a single revision" output.txt
 '
 
+test_expect_success 'custom default branch name from config' '
+  git config --global init.defaultbranchname nmb &&
+	git init custom-config &&
+	git config --global --unset init.defaultbranchname &&
+	grep nmb custom-config/.git/HEAD
+'
+
+test_expect_success 'custom default branch name from env' '
+	GIT_DEFAULT_BRANCH_NAME=nmb git init custom-env &&
+	grep nmb custom-env/.git/HEAD
+'
+
+test_expect_fail 'invalid custom default branch name' '
+  GIT_DEFAULT_BRANCH_NAME=nmb. git init custom-invalid
+'
+
 test_done
