@@ -201,6 +201,26 @@ void initialize_repository_version(int hash_algo)
 			       hash_algos[hash_algo].name);
 }
 
+static char *get_default_branch_name(void)
+{
+	const char *branch_name;
+	char *prefixed;
+
+	/* get the default branch name from config, or failing that, env */
+	if (git_config_get_string_const("init.defaultbranchname", &branch_name))
+		branch_name = getenv("GIT_DEFAULT_BRANCH_NAME");
+
+	if (!branch_name)
+		branch_name = "master";
+
+	/* prepend "refs/heads/" to the branch name */
+	prefixed = xstrfmt("refs/heads/%s", branch_name);
+	if (check_refname_format(prefixed, 0))
+		die(_("Invalid value for default branch name %s"), branch_name);
+
+	return prefixed;
+}
+
 static int create_default_files(const char *template_path,
 				const char *original_git_dir,
 				const struct repository_format *fmt)
@@ -265,27 +285,10 @@ static int create_default_files(const char *template_path,
 	reinit = (!access(path, R_OK)
 		  || readlink(path, junk, sizeof(junk)-1) != -1);
 	if (!reinit) {
-		const char *branch_name;
-		char *prefixed;
-
-		/* get the default branch name from config, or failing that, env */
-		if (git_config_get_string_const("init.defaultbranchname", &branch_name))
-			branch_name = getenv("GIT_DEFAULT_BRANCH_NAME");
-
-		if (!branch_name) {
-			branch_name = "master";
-		}
-
-		/* prepend "refs/heads/" to the branch name */
-		prefixed = xstrfmt("refs/heads/%s", branch_name);
-		if(check_refname_format(prefixed, 0)) {
-			die(_("Invalid value for default branch name %s"), branch_name);
-		}
-
-		if (create_symref("HEAD", prefixed, NULL) < 0)
+		char *default_ref = get_default_branch_name();
+		if (create_symref("HEAD", default_ref, NULL) < 0)
 			exit(1);
-
-		free(prefixed);
+		free(default_ref);
 	}
 
 	initialize_repository_version(fmt->hash_algo);
