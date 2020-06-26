@@ -14,11 +14,13 @@ test_expect_success 'help text' '
 	test_i18ngrep "usage: git maintenance run" err
 '
 
-test_expect_success 'gc [--auto]' '
+test_expect_success 'gc [--auto|--quiet]' '
 	GIT_TRACE2_EVENT="$(pwd)/run-no-auto.txt" git maintenance run &&
 	GIT_TRACE2_EVENT="$(pwd)/run-auto.txt" git maintenance run --auto &&
+	GIT_TRACE2_EVENT="$(pwd)/run-quiet.txt" git maintenance run --quiet &&
 	grep ",\"gc\"]" run-no-auto.txt  &&
-	grep ",\"gc\",\"--auto\"]" run-auto.txt
+	grep ",\"gc\",\"--auto\"]" run-auto.txt &&
+	grep ",\"gc\",\"--quiet\"]" run-quiet.txt
 '
 
 test_done
