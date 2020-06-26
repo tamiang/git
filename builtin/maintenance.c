@@ -5,6 +5,9 @@
 #include "parse-options.h"
 #include "run-command.h"
 #include "argv-array.h"
+#include "hashmap.h"
+
+#define MAX_NUM_TASKS 1
 
 static const char * const builtin_maintenance_usage[] = {
 	N_("git maintenance run [<options>]"),
@@ -15,6 +18,32 @@ struct maintenance_opts {
 	int auto_flag;
 	int quiet;
 } opts;
+
+typedef int maintenance_task_fn(struct repository *r);
+
+struct maintenance_task {
+	struct hashmap_entry ent;
+	const char *name;
+	maintenance_task_fn *fn;
+};
+
+static int task_entry_cmp(const void *unused_cmp_data,
+			  const struct hashmap_entry *eptr,
+			  const struct hashmap_entry *entry_or_key,
+			  const void *keydata)
+{
+	const struct maintenance_task *e1, *e2;
+	const char *name = keydata;
+
+	e1 = container_of(eptr, const struct maintenance_task, ent);
+	e2 = container_of(entry_or_key, const struct maintenance_task, ent);
+
+	return strcasecmp(e1->name, name ? name : e2->name);
+}
+
+struct maintenance_task tasks[MAX_NUM_TASKS];
+int num_tasks;
+struct hashmap task_map;
 
 static int maintenance_task_gc(struct repository *r)
 {
@@ -36,7 +65,31 @@ static int maintenance_task_gc(struct repository *r)
 
 static int maintenance_run(struct repository *r)
 {
-	return maintenance_task_gc(r);
+	int i;
+	int result = 0;
+
+	for (i = 0; !result && i < num_tasks; i++)
+		result = tasks[i].fn(r);
+
+	return result;
+}
+
+static void initialize_tasks(void)
+{
+	int i;
+	num_tasks = 0;
+
+	tasks[num_tasks].name = "gc";
+	tasks[num_tasks].fn = maintenance_task_gc;
+	num_tasks++;
+
+	hashmap_init(&task_map, task_entry_cmp, NULL, MAX_NUM_TASKS);
+
+	for (i = 0; i < num_tasks; i++) {
+		hashmap_entry_init(&tasks[i].ent,
+				   strihash(tasks[i].name));
+		hashmap_add(&task_map, &tasks[i].ent);
+	}
 }
 
 int cmd_maintenance(int argc, const char **argv, const char *prefix)
@@ -56,6 +109,8 @@ int cmd_maintenance(int argc, const char **argv, const char *prefix)
 	if (argc == 2 && !strcmp(argv[1], "-h"))
 		usage_with_options(builtin_maintenance_usage,
 				   builtin_maintenance_options);
+
+	initialize_tasks();
 
 	argc = parse_options(argc, argv, prefix,
 			     builtin_maintenance_options,
