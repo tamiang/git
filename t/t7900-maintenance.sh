@@ -44,4 +44,28 @@ test_expect_success 'run --task duplicate' '
 	test_i18ngrep "cannot be selected multiple times" err
 '
 
+test_expect_success 'run --task=fetch with no remotes' '
+	git maintenance run --task=fetch 2>err &&
+	test_must_be_empty err
+'
+
+test_expect_success 'fetch multiple remotes' '
+	git clone . clone1 &&
+	git clone . clone2 &&
+	git remote add remote1 "file://$(pwd)/clone1" &&
+	git remote add remote2 "file://$(pwd)/clone2" &&
+	git -C clone1 switch -c one &&
+	git -C clone2 switch -c two &&
+	test_commit -C clone1 one &&
+	test_commit -C clone2 two &&
+	GIT_TRACE2_EVENT="$(pwd)/run-fetch.txt" git maintenance run --task=fetch &&
+	grep ",\"fetch\",\"remote1\"" run-fetch.txt &&
+	grep ",\"fetch\",\"remote2\"" run-fetch.txt &&
+	test_path_is_missing .git/refs/remotes &&
+	test_cmp clone1/.git/refs/heads/one .git/refs/hidden/remote1/one &&
+	test_cmp clone2/.git/refs/heads/two .git/refs/hidden/remote2/two &&
+	git log hidden/remote1/one &&
+	git log hidden/remote2/two
+'
+
 test_done
