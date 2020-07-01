@@ -28,6 +28,7 @@
 #include "blob.h"
 #include "tree.h"
 #include "promisor-remote.h"
+#include "remote.h"
 #include "gvfs.h"
 
 #define FAILED_RUN "failed to run %s"
@@ -709,7 +710,7 @@ int cmd_gc(int argc, const char **argv, const char *prefix)
 	return 0;
 }
 
-#define MAX_NUM_TASKS 2
+#define MAX_NUM_TASKS 3
 
 static const char * const builtin_maintenance_usage[] = {
 	N_("git maintenance run [<options>]"),
@@ -790,6 +791,64 @@ static int maintenance_task_commit_graph(struct repository *r)
 
 	error(_("failed to rewrite commit-graph"));
 	return 1;
+}
+
+static int fetch_remote(struct repository *r, const char *remote)
+{
+	int result;
+	struct argv_array cmd = ARGV_ARRAY_INIT;
+	struct strbuf refmap = STRBUF_INIT;
+
+	argv_array_pushl(&cmd, "-C", r->worktree,
+			 "fetch", remote, "--prune",
+			 "--no-tags", "--refmap=", NULL);
+
+	strbuf_addf(&refmap, "+refs/heads/*:refs/hidden/%s/*", remote);
+	argv_array_push(&cmd, refmap.buf);
+
+	if (opts.quiet)
+		argv_array_push(&cmd, "--quiet");
+
+	result = run_command_v_opt(cmd.argv, RUN_GIT_CMD);
+
+	strbuf_release(&refmap);
+	return result;
+}
+
+static int fill_each_remote(struct remote *remote, void *cbdata)
+{
+	struct string_list *remotes = (struct string_list *)cbdata;
+
+	string_list_append(remotes, remote->name);
+	return 0;
+}
+
+static int maintenance_task_fetch(struct repository *r)
+{
+	int result = 0;
+	struct string_list_item *item;
+	struct string_list remotes = STRING_LIST_INIT_DUP;
+
+	if (for_each_remote(fill_each_remote, &remotes)) {
+		error(_("failed to fill remotes"));
+		result = 1;
+		goto cleanup;
+	}
+
+	/*
+	 * Do not modify the result based on the success of the 'fetch'
+	 * operation, as a loss of network could cause 'fetch' to fail
+	 * quickly. We do not want that to stop the rest of our
+	 * background operations.
+	 */
+	for (item = remotes.items;
+	     item && item < remotes.items + remotes.nr;
+	     item++)
+		fetch_remote(r, item->string);
+
+cleanup:
+	string_list_clear(&remotes, 0);
+	return result;
 }
 
 static int maintenance_task_gc(struct repository *r)
@@ -896,6 +955,10 @@ static void initialize_tasks(void)
 
 	for (i = 0; i < MAX_NUM_TASKS; i++)
 		tasks[i] = xcalloc(1, sizeof(struct maintenance_task));
+
+	tasks[num_tasks]->name = "fetch";
+	tasks[num_tasks]->fn = maintenance_task_fetch;
+	num_tasks++;
 
 	tasks[num_tasks]->name = "gc";
 	tasks[num_tasks]->fn = maintenance_task_gc;
