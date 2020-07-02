@@ -31,6 +31,7 @@
 #include "remote.h"
 #include "midx.h"
 #include "refs.h"
+#include "object-store.h"
 #include "gvfs.h"
 
 #define FAILED_RUN "failed to run %s"
@@ -1076,6 +1077,35 @@ static int maintenance_task_loose_objects(struct repository *r)
 	return prune_packed(r) || pack_loose(r);
 }
 
+static int pack_files_auto_condition(struct repository *r)
+{
+	struct packed_git *p;
+	int enabled;
+	int pack_files_auto_limit = 10;
+	int count = 0;
+
+	if (repo_config_get_bool(r, "core.multiPackIndex", &enabled) ||
+	    !enabled)
+		return 0;
+
+	repo_config_get_int(r, "maintenance.pack-files.auto",
+			    &pack_files_auto_limit);
+
+	if (!pack_files_auto_limit)
+		return 0;
+	if (pack_files_auto_limit < 0)
+		return 1;
+
+	for (p = get_packed_git(r);
+	     count < pack_files_auto_limit && p;
+	     p = p->next) {
+		if (!p->multi_pack_index)
+			count++;
+	}
+
+	return count >= pack_files_auto_limit;
+}
+
 static int multi_pack_index_write(struct repository *r)
 {
 	int result;
@@ -1349,6 +1379,7 @@ static void initialize_tasks(struct repository *r)
 
 	tasks[num_tasks]->name = "pack-files";
 	tasks[num_tasks]->fn = maintenance_task_pack_files;
+	tasks[num_tasks]->auto_condition = pack_files_auto_condition;
 	num_tasks++;
 
 	tasks[num_tasks]->name = "gc";

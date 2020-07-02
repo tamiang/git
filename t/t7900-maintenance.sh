@@ -178,4 +178,34 @@ test_expect_success 'pack-files task' '
 	test_line_count = 2 packs-after
 '
 
+test_expect_success 'maintenance.pack-files.auto' '
+	git repack -adk &&
+	git config core.multiPackIndex true &&
+	git multi-pack-index write &&
+	GIT_TRACE2_EVENT=1 git -c maintenance.pack-files.auto=1 maintenance \
+		run --auto --task=pack-files >out &&
+	! grep "\"multi-pack-index\"" out &&
+	for i in 1 2
+	do
+		test_commit A-$i &&
+		git pack-objects --revs .git/objects/pack/pack <<-\EOF &&
+		HEAD
+		^HEAD~1
+		EOF
+		GIT_TRACE2_EVENT=$(pwd)/trace-A-$i git \
+			-c maintenance.pack-files.auto=2 \
+			maintenance run --auto --task=pack-files &&
+		! grep "\"multi-pack-index\"" trace-A-$i &&
+		test_commit B-$i &&
+		git pack-objects --revs .git/objects/pack/pack <<-\EOF &&
+		HEAD
+		^HEAD~1
+		EOF
+		GIT_TRACE2_EVENT=$(pwd)/trace-B-$i git \
+			-c maintenance.pack-files.auto=2 \
+			maintenance run --auto --task=pack-files >out &&
+		grep "\"multi-pack-index\"" trace-B-$i >/dev/null || return 1
+	done
+'
+
 test_done
