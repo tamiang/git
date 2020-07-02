@@ -17,8 +17,20 @@ test_expect_success 'run [--auto|--quiet]' '
 	GIT_TRACE2_EVENT="$(pwd)/run-auto.txt" git maintenance run --auto &&
 	GIT_TRACE2_EVENT="$(pwd)/run-quiet.txt" git maintenance run --quiet &&
 	grep ",\"gc\"]" run-no-auto.txt  &&
-	grep ",\"gc\",\"--auto\"" run-auto.txt &&
+	! grep ",\"gc\",\"--auto\"" run-auto.txt &&
 	grep ",\"gc\",\"--quiet\"" run-quiet.txt
+'
+
+test_expect_success 'maintenance.<task>.enabled' '
+	git config maintenance.gc.enabled false &&
+	git config maintenance.commit-graph.enabled true &&
+	git config maintenance.loose-objects.enabled true &&
+	GIT_TRACE2_EVENT="$(pwd)/run-config.txt" git maintenance run &&
+	! grep ",\"fetch\"" run-config.txt &&
+	! grep ",\"gc\"" run-config.txt &&
+	! grep ",\"multi-pack-index\"" run-config.txt &&
+	grep ",\"commit-graph\"" run-config.txt &&
+	grep ",\"prune-packed\"" run-config.txt
 '
 
 test_expect_success 'run --task=<task>' '

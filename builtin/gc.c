@@ -1121,10 +1121,18 @@ static int maintenance_task_pack_files(void)
 
 typedef int maintenance_task_fn(void);
 
+/*
+ * An auto condition function returns 1 if the task should run
+ * and 0 if the task should NOT run. See needs_to_gc() for an
+ * example.
+ */
+typedef int maintenance_auto_fn(void);
+
 struct maintenance_task {
 	struct hashmap_entry ent;
 	const char *name;
 	maintenance_task_fn *fn;
+	maintenance_auto_fn *auto_condition;
 	int task_order;
 	unsigned enabled:1,
 		 selected:1;
@@ -1191,6 +1199,11 @@ static int maintenance_run(void)
 		if (!opts.tasks_selected && !tasks[i]->enabled)
 			continue;
 
+		if (opts.auto_flag &&
+		    (!tasks[i]->auto_condition ||
+		     !tasks[i]->auto_condition()))
+			continue;
+
 		result = tasks[i]->fn();
 	}
 
@@ -1201,6 +1214,7 @@ static int maintenance_run(void)
 static void initialize_tasks(void)
 {
 	int i;
+	struct strbuf config_name = STRBUF_INIT;
 	num_tasks = 0;
 
 	for (i = 0; i < MAX_NUM_TASKS; i++)
@@ -1220,6 +1234,7 @@ static void initialize_tasks(void)
 
 	tasks[num_tasks]->name = "gc";
 	tasks[num_tasks]->fn = maintenance_task_gc;
+	tasks[num_tasks]->auto_condition = need_to_gc;
 	tasks[num_tasks]->enabled = 1;
 	num_tasks++;
 
@@ -1230,10 +1245,20 @@ static void initialize_tasks(void)
 	hashmap_init(&task_map, task_entry_cmp, NULL, MAX_NUM_TASKS);
 
 	for (i = 0; i < num_tasks; i++) {
+		int config_value;
+
 		hashmap_entry_init(&tasks[i]->ent,
 				   strihash(tasks[i]->name));
 		hashmap_add(&task_map, &tasks[i]->ent);
+
+		strbuf_setlen(&config_name, 0);
+		strbuf_addf(&config_name, "maintenance.%s.enabled", tasks[i]->name);
+
+		if (!git_config_get_bool(config_name.buf, &config_value))
+			tasks[i]->enabled = config_value;
 	}
+
+	strbuf_release(&config_name);
 }
 
 static int task_option_parse(const struct option *opt,
@@ -1292,6 +1317,7 @@ int cmd_maintenance(int argc, const char **argv, const char *prefix)
 				   builtin_maintenance_options);
 
 	opts.quiet = !isatty(2);
+	gc_config();
 	initialize_tasks();
 
 	argc = parse_options(argc, argv, prefix,
