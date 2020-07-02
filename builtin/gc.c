@@ -1036,20 +1036,65 @@ static int multi_pack_index_expire(struct repository *r)
 	return result;
 }
 
+#define TWO_GIGABYTES (2147483647)
+#define UNSET_BATCH_SIZE ((unsigned long)-1)
+
+static off_t get_auto_pack_size(struct repository *r)
+{
+	/*
+	 * The "auto" value is special: we optimize for
+	 * one large pack-file (i.e. from a clone) and
+	 * expect the rest to be small and they can be
+	 * repacked quickly.
+	 *
+	 * The strategy we select here is to select a
+	 * size that is one more than the second largest
+	 * pack-file. This ensures that we will repack
+	 * at least two packs if there are three or more
+	 * packs.
+	 */
+	off_t max_size = 0;
+	off_t second_largest_size = 0;
+	off_t result_size;
+	struct packed_git *p;
+
+	reprepare_packed_git(r);
+	for (p = get_all_packs(r); p; p = p->next) {
+		if (p->pack_size > max_size) {
+			second_largest_size = max_size;
+			max_size = p->pack_size;
+		} else if (p->pack_size > second_largest_size)
+			second_largest_size = p->pack_size;
+	}
+
+	result_size = second_largest_size + 1;
+
+	/* But limit ourselves to a batch size of 2g */
+	if (result_size > TWO_GIGABYTES)
+		result_size = TWO_GIGABYTES;
+
+	return result_size;
+}
+
 static int multi_pack_index_repack(struct repository *r)
 {
 	int result;
 	struct argv_array cmd = ARGV_ARRAY_INIT;
+	struct strbuf batch_arg = STRBUF_INIT;
+
 	argv_array_pushl(&cmd, "-C", r->worktree,
 			 "multi-pack-index", "repack", NULL);
 
 	if (opts.quiet)
 		argv_array_push(&cmd, "--no-progress");
 
-	argv_array_push(&cmd, "--batch-size=0");
+	strbuf_addf(&batch_arg, "--batch-size=%"PRIuMAX,
+			    (uintmax_t)get_auto_pack_size(r));
+	argv_array_push(&cmd, batch_arg.buf);
 
 	close_object_store(r->objects);
 	result = run_command_v_opt(cmd.argv, RUN_GIT_CMD);
+	strbuf_release(&batch_arg);
 
 	if (result && multi_pack_index_verify(r)) {
 		warning(_("multi-pack-index verify failed after repack"));
