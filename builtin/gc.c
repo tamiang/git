@@ -1212,9 +1212,10 @@ static int maintenance_run(struct repository *r)
 	return result;
 }
 
-static void initialize_tasks(void)
+static void initialize_tasks(struct repository *r)
 {
 	int i;
+	struct strbuf config_name = STRBUF_INIT;
 	num_tasks = 0;
 
 	for (i = 0; i < MAX_NUM_TASKS; i++)
@@ -1244,10 +1245,20 @@ static void initialize_tasks(void)
 	hashmap_init(&task_map, task_entry_cmp, NULL, MAX_NUM_TASKS);
 
 	for (i = 0; i < num_tasks; i++) {
+		int config_value;
+
 		hashmap_entry_init(&tasks[i]->ent,
 				   strihash(tasks[i]->name));
 		hashmap_add(&task_map, &tasks[i]->ent);
+
+		strbuf_setlen(&config_name, 0);
+		strbuf_addf(&config_name, "maintenance.%s.enabled", tasks[i]->name);
+
+		if (!repo_config_get_bool(r, config_name.buf, &config_value))
+			tasks[i]->enabled = config_value;
 	}
+
+	strbuf_release(&config_name);
 }
 
 static int task_option_parse(const struct option *opt,
@@ -1308,7 +1319,7 @@ int cmd_maintenance(int argc, const char **argv, const char *prefix)
 				   builtin_maintenance_options);
 
 	opts.quiet = !isatty(2);
-	initialize_tasks();
+	initialize_tasks(r);
 
 	argc = parse_options(argc, argv, prefix,
 			     builtin_maintenance_options,
