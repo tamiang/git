@@ -193,12 +193,13 @@ static int too_many_loose_objects(void)
 	return needed;
 }
 
-static struct packed_git *find_base_packs(struct string_list *packs,
+static struct packed_git *find_base_packs(struct repository *r,
+					  struct string_list *packs,
 					  unsigned long limit)
 {
 	struct packed_git *p, *base = NULL;
 
-	for (p = get_all_packs(the_repository); p; p = p->next) {
+	for (p = get_all_packs(r); p; p = p->next) {
 		if (!p->pack_local)
 			continue;
 		if (limit) {
@@ -215,7 +216,7 @@ static struct packed_git *find_base_packs(struct string_list *packs,
 	return base;
 }
 
-static int too_many_packs(void)
+static int too_many_packs(struct repository *r)
 {
 	struct packed_git *p;
 	int cnt;
@@ -223,7 +224,7 @@ static int too_many_packs(void)
 	if (gc_auto_pack_limit <= 0)
 		return 0;
 
-	for (cnt = 0, p = get_all_packs(the_repository); p; p = p->next) {
+	for (cnt = 0, p = get_all_packs(r); p; p = p->next) {
 		if (!p->pack_local)
 			continue;
 		if (p->pack_keep)
@@ -335,7 +336,7 @@ static void add_repack_incremental_option(void)
 	argv_array_push(&repack, "--no-write-bitmap-index");
 }
 
-static int need_to_gc(void)
+static int need_to_gc(struct repository *r)
 {
 	/*
 	 * Setting gc.auto to 0 or negative can disable the
@@ -350,18 +351,18 @@ static int need_to_gc(void)
 	 * we run "repack -A -d -l".  Otherwise we tell the caller
 	 * there is no need.
 	 */
-	if (too_many_packs()) {
+	if (too_many_packs(r)) {
 		struct string_list keep_pack = STRING_LIST_INIT_NODUP;
 
 		if (big_pack_threshold) {
-			find_base_packs(&keep_pack, big_pack_threshold);
+			find_base_packs(r, &keep_pack, big_pack_threshold);
 			if (keep_pack.nr >= gc_auto_pack_limit) {
 				big_pack_threshold = 0;
 				string_list_clear(&keep_pack, 0);
-				find_base_packs(&keep_pack, 0);
+				find_base_packs(r, &keep_pack, 0);
 			}
 		} else {
-			struct packed_git *p = find_base_packs(&keep_pack, 0);
+			struct packed_git *p = find_base_packs(r, &keep_pack, 0);
 			uint64_t mem_have, mem_want;
 
 			mem_have = total_ram();
@@ -524,6 +525,7 @@ static void gc_before_repack(void)
 
 int cmd_gc(int argc, const char **argv, const char *prefix)
 {
+	struct repository *r = the_repository;
 	int aggressive = 0;
 	int auto_gc = 0;
 	int quiet = 0;
@@ -593,7 +595,7 @@ int cmd_gc(int argc, const char **argv, const char *prefix)
 		/*
 		 * Auto-gc should be least intrusive as possible.
 		 */
-		if (!need_to_gc())
+		if (!need_to_gc(r))
 			return 0;
 		if (!quiet) {
 			if (detach_auto)
@@ -627,9 +629,9 @@ int cmd_gc(int argc, const char **argv, const char *prefix)
 
 		if (keep_base_pack != -1) {
 			if (keep_base_pack)
-				find_base_packs(&keep_pack, 0);
+				find_base_packs(r, &keep_pack, 0);
 		} else if (big_pack_threshold) {
-			find_base_packs(&keep_pack, big_pack_threshold);
+			find_base_packs(r, &keep_pack, big_pack_threshold);
 		}
 
 		add_repack_all_option(&keep_pack);
@@ -656,7 +658,7 @@ int cmd_gc(int argc, const char **argv, const char *prefix)
 	gc_before_repack();
 
 	if (!repository_format_precious_objects) {
-		close_object_store(the_repository->objects);
+		close_object_store(r->objects);
 		if (run_command_v_opt(repack.argv, RUN_GIT_CMD))
 			die(FAILED_RUN, repack.argv[0]);
 
@@ -682,15 +684,15 @@ int cmd_gc(int argc, const char **argv, const char *prefix)
 		die(FAILED_RUN, rerere.argv[0]);
 
 	report_garbage = report_pack_garbage;
-	reprepare_packed_git(the_repository);
+	reprepare_packed_git(r);
 	if (pack_garbage.nr > 0) {
-		close_object_store(the_repository->objects);
+		close_object_store(r->objects);
 		clean_pack_garbage();
 	}
 
-	prepare_repo_settings(the_repository);
-	if (the_repository->settings.gc_write_commit_graph == 1)
-		write_commit_graph_reachable(the_repository->objects->odb,
+	prepare_repo_settings(r);
+	if (r->settings.gc_write_commit_graph == 1)
+		write_commit_graph_reachable(r->objects->odb,
 					     !quiet && !daemonized ? COMMIT_GRAPH_WRITE_PROGRESS : 0,
 					     NULL);
 
