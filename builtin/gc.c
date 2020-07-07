@@ -724,6 +724,7 @@ struct maintenance_opts {
 	int auto_flag;
 	int quiet;
 	int tasks_selected;
+	const char *object_dir;
 } opts;
 
 /* Remember to update object flag allocation in object.h */
@@ -812,6 +813,8 @@ static int run_write_commit_graph(struct repository *r)
 
 	if (opts.quiet)
 		argv_array_pushl(&cmd, "--no-progress", NULL);
+	if (opts.object_dir)
+		argv_array_pushl(&cmd, "--object-dir", opts.object_dir, NULL);
 
 	result = run_command_v_opt(cmd.argv, RUN_GIT_CMD);
 	argv_array_clear(&cmd);
@@ -830,6 +833,8 @@ static int run_verify_commit_graph(struct repository *r)
 
 	if (opts.quiet)
 		argv_array_pushl(&cmd, "--no-progress", NULL);
+	if (opts.object_dir)
+		argv_array_pushl(&cmd, "--object-dir", opts.object_dir, NULL);
 
 	result = run_command_v_opt(cmd.argv, RUN_GIT_CMD);
 	argv_array_clear(&cmd);
@@ -933,6 +938,11 @@ static int maintenance_task_gc(struct repository *r)
 	int result;
 	struct argv_array cmd = ARGV_ARRAY_INIT;
 
+	if (opts.object_dir) {
+		error(_("--object-dir option is incompatible with 'gc' task"));
+		return 1;
+	}
+
 	argv_array_pushl(&cmd, "gc", NULL);
 
 	if (opts.auto_flag)
@@ -955,6 +965,8 @@ static int prune_packed(struct repository *r)
 
 	if (opts.quiet)
 		argv_array_push(&cmd, "--quiet");
+	if (opts.object_dir)
+		setenv(DB_ENVIRONMENT, opts.object_dir, 1);
 
 	return run_command_v_opt(cmd.argv, RUN_GIT_CMD);
 }
@@ -1032,7 +1044,10 @@ static int pack_loose(struct repository *r)
 
 	child_process_init(pack_proc);
 
-	strbuf_addstr(&prefix, r->objects->odb->path);
+	if (!opts.object_dir)
+		strbuf_addstr(&prefix, r->objects->odb->path);
+	else
+		strbuf_addstr(&prefix, opts.object_dir);
 	strbuf_addstr(&prefix, "/pack/loose");
 
 	argv_array_pushl(&pack_proc->args, "git", "-C", r->worktree,
@@ -1115,6 +1130,8 @@ static int multi_pack_index_write(struct repository *r)
 
 	if (opts.quiet)
 		argv_array_push(&cmd, "--no-progress");
+	if (opts.object_dir)
+		argv_array_pushl(&cmd, "--object-dir", opts.object_dir, NULL);
 
 	result = run_command_v_opt(cmd.argv, RUN_GIT_CMD);
 	argv_array_clear(&cmd);
@@ -1124,7 +1141,12 @@ static int multi_pack_index_write(struct repository *r)
 
 static int rewrite_multi_pack_index(struct repository *r)
 {
-	char *midx_name = get_midx_filename(r->objects->odb->path);
+	char *midx_name;
+
+	if (!opts.object_dir)
+		midx_name = get_midx_filename(r->objects->odb->path);
+	else
+		midx_name = get_midx_filename(opts.object_dir);
 
 	unlink(midx_name);
 	free(midx_name);
@@ -1146,6 +1168,8 @@ static int multi_pack_index_verify(struct repository *r)
 
 	if (opts.quiet)
 		argv_array_push(&cmd, "--no-progress");
+	if (opts.object_dir)
+		argv_array_pushl(&cmd, "--object-dir", opts.object_dir, NULL);
 
 	result = run_command_v_opt(cmd.argv, RUN_GIT_CMD);
 	argv_array_clear(&cmd);
@@ -1162,6 +1186,8 @@ static int multi_pack_index_expire(struct repository *r)
 
 	if (opts.quiet)
 		argv_array_push(&cmd, "--no-progress");
+	if (opts.object_dir)
+		argv_array_pushl(&cmd, "--object-dir", opts.object_dir, NULL);
 
 	close_object_store(r->objects);
 	result = run_command_v_opt(cmd.argv, RUN_GIT_CMD);
@@ -1221,6 +1247,8 @@ static int multi_pack_index_repack(struct repository *r)
 
 	if (opts.quiet)
 		argv_array_push(&cmd, "--no-progress");
+	if (opts.object_dir)
+		argv_array_pushl(&cmd, "--object-dir", opts.object_dir, NULL);
 
 	strbuf_addf(&batch_arg, "--batch-size=%"PRIuMAX,
 			    (uintmax_t)get_auto_pack_size(r));
@@ -1457,6 +1485,8 @@ int cmd_maintenance(int argc, const char **argv, const char *prefix)
 			 N_("run tasks based on the state of the repository")),
 		OPT_BOOL(0, "quiet", &opts.quiet,
 			 N_("do not report progress or other information over stderr")),
+		OPT_STRING(0, "object-dir", &opts.object_dir, N_("dir"),
+			N_("operate on a specific object diretory")),
 		OPT_CALLBACK_F(0, "task", NULL, N_("task"),
 			N_("run a specific task"),
 			PARSE_OPT_NONEG, task_option_parse),
