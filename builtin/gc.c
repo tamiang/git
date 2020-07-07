@@ -117,12 +117,13 @@ static void process_log_file_on_signal(int signo)
 	raise(signo);
 }
 
-static int gc_config_is_timestamp_never(const char *var)
+static int gc_config_is_timestamp_never(struct repository *r,
+					const char *var)
 {
 	const char *value;
 	timestamp_t expire;
 
-	if (!git_config_get_value(var, &value) && value) {
+	if (!repo_config_get_value(r, var, &value) && value) {
 		if (parse_expiry_date(value, &expire))
 			die(_("failed to parse '%s' value '%s'"), var, value);
 		return expire == 0;
@@ -130,34 +131,34 @@ static int gc_config_is_timestamp_never(const char *var)
 	return 0;
 }
 
-static void gc_config(void)
+static void gc_config(struct repository *r)
 {
 	const char *value;
 
-	if (!git_config_get_value("gc.packrefs", &value)) {
+	if (!repo_config_get_value(r, "gc.packrefs", &value)) {
 		if (value && !strcmp(value, "notbare"))
 			pack_refs = -1;
 		else
 			pack_refs = git_config_bool("gc.packrefs", value);
 	}
 
-	if (gc_config_is_timestamp_never("gc.reflogexpire") &&
-	    gc_config_is_timestamp_never("gc.reflogexpireunreachable"))
+	if (gc_config_is_timestamp_never(r, "gc.reflogexpire") &&
+	    gc_config_is_timestamp_never(r, "gc.reflogexpireunreachable"))
 		prune_reflogs = 0;
 
-	git_config_get_int("gc.aggressivewindow", &aggressive_window);
-	git_config_get_int("gc.aggressivedepth", &aggressive_depth);
-	git_config_get_int("gc.auto", &gc_auto_threshold);
-	git_config_get_int("gc.autopacklimit", &gc_auto_pack_limit);
-	git_config_get_bool("gc.autodetach", &detach_auto);
-	git_config_get_expiry("gc.pruneexpire", &prune_expire);
-	git_config_get_expiry("gc.worktreepruneexpire", &prune_worktrees_expire);
-	git_config_get_expiry("gc.logexpiry", &gc_log_expire);
+	repo_config_get_int(r, "gc.aggressivewindow", &aggressive_window);
+	repo_config_get_int(r, "gc.aggressivedepth", &aggressive_depth);
+	repo_config_get_int(r, "gc.auto", &gc_auto_threshold);
+	repo_config_get_int(r, "gc.autopacklimit", &gc_auto_pack_limit);
+	repo_config_get_bool(r, "gc.autodetach", &detach_auto);
+	repo_config_get_expiry(r, "gc.pruneexpire", &prune_expire);
+	repo_config_get_expiry(r, "gc.worktreepruneexpire", &prune_worktrees_expire);
+	repo_config_get_expiry(r, "gc.logexpiry", &gc_log_expire);
 
-	git_config_get_ulong("gc.bigpackthreshold", &big_pack_threshold);
-	git_config_get_ulong("pack.deltacachesize", &max_delta_cache_size);
+	repo_config_get_ulong(r, "gc.bigpackthreshold", &big_pack_threshold);
+	repo_config_get_ulong(r, "pack.deltacachesize", &max_delta_cache_size);
 
-	git_config(git_default_config, NULL);
+	repo_config(r, git_default_config, NULL);
 }
 
 static int too_many_loose_objects(struct repository *r)
@@ -563,7 +564,7 @@ int cmd_gc(int argc, const char **argv, const char *prefix)
 	argv_array_pushl(&rerere, "rerere", "gc", NULL);
 
 	/* default expiry time, overwritten in gc_config */
-	gc_config();
+	gc_config(r);
 	if (parse_expiry_date(gc_log_expire, &gc_log_expire_time))
 		die(_("failed to parse gc.logexpiry value %s"), gc_log_expire);
 
