@@ -160,7 +160,7 @@ static void gc_config(void)
 	git_config(git_default_config, NULL);
 }
 
-static int too_many_loose_objects(void)
+static int too_many_loose_objects(struct repository *r)
 {
 	/*
 	 * Quickly check if a "gc" is needed, by estimating how
@@ -175,7 +175,7 @@ static int too_many_loose_objects(void)
 	int needed = 0;
 	const unsigned hexsz_loose = the_hash_algo->hexsz - 2;
 
-	dir = opendir(git_path("objects/17"));
+	dir = opendir(repo_git_path(r, "objects/17"));
 	if (!dir)
 		return 0;
 
@@ -379,7 +379,7 @@ static int need_to_gc(struct repository *r)
 
 		add_repack_all_option(&keep_pack);
 		string_list_clear(&keep_pack, 0);
-	} else if (too_many_loose_objects())
+	} else if (too_many_loose_objects(r))
 		add_repack_incremental_option();
 	else
 		return 0;
@@ -696,7 +696,7 @@ int cmd_gc(int argc, const char **argv, const char *prefix)
 					     !quiet && !daemonized ? COMMIT_GRAPH_WRITE_PROGRESS : 0,
 					     NULL);
 
-	if (auto_gc && too_many_loose_objects())
+	if (auto_gc && too_many_loose_objects(r))
 		warning(_("There are too many unreachable loose objects; "
 			"run 'git prune' to remove them."));
 
