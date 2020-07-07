@@ -463,28 +463,30 @@ static const char *lock_repo_for_gc(int force, pid_t* ret_pid)
  * gc should not proceed due to an error in the last run. Prints a
  * message and returns -1 if an error occurred while reading gc.log
  */
-static int report_last_gc_error(void)
+static int report_last_gc_error(struct repository *r)
 {
 	struct strbuf sb = STRBUF_INIT;
 	int ret = 0;
 	ssize_t len;
 	struct stat st;
-	char *gc_log_path = git_pathdup("gc.log");
+	struct strbuf gc_log_path = STRBUF_INIT;
 
-	if (stat(gc_log_path, &st)) {
+	strbuf_repo_git_path(&gc_log_path, r, "gc.log");
+
+	if (stat(gc_log_path.buf, &st)) {
 		if (errno == ENOENT)
 			goto done;
 
-		ret = error_errno(_("cannot stat '%s'"), gc_log_path);
+		ret = error_errno(_("cannot stat '%s'"), gc_log_path.buf);
 		goto done;
 	}
 
 	if (st.st_mtime < gc_log_expire_time)
 		goto done;
 
-	len = strbuf_read_file(&sb, gc_log_path, 0);
+	len = strbuf_read_file(&sb, gc_log_path.buf, 0);
 	if (len < 0)
-		ret = error_errno(_("cannot read '%s'"), gc_log_path);
+		ret = error_errno(_("cannot read '%s'"), gc_log_path.buf);
 	else if (len > 0) {
 		/*
 		 * A previous gc failed.  Report the error, and don't
@@ -497,12 +499,12 @@ static int report_last_gc_error(void)
 			       "Automatic cleanup will not be performed "
 			       "until the file is removed.\n\n"
 			       "%s"),
-			    gc_log_path, sb.buf);
+			    gc_log_path.buf, sb.buf);
 		ret = 1;
 	}
 	strbuf_release(&sb);
 done:
-	free(gc_log_path);
+	strbuf_release(&gc_log_path);
 	return ret;
 }
 
@@ -606,7 +608,7 @@ int cmd_gc(int argc, const char **argv, const char *prefix)
 			fprintf(stderr, _("See \"git help gc\" for manual housekeeping.\n"));
 		}
 		if (detach_auto) {
-			int ret = report_last_gc_error();
+			int ret = report_last_gc_error(r);
 			if (ret < 0)
 				/* an I/O error occurred, already reported */
 				exit(128);
