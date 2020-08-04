@@ -62,4 +62,14 @@ static inline void hashwrite_be32(struct hashfile *f, uint32_t data)
 	hashwrite(f, &data, sizeof(data));
 }
 
+static inline void hashwrite_be64(struct hashfile *f, uint64_t data)
+{
+	uint32_t to_write[2];
+
+	to_write[0] = htonl(data >> 32);
+	to_write[1] = htonl(data & 0xffffffffUL);
+
+	hashwrite(f, to_write, 2 * sizeof(uint32_t));
+}
+
 #endif
