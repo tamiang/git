@@ -474,7 +474,6 @@ free_and_return:
 	return NULL;
 }
 
-
 static struct commit_graph *load_commit_graph_one(struct repository *r,
 						  const char *graph_file,
 						  struct object_directory *odb)
