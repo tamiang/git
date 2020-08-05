@@ -217,7 +217,7 @@ static int graph_write(int argc, const char **argv)
 		OPT_EXPIRY_DATE(0, "expire-time", &write_opts.expire_time,
 			N_("only expire files older than a given date-time")),
 		OPT_CALLBACK_F(0, "max-new-filters", &write_opts.max_new_filters,
-			NULL, N_("maximum number of Bloom filters to compute"),
+			NULL, N_("maximum number of changed-path Bloom filters to compute"),
 			0, write_option_max_new_filters),
 		OPT_END(),
 	};
