@@ -65,7 +65,7 @@ static inline void hashwrite_be32(struct hashfile *f, uint32_t data)
 static inline void hashwrite_be64(struct hashfile *f, uint64_t data)
 {
 	hashwrite_be32(f, data >> 32);
-	hashwrite_Be32(f, data & 0xffffffffUL);
+	hashwrite_be32(f, data & 0xffffffffUL);
 }
 
 #endif
