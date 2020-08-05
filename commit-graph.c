@@ -2585,6 +2585,7 @@ void free_commit_graph(struct commit_graph *g)
 	}
 	free(g->filename);
 	free(g->bloom_filter_settings);
+	free(g->bloom_large.words);
 	free(g);
 }
 
