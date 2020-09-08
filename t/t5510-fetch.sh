@@ -213,7 +213,7 @@ test_expect_success 'fetch tags when there is no tags' '
 test_expect_success 'fetch following tags' '
 
 	cd "$D" &&
-	git tag -a -m 'annotated' anno HEAD &&
+	git tag -a -m "annotated" anno HEAD &&
 	git tag light HEAD &&
 
 	mkdir four &&
@@ -281,15 +281,19 @@ test_expect_success 'create bundle 1' '
 	cd "$D" &&
 	echo >file updated again by origin &&
 	git commit -a -m "tip" &&
-	git bundle create bundle1 master^..master
+	git bundle create --version=3 bundle1 master^..master
 '
 
 test_expect_success 'header of bundle looks right' '
-	head -n 4 "$D"/bundle1 &&
-	head -n 1 "$D"/bundle1 | grep "^#" &&
-	head -n 2 "$D"/bundle1 | grep "^-$OID_REGEX " &&
-	head -n 3 "$D"/bundle1 | grep "^$OID_REGEX " &&
-	head -n 4 "$D"/bundle1 | grep "^$"
+	cat >expect <<-EOF &&
+	# v3 git bundle
+	@object-format=$(test_oid algo)
+	-OID updated by origin
+	OID refs/heads/master
+
+	EOF
+	sed -e "s/$OID_REGEX/OID/g" -e "5q" "$D"/bundle1 >actual &&
+	test_cmp expect actual
 '
 
 test_expect_success 'create bundle 2' '
@@ -331,7 +335,7 @@ test_expect_success 'bundle does not prerequisite objects' '
 test_expect_success 'bundle should be able to create a full history' '
 
 	cd "$D" &&
-	git tag -a -m '1.0' v1.0 master &&
+	git tag -a -m "1.0" v1.0 master &&
 	git bundle create bundle4 v1.0
 
 '
@@ -539,10 +543,21 @@ test_expect_success 'fetch into the current branch with --update-head-ok' '
 
 '
 
-test_expect_success 'fetch --dry-run' '
-
+test_expect_success 'fetch --dry-run does not touch FETCH_HEAD' '
 	rm -f .git/FETCH_HEAD &&
 	git fetch --dry-run . &&
+	! test -f .git/FETCH_HEAD
+'
+
+test_expect_success '--no-write-fetch-head does not touch FETCH_HEAD' '
+	rm -f .git/FETCH_HEAD &&
+	git fetch --no-write-fetch-head . &&
+	! test -f .git/FETCH_HEAD
+'
+
+test_expect_success '--write-fetch-head gets defeated by --dry-run' '
+	rm -f .git/FETCH_HEAD &&
+	git fetch --dry-run --write-fetch-head . &&
 	! test -f .git/FETCH_HEAD
 '
 
@@ -797,7 +812,7 @@ test_configured_prune true  true  unset unset pruned pruned \
 	"--prune origin refs/tags/*:refs/tags/* +refs/heads/*:refs/remotes/origin/*"
 
 # --prune-tags on its own does nothing, needs --prune as well, same
-# for for fetch.pruneTags without fetch.prune
+# for fetch.pruneTags without fetch.prune
 test_configured_prune unset unset unset unset kept kept     "--prune-tags"
 test_configured_prune unset unset true unset  kept kept     ""
 test_configured_prune unset unset unset true  kept kept     ""

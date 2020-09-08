@@ -235,6 +235,39 @@ test_expect_success 'implicitly construct combine: filter with repeated flags' '
 	test_cmp unique_types.expected unique_types.actual
 '
 
+test_expect_success 'upload-pack fails banned object filters' '
+	test_config -C srv.bare uploadpackfilter.blob:none.allow false &&
+	test_must_fail ok=sigpipe git clone --no-checkout --filter=blob:none \
+		"file://$(pwd)/srv.bare" pc3 2>err &&
+	test_i18ngrep "filter '\''blob:none'\'' not supported" err
+'
+
+test_expect_success 'upload-pack fails banned combine object filters' '
+	test_config -C srv.bare uploadpackfilter.allow false &&
+	test_config -C srv.bare uploadpackfilter.combine.allow true &&
+	test_config -C srv.bare uploadpackfilter.tree.allow true &&
+	test_config -C srv.bare uploadpackfilter.blob:none.allow false &&
+	test_must_fail ok=sigpipe git clone --no-checkout --filter=tree:1 \
+		--filter=blob:none "file://$(pwd)/srv.bare" pc3 2>err &&
+	test_i18ngrep "filter '\''blob:none'\'' not supported" err
+'
+
+test_expect_success 'upload-pack fails banned object filters with fallback' '
+	test_config -C srv.bare uploadpackfilter.allow false &&
+	test_must_fail ok=sigpipe git clone --no-checkout --filter=blob:none \
+		"file://$(pwd)/srv.bare" pc3 2>err &&
+	test_i18ngrep "filter '\''blob:none'\'' not supported" err
+'
+
+test_expect_success 'upload-pack limits tree depth filters' '
+	test_config -C srv.bare uploadpackfilter.allow false &&
+	test_config -C srv.bare uploadpackfilter.tree.allow true &&
+	test_config -C srv.bare uploadpackfilter.tree.maxDepth 0 &&
+	test_must_fail ok=sigpipe git clone --no-checkout --filter=tree:1 \
+		"file://$(pwd)/srv.bare" pc3 2>err &&
+	test_i18ngrep "tree filter allows max depth 0, but got 1" err
+'
+
 test_expect_success 'partial clone fetches blobs pointed to by refs even if normally filtered out' '
 	rm -rf src dst &&
 	git init src &&
@@ -420,6 +453,44 @@ test_expect_success 'single-branch tag following respects partial clone' '
 	git -C single rev-parse --verify refs/tags/B &&
 	git -C single rev-parse --verify refs/tags/A &&
 	test_must_fail git -C single rev-parse --verify refs/tags/C
+'
+
+test_expect_success 'fetch from a partial clone, protocol v0' '
+	rm -rf server client trace &&
+
+	# Pretend that the server is a partial clone
+	git init server &&
+	git -C server remote add a_remote "file://$(pwd)/" &&
+	test_config -C server core.repositoryformatversion 1 &&
+	test_config -C server extensions.partialclone a_remote &&
+	test_config -C server protocol.version 0 &&
+	test_commit -C server foo &&
+
+	# Fetch from the server
+	git init client &&
+	test_config -C client protocol.version 0 &&
+	test_commit -C client bar &&
+	GIT_TRACE_PACKET="$(pwd)/trace" git -C client fetch "file://$(pwd)/server" &&
+	! grep "version 2" trace
+'
+
+test_expect_success 'fetch from a partial clone, protocol v2' '
+	rm -rf server client trace &&
+
+	# Pretend that the server is a partial clone
+	git init server &&
+	git -C server remote add a_remote "file://$(pwd)/" &&
+	test_config -C server core.repositoryformatversion 1 &&
+	test_config -C server extensions.partialclone a_remote &&
+	test_config -C server protocol.version 2 &&
+	test_commit -C server foo &&
+
+	# Fetch from the server
+	git init client &&
+	test_config -C client protocol.version 2 &&
+	test_commit -C client bar &&
+	GIT_TRACE_PACKET="$(pwd)/trace" git -C client fetch "file://$(pwd)/server" &&
+	grep "version 2" trace
 '
 
 . "$TEST_DIRECTORY"/lib-httpd.sh

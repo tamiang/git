@@ -1712,8 +1712,8 @@ _git_diff ()
 }
 
 __git_mergetools_common="diffuse diffmerge ecmerge emerge kdiff3 meld opendiff
-			tkdiff vimdiff gvimdiff xxdiff araxis p4merge bc
-			codecompare smerge
+			tkdiff vimdiff nvimdiff gvimdiff xxdiff araxis p4merge
+			bc codecompare smerge
 "
 
 _git_difftool ()
@@ -2905,6 +2905,14 @@ _git_show ()
 		;;
 	--submodule=*)
 		__gitcomp "$__git_diff_submodule_formats" "" "${cur##--submodule=}"
+		return
+		;;
+	--color-moved=*)
+		__gitcomp "$__git_color_moved_opts" "" "${cur##--color-moved=}"
+		return
+		;;
+	--color-moved-ws=*)
+		__gitcomp "$__git_color_moved_ws_opts" "" "${cur##--color-moved-ws=}"
 		return
 		;;
 	--*)

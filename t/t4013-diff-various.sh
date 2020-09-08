@@ -117,12 +117,12 @@ test_expect_success setup '
 
 : <<\EOF
 ! [initial] Initial
- * [master] Merge branch 'side' into master
+ * [master] Merge branch 'side'
   ! [rearrange] Rearranged lines in dir/sub
    ! [side] Side
 ----
   +  [rearrange] Rearranged lines in dir/sub
- -   [master] Merge branch 'side' into master
+ -   [master] Merge branch 'side'
  * + [side] Side
  *   [master^] Third
  *   [master~2] Second
@@ -297,6 +297,9 @@ log --root --patch-with-stat --summary master
 log --root -c --patch-with-stat --summary master
 # improved by Timo's patch
 log --root --cc --patch-with-stat --summary master
+log --no-diff-merges -p --first-parent master
+log --diff-merges=off -p --first-parent master
+log --first-parent --diff-merges=off -p master
 log -p --first-parent master
 log -m -p --first-parent master
 log -m -p master
