@@ -348,6 +348,8 @@ include::config/diff.txt[]
 
 include::config/difftool.txt[]
 
+include::config/extensions.txt[]
+
 include::config/fastimport.txt[]
 
 include::config/feature.txt[]
@@ -397,6 +399,8 @@ include::config/log.txt[]
 include::config/mailinfo.txt[]
 
 include::config/mailmap.txt[]
+
+include::config/maintenance.txt[]
 
 include::config/man.txt[]
 

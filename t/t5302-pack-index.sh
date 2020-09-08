@@ -7,7 +7,6 @@ test_description='pack index with 64-bit offsets and object CRC'
 . ./test-lib.sh
 
 test_expect_success 'setup' '
-	test_oid_init &&
 	rawsz=$(test_oid rawsz) &&
 	rm -rf .git &&
 	git init &&
@@ -15,7 +14,7 @@ test_expect_success 'setup' '
 	i=1 &&
 	while test $i -le 100
 	do
-		iii=$(printf '%03i' $i)
+		iii=$(printf "%03i" $i)
 		test-tool genrandom "bar" 200 > wide_delta_$iii &&
 		test-tool genrandom "baz $iii" 50 >> wide_delta_$iii &&
 		test-tool genrandom "foo"$i 100 > deep_delta_$iii &&
