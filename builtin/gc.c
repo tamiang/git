@@ -1491,6 +1491,214 @@ static int maintenance_unregister(void)
 	return run_command(&config_unset);
 }
 
+#if defined(__APPLE__)
+
+static char *get_service_name(const char *frequency)
+{
+	struct strbuf label = STRBUF_INIT;
+	strbuf_addf(&label, "org.git-scm.git.%s", frequency);
+	return strbuf_detach(&label, NULL);
+}
+
+static char *get_service_filename(const char *name)
+{
+	char *expanded;
+	struct strbuf filename = STRBUF_INIT;
+	strbuf_addf(&filename, "~/Library/LaunchAgents/%s.plist", name);
+
+	expanded = expand_user_path(filename.buf, 1);
+	if (!expanded)
+		die(_("failed to expand path '%s'"), filename.buf);
+
+	strbuf_release(&filename);
+	return expanded;
+}
+
+static const char *get_frequency(enum schedule_priority schedule)
+{
+	switch (schedule) {
+	case SCHEDULE_HOURLY:
+		return "hourly";
+	case SCHEDULE_DAILY:
+		return "daily";
+	case SCHEDULE_WEEKLY:
+		return "weekly";
+	default:
+		BUG("invalid schedule %d", schedule);
+	}
+}
+
+static char *get_uid(void)
+{
+	struct strbuf output = STRBUF_INIT;
+	struct child_process id = CHILD_PROCESS_INIT;
+
+	strvec_pushl(&id.args, "/usr/bin/id", "-u", NULL);
+	if (capture_command(&id, &output, 0))
+		die(_("failed to discover user id"));
+
+	strbuf_trim_trailing_newline(&output);
+	return strbuf_detach(&output, NULL);
+}
+
+static int bootout(const char *filename)
+{
+	int result;
+	struct strvec args = STRVEC_INIT;
+	char *uid = get_uid();
+	const char *launchctl = getenv("GIT_TEST_CRONTAB");
+	if (!launchctl)
+		launchctl = "/bin/launchctl";
+
+	strvec_split(&args, launchctl);
+	strvec_push(&args, "bootout");
+	strvec_pushf(&args, "gui/%s", uid);
+	strvec_push(&args, filename);
+
+	result = run_command_v_opt(args.v, 0);
+
+	strvec_clear(&args);
+	free(uid);
+	return result;
+}
+
+static int bootstrap(const char *filename)
+{
+	int result;
+	struct strvec args = STRVEC_INIT;
+	char *uid = get_uid();
+	const char *launchctl = getenv("GIT_TEST_CRONTAB");
+	if (!launchctl)
+		launchctl = "/bin/launchctl";
+
+	strvec_split(&args, launchctl);
+	strvec_push(&args, "bootstrap");
+	strvec_pushf(&args, "gui/%s", uid);
+	strvec_push(&args, filename);
+
+	result = run_command_v_opt(args.v, 0);
+
+	strvec_clear(&args);
+	free(uid);
+	return result;
+}
+
+static int remove_plist(enum schedule_priority schedule)
+{
+	const char *frequency = get_frequency(schedule);
+	char *name = get_service_name(frequency);
+	char *filename = get_service_filename(name);
+	int result = bootout(filename);
+	free(filename);
+	free(name);
+	return result;
+}
+
+static int remove_plists(void)
+{
+	return remove_plist(SCHEDULE_HOURLY) ||
+		remove_plist(SCHEDULE_DAILY) ||
+		remove_plist(SCHEDULE_WEEKLY);
+}
+
+static int schedule_plist(const char *exec_path, enum schedule_priority schedule)
+{
+	FILE *plist;
+	int i;
+	const char *preamble, *repeat;
+	const char *frequency = get_frequency(schedule);
+	char *name = get_service_name(frequency);
+	char *filename = get_service_filename(name);
+
+	if (safe_create_leading_directories(filename))
+		die(_("failed to create directories for '%s'"), filename);
+	plist = fopen(filename, "w");
+
+	if (!plist)
+		die(_("failed to open '%s'"), filename);
+
+	preamble = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
+		   "<!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">\n"
+		   "<plist version=\"1.0\">"
+		   "<dict>\n"
+		   "<key>Label</key><string>%s</string>\n"
+		   "<key>ProgramArguments</key>\n"
+		   "<array>\n"
+		   "<string>%s/git</string>\n"
+		   "<string>--exec-path=%s</string>\n"
+		   "<string>for-each-repo</string>\n"
+		   "<string>--config=maintenance.repo</string>\n"
+		   "<string>maintenance</string>\n"
+		   "<string>run</string>\n"
+		   "<string>--schedule=%s</string>\n"
+		   "</array>\n"
+		   "<key>StartCalendarInterval</key>\n"
+		   "<array>\n";
+	fprintf(plist, preamble, name, exec_path, exec_path, frequency);
+
+	switch (schedule) {
+	case SCHEDULE_HOURLY:
+		repeat = "<dict>\n"
+			 "<key>Hour</key><integer>%d</integer>\n"
+			 "<key>Minute</key><integer>0</integer>\n"
+			 "<dict>\n";
+		for (i = 1; i <= 23; i++)
+			fprintf(plist, repeat, i);
+		break;
+
+	case SCHEDULE_DAILY:
+		repeat = "<dict>\n"
+			 "<key>Day</key><integer>%d</integer>\n"
+			 "<key>Hour</key><integer>0</integer>\n"
+			 "<key>Minute</key><integer>0</integer>\n"
+			 "</dict>\n";
+		for (i = 1; i <= 6; i++)
+			fprintf(plist, repeat, i);
+		break;
+
+	case SCHEDULE_WEEKLY:
+		fprintf(plist,
+			"<dict>\n"
+			"<key>Day</key><integer>0</integer>\n"
+			"<key>Hour</key><integer>0</integer>\n"
+			"<key>Minute</key><integer>0</integer>\n"
+			"</dict>\n");
+		break;
+
+	default:
+		/* unreachable */
+		break;
+	}
+	fprintf(plist, "</array>\n</dict>\n</plist>\n");
+
+	/* bootout might fail if not already running, so ignore */
+	bootout(filename);
+	if (bootstrap(filename))
+		die(_("failed to bootstrap service %s"), filename);
+
+	fclose(plist);
+	free(filename);
+	free(name);
+	return 0;
+}
+
+static int add_plists(void)
+{
+	const char *exec_path = git_exec_path();
+
+	return schedule_plist(exec_path, SCHEDULE_HOURLY) ||
+		schedule_plist(exec_path, SCHEDULE_DAILY) ||
+		schedule_plist(exec_path, SCHEDULE_WEEKLY);
+}
+
+static int platform_update_schedule(int run_maintenance, int fd)
+{
+	if (run_maintenance)
+		return add_plists();
+	else
+		return remove_plists();
+}
+#else
 #define BEGIN_LINE "# BEGIN GIT MAINTENANCE SCHEDULE"
 #define END_LINE "# END GIT MAINTENANCE SCHEDULE"
 
@@ -1585,6 +1793,7 @@ done_editing:
 		fclose(cron_list);
 	return result;
 }
+#endif
 
 static int update_background_schedule(int run_maintenance)
 {

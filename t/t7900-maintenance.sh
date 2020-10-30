@@ -367,7 +367,7 @@ test_expect_success 'register and unregister' '
 	test_cmp before actual
 '
 
-test_expect_success 'start from empty cron table' '
+test_expect_success !MACOS_MAINTENANCE 'start from empty cron table' '
 	GIT_TEST_CRONTAB="test-tool crontab cron.txt" git maintenance start &&
 
 	# start registers the repo
@@ -378,7 +378,7 @@ test_expect_success 'start from empty cron table' '
 	grep "for-each-repo --config=maintenance.repo maintenance run --schedule=weekly" cron.txt
 '
 
-test_expect_success 'stop from existing schedule' '
+test_expect_success !MACOS_MAINTENANCE 'stop from existing schedule' '
 	GIT_TEST_CRONTAB="test-tool crontab cron.txt" git maintenance stop &&
 
 	# stop does not unregister the repo
@@ -389,10 +389,56 @@ test_expect_success 'stop from existing schedule' '
 	test_must_be_empty cron.txt
 '
 
-test_expect_success 'start preserves existing schedule' '
+test_expect_success !MACOS_MAINTENANCE 'start preserves existing schedule' '
 	echo "Important information!" >cron.txt &&
 	GIT_TEST_CRONTAB="test-tool crontab cron.txt" git maintenance start &&
 	grep "Important information!" cron.txt
+'
+
+test_expect_success MACOS_MAINTENANCE 'start and stop macOS maintenance' '
+	echo "#!/bin/sh\necho \$@ >>args" >print-args &&
+	chmod a+x print-args &&
+
+	rm -f args &&
+	GIT_TEST_CRONTAB="./print-args" git maintenance start &&
+
+	# start registers the repo
+	git config --get --global maintenance.repo "$(pwd)" &&
+
+	# ~/Library/LaunchAgents
+	ls "$HOME/Library/LaunchAgents" >actual &&
+	cat >expect <<-\EOF &&
+	org.git-scm.git.daily.plist
+	org.git-scm.git.hourly.plist
+	org.git-scm.git.weekly.plist
+	EOF
+	test_cmp expect actual &&
+
+	rm expect &&
+	for frequency in hourly daily weekly
+	do
+		PLIST="$HOME/Library/LaunchAgents/org.git-scm.git.$frequency.plist" &&
+		grep schedule=$frequency "$PLIST" &&
+		echo "bootout gui/$UID $PLIST" >>expect &&
+		echo "bootstrap gui/$UID $PLIST" >>expect || return 1
+	done &&
+	test_cmp expect args &&
+
+	rm -f args &&
+	GIT_TEST_CRONTAB="./print-args"  git maintenance stop &&
+
+	# stop does not unregister the repo
+	git config --get --global maintenance.repo "$(pwd)" &&
+
+	# stop does not remove plist files, but boots them out
+	rm expect &&
+	for frequency in hourly daily weekly
+	do
+		PLIST="$HOME/Library/LaunchAgents/org.git-scm.git.$frequency.plist" &&
+		grep schedule=$frequency "$PLIST" &&
+		echo "bootout gui/$UID $PLIST" >expect || return 1
+	done &&
+	test_cmp expect args
 '
 
 test_expect_success 'register preserves existing strategy' '
