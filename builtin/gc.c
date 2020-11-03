@@ -1698,6 +1698,187 @@ static int platform_update_schedule(int run_maintenance, int fd)
 	else
 		return remove_plists();
 }
+
+#elif defined(GIT_WINDOWS_NATIVE)
+
+static const char *get_frequency(enum schedule_priority schedule)
+{
+	switch (schedule) {
+	case SCHEDULE_HOURLY:
+		return "hourly";
+	case SCHEDULE_DAILY:
+		return "daily";
+	case SCHEDULE_WEEKLY:
+		return "weekly";
+	default:
+		BUG("invalid schedule %d", schedule);
+	}
+}
+
+static char *get_task_name(const char *frequency)
+{
+	struct strbuf label = STRBUF_INIT;
+	strbuf_addf(&label, "Git Maintenance (%s)", frequency);
+	return strbuf_detach(&label, NULL);
+}
+
+static int remove_task(enum schedule_priority schedule)
+{
+	int result;
+	struct strvec args = STRVEC_INIT;
+	const char *frequency = get_frequency(schedule);
+	char *name = get_task_name(frequency);
+	const char *schtasks = getenv("GIT_TEST_CRONTAB");
+	if (!schtasks)
+		schtasks = "schtasks";
+
+	strvec_split(&args, schtasks);
+	strvec_pushl(&args, "/delete", "/tn", name, "/f", NULL);
+
+	result = run_command_v_opt(args.v, 0);
+
+	strvec_clear(&args);
+	free(name);
+	return result;
+}
+
+static int remove_scheduled_tasks(void)
+{
+	return remove_task(SCHEDULE_HOURLY) ||
+		remove_task(SCHEDULE_DAILY) ||
+		remove_task(SCHEDULE_WEEKLY);
+}
+
+static int schedule_task(const char *exec_path, enum schedule_priority schedule)
+{
+	int result;
+	struct strvec args = STRVEC_INIT;
+	const char *xml, *schtasks;
+	char *xmlpath;
+	FILE *xmlfp;
+	const char *frequency = get_frequency(schedule);
+	char *name = get_task_name(frequency);
+
+	xmlpath =  xstrfmt("%s/schedule-%s.xml",
+			   the_repository->objects->odb->path,
+			   frequency);
+	xmlfp = fopen(xmlpath, "w");
+	if (!xmlfp)
+		die(_("failed to open '%s'"), xmlpath);
+
+	xml = "<?xml version=\"1.0\" encoding=\"UTF-16\"?>\n"
+	      "<Task version=\"1.4\" xmlns=\"http://schemas.microsoft.com/windows/2004/02/mit/task\">\n"
+	      "<Triggers>\n"
+	      "<CalendarTrigger>\n";
+	fprintf(xmlfp, xml);
+
+	switch (schedule) {
+	case SCHEDULE_HOURLY:
+		fprintf(xmlfp,
+			"<StartBoundary>2020-01-01T01:00:00</StartBoundary>\n"
+			"<Enabled>true</Enabled>\n"
+			"<ScheduleByDay>\n"
+			"<DaysInterval>1</DaysInterval>\n"
+			"</ScheduleByDay>\n"
+			"<Repetition>\n"
+			"<Interval>PT1H</Interval>\n"
+			"<Duration>PT23H</Duration>\n"
+			"<StopAtDurationEnd>false</StopAtDurationEnd>\n"
+			"</Repetition>\n");
+		break;
+
+	case SCHEDULE_DAILY:
+		fprintf(xmlfp,
+			"<StartBoundary>2020-01-01T00:00:00</StartBoundary>\n"
+			"<Enabled>true</Enabled>\n"
+			"<ScheduleByWeek>\n"
+			"<DaysOfWeek>\n"
+			"<Monday />\n"
+			"<Tuesday />\n"
+			"<Wednesday />\n"
+			"<Thursday />\n"
+			"<Friday />\n"
+			"<Saturday />\n"
+			"</DaysOfWeek>\n"
+			"<WeeksInterval>1</WeeksInterval>\n"
+			"</ScheduleByWeek>\n");
+		break;
+
+	case SCHEDULE_WEEKLY:
+		fprintf(xmlfp,
+			"<StartBoundary>2020-01-01T00:00:00</StartBoundary>\n"
+			"<Enabled>true</Enabled>\n"
+			"<ScheduleByWeek>\n"
+			"<DaysOfWeek>\n"
+			"<Sunday />\n"
+			"</DaysOfWeek>\n"
+			"<WeeksInterval>1</WeeksInterval>\n"
+			"</ScheduleByWeek>\n");
+		break;
+
+	default:
+		break;
+	}
+
+	xml=  "</CalendarTrigger>\n"
+	      "</Triggers>\n"
+	      "<Principals>\n"
+	      "<Principal id=\"Author\">\n"
+	      "<LogonType>InteractiveToken</LogonType>\n"
+	      "<RunLevel>LeastPrivilege</RunLevel>\n"
+	      "</Principal>\n"
+	      "</Principals>\n"
+	      "<Settings>\n"
+	      "<MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>\n"
+	      "<Enabled>true</Enabled>\n"
+	      "<Hidden>true</Hidden>\n"
+	      "<UseUnifiedSchedulingEngine>true</UseUnifiedSchedulingEngine>\n"
+	      "<WakeToRun>false</WakeToRun>\n"
+	      "<ExecutionTimeLimit>PT72H</ExecutionTimeLimit>\n"
+	      "<Priority>7</Priority>\n"
+	      "</Settings>\n"
+	      "<Actions Context=\"Author\">\n"
+	      "<Exec>\n"
+	      "<Command>\"%s\\git.exe\"</Command>\n"
+	      "<Arguments>--exec-path=\"%s\" for-each-repo --config=maintenance.repo maintenance run --schedule=%s</Arguments>\n"
+	      "</Exec>\n"
+	      "</Actions>\n"
+	      "</Task>\n";
+	fprintf(xmlfp, xml, exec_path, exec_path, frequency);
+	fclose(xmlfp);
+
+	schtasks = getenv("GIT_TEST_CRONTAB");
+	if (!schtasks)
+		schtasks = "schtasks";
+	strvec_split(&args, schtasks);
+	strvec_pushl(&args, "/create", "/tn", name, "/f", "/xml", xmlpath, NULL);
+
+	result = run_command_v_opt(args.v, 0);
+
+	strvec_clear(&args);
+	unlink(xmlpath);
+	free(xmlpath);
+	free(name);
+	return result;
+}
+
+static int add_scheduled_tasks(void)
+{
+	const char *exec_path = git_exec_path();
+
+	return schedule_task(exec_path, SCHEDULE_HOURLY) ||
+		schedule_task(exec_path, SCHEDULE_DAILY) ||
+		schedule_task(exec_path, SCHEDULE_WEEKLY);
+}
+
+static int platform_update_schedule(int run_maintenance, int fd)
+{
+	if (run_maintenance)
+		return add_scheduled_tasks();
+	else
+		return remove_scheduled_tasks();
+}
+
 #else
 #define BEGIN_LINE "# BEGIN GIT MAINTENANCE SCHEDULE"
 #define END_LINE "# END GIT MAINTENANCE SCHEDULE"
