@@ -1255,59 +1255,6 @@ static int compare_tasks_by_selection(const void *a_, const void *b_)
 	return b->selected_order - a->selected_order;
 }
 
-static int has_schedule_config(void)
-{
-	int i, found = 0;
-	struct strbuf config_name = STRBUF_INIT;
-	size_t prefix;
-
-	strbuf_addstr(&config_name, "maintenance.");
-	prefix = config_name.len;
-
-	for (i = 0; !found && i < TASK__COUNT; i++) {
-		char *value;
-
-		strbuf_setlen(&config_name, prefix);
-		strbuf_addf(&config_name, "%s.schedule", tasks[i].name);
-
-		if (!git_config_get_string(config_name.buf, &value)) {
-			found = 1;
-			FREE_AND_NULL(value);
-		}
-
-		strbuf_setlen(&config_name, prefix);
-		strbuf_addf(&config_name, "%s.enabled", tasks[i].name);
-
-		if (!git_config_get_string(config_name.buf, &value)) {
-			found = 1;
-			FREE_AND_NULL(value);
-		}
-	}
-
-	strbuf_release(&config_name);
-	return found;
-}
-
-static void set_recommended_schedule(void)
-{
-	if (has_schedule_config())
-		return;
-
-	tasks[TASK_GC].enabled = 0;
-
-	tasks[TASK_PREFETCH].enabled = 1;
-	tasks[TASK_PREFETCH].schedule = SCHEDULE_HOURLY;
-
-	tasks[TASK_COMMIT_GRAPH].enabled = 1;
-	tasks[TASK_COMMIT_GRAPH].schedule = SCHEDULE_HOURLY;
-
-	tasks[TASK_LOOSE_OBJECTS].enabled = 1;
-	tasks[TASK_LOOSE_OBJECTS].schedule = SCHEDULE_DAILY;
-
-	tasks[TASK_INCREMENTAL_REPACK].enabled = 1;
-	tasks[TASK_INCREMENTAL_REPACK].schedule = SCHEDULE_DAILY;
-}
-
 static int maintenance_run_tasks(struct maintenance_run_opts *opts)
 {
 	int i, found_selected = 0;
@@ -1337,8 +1284,6 @@ static int maintenance_run_tasks(struct maintenance_run_opts *opts)
 
 	if (found_selected)
 		QSORT(tasks, TASK__COUNT, compare_tasks_by_selection);
-	else if (opts->schedule != SCHEDULE_NONE)
-		set_recommended_schedule();
 
 	for (i = 0; i < TASK__COUNT; i++) {
 		if (found_selected && tasks[i].selected_order < 0)
@@ -1475,9 +1420,6 @@ static int maintenance_register(void)
 	/* There is no current repository, so skip registering it */
 	if (!the_repository || !the_repository->gitdir)
 		return 0;
-
-	/* Disable foreground maintenance */
-	git_config_set("maintenance.auto", "false");
 
 	config_get.git_cmd = 1;
 	strvec_pushl(&config_get.args, "config", "--global", "--get", "maintenance.repo",

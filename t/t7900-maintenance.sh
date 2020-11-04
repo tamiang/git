@@ -305,14 +305,11 @@ test_expect_success 'register and unregister' '
 	git config --global --add maintenance.repo /existing1 &&
 	git config --global --add maintenance.repo /existing2 &&
 	git config --global --get-all maintenance.repo >before &&
-
 	git maintenance register &&
-	test_cmp_config false maintenance.auto &&
-	git config --global --get-all maintenance.repo >between &&
-	cp before expect &&
-	pwd >>expect &&
-	test_cmp expect between &&
-
+	git config --global --get-all maintenance.repo >actual &&
+	cp before after &&
+	pwd >>after &&
+	test_cmp after actual &&
 	git maintenance unregister &&
 	git config --global --get-all maintenance.repo >actual &&
 	test_cmp before actual
