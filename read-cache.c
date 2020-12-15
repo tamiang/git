@@ -317,7 +317,6 @@ static int ce_match_stat_basic(const struct cache_entry *ce, struct stat *st)
 			changed |= DATA_CHANGED;
 		return changed;
 
-
 	case S_IFDIR: /* TODO: handle sparse dirs */
 	default:
 		BUG("unsupported ce_mode: %o", ce->ce_mode);

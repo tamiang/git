@@ -142,7 +142,7 @@ struct stat_data {
 struct cache_entry {
 	struct hashmap_entry ent;
 	struct stat_data ce_stat_data;
-	unsigned int ce_mode;
+	unsigned int ce_mode; /* S_IFDIR if directory entry */
 	unsigned int ce_flags;
 	unsigned int mem_pool_allocated;
 	unsigned int ce_namelen;
