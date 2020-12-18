@@ -1002,8 +1002,11 @@ inside:
 
 			c = *path++;
 			if ((c == '.' && !verify_dotfile(path, mode)) ||
-			    is_dir_sep(c) || c == '\0')
+			    is_dir_sep(c))
 				return 0;
+			/* allow terminating directory separators */
+			if (c == '\0')
+				return mode == 0100;
 		} else if (c == '\\' && protect_ntfs) {
 			if (is_ntfs_dotgit(path))
 				return 0;
@@ -3254,9 +3257,8 @@ int write_locked_index(struct index_state *istate, struct lock_file *lock,
 	int new_shared_index, ret;
 	struct split_index *si = istate->split_index;
 
-	if (core_sparse_checkout_cone && !istate->sparse_index)
-		if (convert_to_sparse(istate))
-			die(_("failed to convert to a sparse-index"));
+	if (convert_to_sparse(istate))
+		die(_("failed to convert to a sparse-index"));
 
 	if (git_env_bool("GIT_TEST_CHECK_CACHE_TREE", 0))
 		cache_tree_verify(the_repository, istate);
