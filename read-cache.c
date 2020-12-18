@@ -25,6 +25,7 @@
 #include "fsmonitor.h"
 #include "thread-utils.h"
 #include "progress.h"
+#include "sparse-index.h"
 
 /* Mask for the name length in ce_flags in the on-disk index */
 
@@ -3252,6 +3253,10 @@ int write_locked_index(struct index_state *istate, struct lock_file *lock,
 {
 	int new_shared_index, ret;
 	struct split_index *si = istate->split_index;
+
+	if (core_sparse_checkout_cone && !istate->sparse_index)
+		if (convert_to_sparse(istate))
+			die(_("failed to convert to a sparse-index"));
 
 	if (git_env_bool("GIT_TEST_CHECK_CACHE_TREE", 0))
 		cache_tree_verify(the_repository, istate);
