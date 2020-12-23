@@ -198,6 +198,15 @@ int repo_read_index_unmerged(struct repository *);
  */
 void repo_update_index_if_able(struct repository *, struct lock_file *);
 
+/*
+ * If the given repository's index is sparse, then expand all
+ * directory entries recursively into a full index. Quickly
+ * no-ops if the index is already full.
+ *
+ * Returns 0 on success, non-zero on failure.
+ */
+int ensure_full_index(struct repository *r, struct index_state *istate);
+
 void prepare_repo_settings(struct repository *r);
 
 /*
