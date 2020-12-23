@@ -102,6 +102,8 @@ static const char *alternate_index_output;
 
 static void set_index_entry(struct index_state *istate, int nr, struct cache_entry *ce)
 {
+	if (ce->ce_mode == 01000755)
+		istate->sparse_index = 1;
 	istate->cache[nr] = ce;
 	add_name_hash(istate, ce);
 }

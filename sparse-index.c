@@ -76,9 +76,10 @@ static char *get_sparse_dir_name(struct pattern_list *pl,
 	strbuf_release(&parent);
 	strbuf_addch(&path, '/');
 
-	fprintf(stderr, "found sparse dir at '%s'\n", path.buf);
 	return strbuf_detach(&path, NULL);
 }
+
+#define DIR_MODE 0100
 
 static struct cache_entry *construct_sparse_dir_entry(
 				struct index_state *istate,
@@ -99,8 +100,9 @@ static struct cache_entry *construct_sparse_dir_entry(
 	if (get_oid(HEAD_colon_tree.buf, &tree_oid))
 		BUG("sparse-index cannot handle missing sparse directories");
 
-	de = make_cache_entry(istate, 0100, &tree_oid, sparse_dir, 0, 0);
+	de = make_cache_entry(istate, DIR_MODE, &tree_oid, sparse_dir, 0, 0);
 
+	de->ce_flags |= CE_SKIP_WORKTREE;
 	strbuf_release(&HEAD_colon_tree);
 	free(sparse_dir);
 	return de;
@@ -129,6 +131,7 @@ int convert_to_sparse(struct index_state *istate)
 		return 0;
 
 	istate->drop_cache_tree = 1;
+	istate->sparse_index = 1;
 
 	for (i = 0; i < istate->cache_nr; cur_i++) {
 		int end;
