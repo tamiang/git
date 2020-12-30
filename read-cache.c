@@ -622,7 +622,11 @@ void remove_marked_cache_entries(struct index_state *istate, int invalidate)
 
 int remove_file_from_index(struct index_state *istate, const char *path)
 {
-	int pos = index_name_pos(istate, path, strlen(path));
+	int pos;
+
+	ensure_full_index(istate);
+
+	pos = index_name_pos(istate, path, strlen(path));
 	if (pos < 0)
 		pos = -pos-1;
 	cache_tree_invalidate_path(istate, path);
@@ -640,9 +644,12 @@ static int compare_name(struct cache_entry *ce, const char *path, int namelen)
 static int index_name_pos_also_unmerged(struct index_state *istate,
 	const char *path, int namelen)
 {
-	int pos = index_name_pos(istate, path, namelen);
+	int pos;
 	struct cache_entry *ce;
 
+	ensure_full_index(istate);
+
+	pos = index_name_pos(istate, path, namelen);
 	if (pos >= 0)
 		return pos;
 
@@ -716,6 +723,8 @@ int add_to_index(struct index_state *istate, const char *path, struct stat *st, 
 			  (intent_only ? ADD_CACHE_NEW_ONLY : 0));
 	int hash_flags = HASH_WRITE_OBJECT;
 	struct object_id oid;
+
+	ensure_full_index(istate);
 
 	if (flags & ADD_CACHE_RENORMALIZE)
 		hash_flags |= HASH_RENORMALIZE;
@@ -1095,6 +1104,8 @@ static int has_dir_name(struct index_state *istate,
 	size_t len_eq_last;
 	int cmp_last = 0;
 
+	ensure_full_index(istate);
+
 	/*
 	 * We are frequently called during an iteration on a sorted
 	 * list of pathnames and while building a new index.  Therefore,
@@ -1337,6 +1348,8 @@ static int add_index_entry_with_check(struct index_state *istate, struct cache_e
 int add_index_entry(struct index_state *istate, struct cache_entry *ce, int option)
 {
 	int pos;
+
+	ensure_full_index(istate);
 
 	if (option & ADD_CACHE_JUST_APPEND)
 		pos = istate->cache_nr;
@@ -1582,6 +1595,8 @@ int refresh_index(struct index_state *istate, unsigned int flags,
 	 * we only have to do the special cases that are left.
 	 */
 	preload_index(istate, pathspec, 0);
+
+	ensure_full_index(istate);
 	for (i = 0; i < istate->cache_nr; i++) {
 		struct cache_entry *ce, *new_entry;
 		int cache_errno = 0;
