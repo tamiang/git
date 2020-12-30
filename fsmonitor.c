@@ -97,6 +97,9 @@ int read_fsmonitor_extension(struct index_state *istate, const void *data,
 void fill_fsmonitor_bitmap(struct index_state *istate)
 {
 	unsigned int i, skipped = 0;
+
+	ensure_full_index(istate);
+
 	istate->fsmonitor_dirty = ewah_new();
 	for (i = 0; i < istate->cache_nr; i++) {
 		if (istate->cache[i]->ce_flags & CE_REMOVE)
@@ -158,7 +161,11 @@ static int query_fsmonitor(int version, const char *last_update, struct strbuf *
 
 static void fsmonitor_refresh_callback(struct index_state *istate, const char *name)
 {
-	int pos = index_name_pos(istate, name, strlen(name));
+	int pos;
+
+	ensure_full_index(istate);
+
+	pos = index_name_pos(istate, name, strlen(name));
 
 	if (pos >= 0) {
 		struct cache_entry *ce = istate->cache[pos];
@@ -330,6 +337,8 @@ void tweak_fsmonitor(struct index_state *istate)
 
 	if (istate->fsmonitor_dirty) {
 		if (fsmonitor_enabled) {
+			ensure_full_index(istate);
+
 			/* Mark all entries valid */
 			for (i = 0; i < istate->cache_nr; i++) {
 				istate->cache[i]->ce_flags |= CE_FSMONITOR_VALID;
