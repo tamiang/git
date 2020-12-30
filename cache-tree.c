@@ -282,6 +282,16 @@ static int update_one(struct cache_tree *it,
 		if (pathlen <= baselen || memcmp(base, path, baselen))
 			break; /* at the end of this level */
 
+		/*
+		 *                SPARSE-INDEX TODO
+		 *
+		 * If this cache entry has another '/', then it is part
+		 * of a subtree. We need to be aware at this time that
+		 * 'ce' could be referring to a sparse directory entry
+		 * and we should contribute it to the current tree without
+		 * actually recursing here.
+		 */
+
 		slash = strchr(path + baselen, '/');
 		if (!slash) {
 			i++;
