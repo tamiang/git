@@ -676,6 +676,8 @@ int index_dir_exists(struct index_state *istate, const char *name, int namelen)
 {
 	struct dir_entry *dir;
 
+	ensure_full_index(the_repository, istate);
+
 	lazy_init_name_hash(istate);
 	dir = find_dir_entry(istate, name, namelen);
 	return dir && dir->nr;
@@ -685,6 +687,8 @@ void adjust_dirname_case(struct index_state *istate, char *name)
 {
 	const char *startPtr = name;
 	const char *ptr = startPtr;
+
+	ensure_full_index(the_repository, istate);
 
 	lazy_init_name_hash(istate);
 	while (*ptr) {
@@ -708,6 +712,8 @@ struct cache_entry *index_file_exists(struct index_state *istate, const char *na
 {
 	struct cache_entry *ce;
 	unsigned int hash = memihash(name, namelen);
+
+	ensure_full_index(the_repository, istate);
 
 	lazy_init_name_hash(istate);
 
