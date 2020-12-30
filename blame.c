@@ -108,6 +108,7 @@ static void verify_working_tree_path(struct repository *r,
 			return;
 	}
 
+	ensure_full_index(r, r->index);
 	pos = index_name_pos(r->index, path, strlen(path));
 	if (pos >= 0)
 		; /* path is in the index */
@@ -277,7 +278,11 @@ static struct commit *fake_working_tree_commit(struct repository *r,
 
 	len = strlen(path);
 	if (!mode) {
-		int pos = index_name_pos(r->index, path, len);
+		int pos;
+
+		ensure_full_index(r, r->index);
+
+		pos = index_name_pos(r->index, path, len);
 		if (0 <= pos)
 			mode = r->index->cache[pos]->ce_mode;
 		else
