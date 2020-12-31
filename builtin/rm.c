@@ -291,6 +291,8 @@ int cmd_rm(int argc, const char **argv, const char *prefix)
 
 	refresh_index(&the_index, REFRESH_QUIET|REFRESH_UNMERGED, &pathspec, NULL, NULL);
 
+	ensure_full_index(&the_index);
+
 	seen = xcalloc(pathspec.nr, 1);
 
 	for (i = 0; i < active_nr; i++) {
