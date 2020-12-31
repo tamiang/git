@@ -1088,6 +1088,8 @@ int cmd_update_index(int argc, const char **argv, const char *prefix)
 
 	the_index.updated_skipworktree = 1;
 
+	ensure_full_index(&the_index);
+
 	/*
 	 * Custom copy of parse_options() because we want to handle
 	 * filename arguments as they come.
