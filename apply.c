@@ -3523,6 +3523,8 @@ static int load_current(struct apply_state *state,
 	if (!patch->is_new)
 		BUG("patch to %s is not a creation", patch->old_name);
 
+	ensure_full_index(state->repo->index);
+
 	pos = index_name_pos(state->repo->index, name, strlen(name));
 	if (pos < 0)
 		return error(_("%s: does not exist in index"), name);
@@ -3692,7 +3694,11 @@ static int check_preimage(struct apply_state *state,
 	}
 
 	if (state->check_index && !previous) {
-		int pos = index_name_pos(state->repo->index, old_name,
+		int pos;
+
+		ensure_full_index(state->repo->index);
+
+		pos = index_name_pos(state->repo->index, old_name,
 					 strlen(old_name));
 		if (pos < 0) {
 			if (patch->is_new < 0)
@@ -3750,6 +3756,8 @@ static int check_to_create(struct apply_state *state,
 
 	if (state->check_index && (!ok_if_exists || !state->cached)) {
 		int pos;
+
+		ensure_full_index(state->repo->index);
 
 		pos = index_name_pos(state->repo->index, new_name, strlen(new_name));
 		if (pos >= 0) {
