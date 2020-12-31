@@ -1492,9 +1492,12 @@ static void show_sparse_checkout_in_use(struct wt_status *s,
 	if (s->state.sparse_checkout_percentage == SPARSE_CHECKOUT_DISABLED)
 		return;
 
-	status_printf_ln(s, color,
-			 _("You are in a sparse checkout with %d%% of tracked files present."),
-			 s->state.sparse_checkout_percentage);
+	if (s->state.sparse_checkout_percentage == SPARSE_CHECKOUT_NO_PERCENTAGE)
+		status_printf_ln(s, color, _("You are in a sparse checkout."));
+	else
+		status_printf_ln(s, color,
+				 _("You are in a sparse checkout with %d%% of tracked files present."),
+				 s->state.sparse_checkout_percentage);
 	wt_longstatus_print_trailer(s);
 }
 
@@ -1649,6 +1652,19 @@ static void wt_status_check_sparse_checkout(struct repository *r,
 		 * aren't in a sparse checkout or would get division by 0.
 		 */
 		state->sparse_checkout_percentage = SPARSE_CHECKOUT_DISABLED;
+		return;
+	}
+
+	if (r->index->sparse_index) {
+		/*
+		 * We can't calculate a percentage without expanding the
+		 * sparse index by parsing trees. This is not worth the
+		 * cost right now, so punt.
+		 *
+		 * An index extension could store the number of paths
+		 * in the tree's expansion, if we were so inclined.
+		 */
+		state->sparse_checkout_percentage = SPARSE_CHECKOUT_NO_PERCENTAGE;
 		return;
 	}
 

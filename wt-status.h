@@ -80,6 +80,7 @@ enum wt_status_format {
 #define HEAD_DETACHED_AT _("HEAD detached at ")
 #define HEAD_DETACHED_FROM _("HEAD detached from ")
 #define SPARSE_CHECKOUT_DISABLED -1
+#define SPARSE_CHECKOUT_NO_PERCENTAGE -2
 
 struct wt_status_state {
 	int merge_in_progress;
@@ -91,13 +92,25 @@ struct wt_status_state {
 	int bisect_in_progress;
 	int revert_in_progress;
 	int detached_at;
-	int sparse_checkout_percentage; /* SPARSE_CHECKOUT_DISABLED if not sparse */
 	char *branch;
 	char *onto;
 	char *detached_from;
 	struct object_id detached_oid;
 	struct object_id revert_head_oid;
 	struct object_id cherry_pick_head_oid;
+
+	/*
+	 * Store the number of populated entries as a percentage of
+	 * the total index entries (multiplied by 100 and truncated
+	 * to an integer.)
+	 *
+	 * These special cases can also exist:
+	 *
+	 * * SPARSE_CHECKOUT_DISABLED if not sparse
+	 * * SPARSE_CHECKOUT_NO_PERCENTAGE if sparse, but unable to
+	 *   compute a percentate.
+	 */
+	int sparse_checkout_percentage;
 };
 
 struct wt_status {
