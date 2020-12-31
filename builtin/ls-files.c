@@ -150,7 +150,7 @@ static void show_other_files(const struct index_state *istate,
 	}
 }
 
-static void show_killed_files(const struct index_state *istate,
+static void show_killed_files(struct index_state *istate,
 			      const struct dir_struct *dir)
 {
 	int i;
@@ -158,6 +158,8 @@ static void show_killed_files(const struct index_state *istate,
 		struct dir_entry *ent = dir->entries[i];
 		char *cp, *sp;
 		int pos, len, killed = 0;
+
+		ensure_full_index(istate);
 
 		for (cp = ent->name; cp - ent->name < ent->len; cp = sp + 1) {
 			sp = strchr(cp, '/');
@@ -313,6 +315,7 @@ static void show_files(struct repository *repo, struct dir_struct *dir)
 			show_killed_files(repo->index, dir);
 	}
 	if (show_cached || show_stage) {
+		ensure_full_index(repo->index);
 		for (i = 0; i < repo->index->cache_nr; i++) {
 			const struct cache_entry *ce = repo->index->cache[i];
 
@@ -332,6 +335,7 @@ static void show_files(struct repository *repo, struct dir_struct *dir)
 		}
 	}
 	if (show_deleted || show_modified) {
+		ensure_full_index(repo->index);
 		for (i = 0; i < repo->index->cache_nr; i++) {
 			const struct cache_entry *ce = repo->index->cache[i];
 			struct stat st;
@@ -368,6 +372,7 @@ static void prune_index(struct index_state *istate,
 
 	if (!prefix || !istate->cache_nr)
 		return;
+	ensure_full_index(istate);
 	pos = index_name_pos(istate, prefix, prefixlen);
 	if (pos < 0)
 		pos = -pos-1;
@@ -427,6 +432,8 @@ void overlay_tree_on_index(struct index_state *istate,
 	tree = parse_tree_indirect(&oid);
 	if (!tree)
 		die("bad tree-ish %s", tree_name);
+
+	ensure_full_index(istate);
 
 	/* Hoist the unmerged entries up to stage #3 to make room */
 	for (i = 0; i < istate->cache_nr; i++) {
