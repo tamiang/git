@@ -21,6 +21,8 @@ int cmd_merge_index(int argc, const char **argv, const char *prefix)
 
 	read_cache();
 
+	ensure_full_index(the_repository, istate);
+
 	i = 1;
 	if (!strcmp(argv[i], "-o")) {
 		one_shot = 1;
