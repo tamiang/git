@@ -962,6 +962,8 @@ static int handle_cache(struct index_state *istate,
 	struct rerere_io_mem io;
 	int marker_size = ll_merge_marker_size(istate, path);
 
+	ensure_full_index(the_repository, istate);
+
 	/*
 	 * Reproduce the conflicted merge in-core
 	 */
