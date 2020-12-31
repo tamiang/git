@@ -170,6 +170,8 @@ int read_tree(struct repository *r, struct tree *tree, int stage,
 	 * to matter.
 	 */
 
+	ensure_full_index(r, istate);
+
 	/*
 	 * See if we have cache entry at the stage.  If so,
 	 * do it the original slow way, otherwise, append and then
