@@ -3901,6 +3901,8 @@ static int reuse_worktree_file(struct index_state *istate,
 	if (!want_file && would_convert_to_git(istate, name))
 		return 0;
 
+	ensure_full_index(the_repository, istate);
+
 	len = strlen(name);
 	pos = index_name_pos(istate, name, len);
 	if (pos < 0)
