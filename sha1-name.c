@@ -1734,6 +1734,8 @@ static void diagnose_invalid_index_path(struct repository *r,
 	if (!prefix)
 		prefix = "";
 
+	ensure_full_index(r, r->index);
+
 	/* Wrong stage number? */
 	pos = index_name_pos(istate, filename, namelen);
 	if (pos < 0)
@@ -1854,6 +1856,7 @@ static enum get_oid_result get_oid_with_context_1(struct repository *repo,
 
 		if (!repo->index || !repo->index->cache)
 			repo_read_index(repo);
+		ensure_full_index(repo, repo->index);
 		pos = index_name_pos(repo->index, cp, namelen);
 		if (pos < 0)
 			pos = -pos - 1;
