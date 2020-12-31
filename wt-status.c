@@ -509,6 +509,8 @@ static int unmerged_mask(struct index_state *istate, const char *path)
 	int pos, mask;
 	const struct cache_entry *ce;
 
+	ensure_full_index(istate);
+
 	pos = index_name_pos(istate, path, strlen(path));
 	if (0 <= pos)
 		return 0;
@@ -656,6 +658,8 @@ static void wt_status_collect_changes_initial(struct wt_status *s)
 {
 	struct index_state *istate = s->repo->index;
 	int i;
+
+	ensure_full_index(istate);
 
 	for (i = 0; i < istate->cache_nr; i++) {
 		struct string_list_item *it;
@@ -2295,6 +2299,9 @@ static void wt_porcelain_v2_print_unmerged_entry(
 	 */
 	memset(stages, 0, sizeof(stages));
 	sum = 0;
+
+	ensure_full_index(istate);
+
 	pos = index_name_pos(istate, it->string, strlen(it->string));
 	assert(pos < 0);
 	pos = -pos-1;
