@@ -1103,6 +1103,8 @@ int cmd_update_index(int argc, const char **argv, const char *prefix)
 	cd.nul_term_line = 0;
 	cd.read_from_stdin = 0;
 
+	ensure_full_index(repo->index);
+
 	/*
 	 * Custom copy of parse_options() because we want to handle
 	 * filename arguments as they come.
