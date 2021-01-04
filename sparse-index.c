@@ -103,7 +103,7 @@ static struct cache_entry *construct_sparse_dir_entry(
 	if (get_oid(HEAD_colon_tree.buf, &tree_oid))
 		BUG("sparse-index cannot handle missing sparse directories");
 
-	de = make_cache_entry(istate, DIR_MODE, &tree_oid, sparse_dir, 0, 0);
+	de = make_cache_entry(istate, 01000755, &tree_oid, sparse_dir, 0, 0);
 
 	de->ce_flags |= CE_SKIP_WORKTREE;
 	strbuf_release(&HEAD_colon_tree);

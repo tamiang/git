@@ -977,6 +977,9 @@ static int do_compare_entry(const struct cache_entry *ce,
 	ce_len -= pathlen;
 	ce_name = ce->name + pathlen;
 
+	if (ce->ce_mode == 01000755)
+		ce_len--;
+
 	return df_name_compare(ce_name, ce_len, S_IFREG, name, namelen, mode);
 }
 
@@ -990,6 +993,8 @@ static int compare_entry(const struct cache_entry *ce, const struct traverse_inf
 	 * Even if the beginning compared identically, the ce should
 	 * compare as bigger than a directory leading up to it!
 	 */
+	if (ce->ce_mode == 01000755)
+		return 0;
 	return ce_namelen(ce) > traverse_path_len(info, tree_entry_len(n));
 }
 
