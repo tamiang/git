@@ -93,6 +93,7 @@ static int reset_index(const char *ref, const struct object_id *oid, int reset_t
 	}
 	nr++;
 
+	ensure_full_index(the_repository, &the_index);
 	if (unpack_trees(nr, desc, &opts))
 		goto out;
 

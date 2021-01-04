@@ -77,6 +77,7 @@ int reset_head(struct repository *r, struct object_id *oid, const char *action,
 		goto leave_reset_head;
 	}
 
+	ensure_full_index(r, r->index);
 	if (unpack_trees(nr, desc, &unpack_tree_opts)) {
 		ret = -1;
 		goto leave_reset_head;

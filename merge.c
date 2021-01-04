@@ -97,6 +97,7 @@ int checkout_fast_forward(struct repository *r,
 	init_checkout_metadata(&opts.meta, NULL, remote, NULL);
 	setup_unpack_trees_porcelain(&opts, "merge");
 
+	ensure_full_index(r, r->index);
 	if (unpack_trees(nr_trees, t, &opts)) {
 		rollback_lock_file(&lock_file);
 		clear_unpack_trees_porcelain(&opts);

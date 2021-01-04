@@ -641,6 +641,7 @@ static int reset_tree(struct tree *tree, const struct checkout_opts *o,
 			       NULL);
 	parse_tree(tree);
 	init_tree_desc(&tree_desc, tree->buffer, tree->size);
+	ensure_full_index(the_repository, &the_index);
 	switch (unpack_trees(1, &tree_desc, &opts)) {
 	case -2:
 		*writeout_error = 1;
@@ -743,6 +744,7 @@ static int merge_working_tree(const struct checkout_opts *opts,
 		tree = new_tree;
 		init_tree_desc(&trees[1], tree->buffer, tree->size);
 
+		ensure_full_index(the_repository, &the_index);
 		ret = unpack_trees(2, trees, &topts);
 		clear_unpack_trees_porcelain(&topts);
 		if (ret == -1) {
