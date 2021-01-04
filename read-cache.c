@@ -1593,7 +1593,6 @@ int refresh_index(struct index_state *istate, unsigned int flags,
 	 */
 	preload_index(istate, pathspec, 0);
 
-	ensure_full_index(the_repository, istate);
 	for (i = 0; i < istate->cache_nr; i++) {
 		struct cache_entry *ce, *new_entry;
 		int cache_errno = 0;
@@ -1602,6 +1601,9 @@ int refresh_index(struct index_state *istate, unsigned int flags,
 
 		ce = istate->cache[i];
 		if (ignore_submodules && S_ISGITLINK(ce->ce_mode))
+			continue;
+
+		if (istate->sparse_index && ce->ce_mode == 01000755)
 			continue;
 
 		if (pathspec && !ce_path_match(istate, ce, pathspec, seen))

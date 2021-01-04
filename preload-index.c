@@ -54,6 +54,8 @@ static void *preload_thread(void *_data)
 			continue;
 		if (S_ISGITLINK(ce->ce_mode))
 			continue;
+		if (index->sparse_index && ce->ce_mode == 01000755)
+			continue;
 		if (ce_uptodate(ce))
 			continue;
 		if (ce_skip_worktree(ce))
@@ -107,6 +109,7 @@ void preload_index(struct index_state *index,
 		threads = 2;
 	if (threads < 2)
 		return;
+
 	trace_performance_enter();
 	if (threads > MAX_PARALLEL)
 		threads = MAX_PARALLEL;
