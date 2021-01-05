@@ -1017,7 +1017,7 @@ inside:
 				return 0;
 			/* allow terminating directory separators */
 			if (c == '\0')
-				return mode == 01000755;
+				return mode == 01000755 || mode == 0100;
 		} else if (c == '\\' && protect_ntfs) {
 			if (is_ntfs_dotgit(path))
 				return 0;
