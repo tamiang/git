@@ -327,6 +327,8 @@ void remove_fsmonitor(struct index_state *istate)
 		trace_printf_key(&trace_fsmonitor, "remove fsmonitor");
 		istate->cache_changed |= FSMONITOR_CHANGED;
 		FREE_AND_NULL(istate->fsmonitor_last_update);
+		ewah_free(istate->fsmonitor_dirty);
+		istate->fsmonitor_dirty= NULL;
 	}
 }
 

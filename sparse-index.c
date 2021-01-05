@@ -6,6 +6,7 @@
 #include "tree.h"
 #include "pathspec.h"
 #include "tree-walk.h"
+#include "fsmonitor.h"
 
 static char *get_sparse_checkout_filename(void)
 {
@@ -135,6 +136,8 @@ int convert_to_sparse(struct index_state *istate)
 
 	istate->drop_cache_tree = 1;
 	istate->sparse_index = 1;
+
+	remove_fsmonitor(istate);
 
 	for (i = 0; i < istate->cache_nr; cur_i++) {
 		int end;

@@ -3113,6 +3113,9 @@ static int do_write_locked_index(struct index_state *istate, struct lock_file *l
 {
 	int ret;
 
+	if (convert_to_sparse(istate))
+		die(_("failed to convert to a sparse-index"));
+
 	/*
 	 * TODO trace2: replace "the_repository" with the actual repo instance
 	 * that is associated with the given "istate".
@@ -3214,6 +3217,9 @@ static int write_shared_index(struct index_state *istate,
 {
 	struct split_index *si = istate->split_index;
 	int ret;
+
+	if (convert_to_sparse(istate))
+		die(_("failed to convert to a sparse-index"));
 
 	move_cache_to_base_index(istate);
 
