@@ -446,10 +446,16 @@ static int update_one(struct cache_tree *it,
 
 int cache_tree_update(struct index_state *istate, int flags)
 {
-	struct cache_tree *it = istate->cache_tree;
-	struct cache_entry **cache = istate->cache;
-	int entries = istate->cache_nr;
-	int skip, i = verify_cache(cache, entries, flags);
+	struct cache_tree *it;
+	struct cache_entry **cache;
+	int entries, skip, i;
+
+	ensure_full_index(the_repository, istate);
+
+	it = istate->cache_tree;
+	cache = istate->cache;
+	entries = istate->cache_nr;
+	i = verify_cache(cache, entries, flags);
 
 	if (i)
 		return i;
