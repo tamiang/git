@@ -268,8 +268,6 @@ test_expect_success 'blame with pathspec inside sparse definition' '
 	test_all_match git blame deep/deeper1/deepest/a
 '
 
-
-
 test_expect_failure 'checkout and reset (mixed)' '
 	init_repos &&
 
@@ -277,6 +275,28 @@ test_expect_failure 'checkout and reset (mixed)' '
 	test_sparse_match git reset deepest &&
 	test_sparse_match git reset update-folder1 &&
 	test_sparse_match git reset update-folder2
+'
+
+test_expect_success 'merge' '
+	init_repos &&
+
+	test_all_match git checkout -b merge update-deep &&
+	test_all_match git merge -m "folder1" update-folder1 &&
+	test_all_match git rev-parse HEAD^{tree} &&
+	test_all_match git merge -m "folder2" update-folder2 &&
+	test_all_match git rev-parse HEAD^{tree}
+'
+
+# TODO: failing with sparse-index
+test_expect_failure 'merge with outside renames' '
+	init_repos &&
+
+	for type in out-to-out out-to-in in-to-out
+	do
+		test_all_match git checkout -f -b merge-$type update-deep &&
+		test_all_match git merge -m "$type" rename-$type &&
+		test_all_match git rev-parse HEAD^{tree} || return 1
+	done
 '
 
 test_done
