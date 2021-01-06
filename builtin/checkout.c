@@ -1778,6 +1778,9 @@ int cmd_checkout(int argc, const char **argv, const char *prefix)
 	};
 	int ret;
 
+	prepare_repo_settings(the_repository);
+	the_repository->settings.force_full_index = 1;
+
 	memset(&opts, 0, sizeof(opts));
 	opts.dwim_new_local_branch = 1;
 	opts.switch_branch_doing_nothing_is_ok = 1;

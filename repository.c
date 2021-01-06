@@ -267,6 +267,10 @@ int repo_read_index(struct repository *repo)
 
 	res = read_index_from(repo->index, repo->index_file, repo->gitdir);
 
+	prepare_repo_settings(repo);
+	if (repo->settings.force_full_index)
+		ensure_full_index(repo, repo->index);
+
 	return res;
 }
 

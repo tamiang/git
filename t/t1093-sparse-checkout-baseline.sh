@@ -209,10 +209,10 @@ test_expect_success 'checkout and reset --hard' '
 	init_repos &&
 
 	test_all_match git checkout update-folder1 &&
-	test_sparse_match git status &&
+	test_sparse_match git status --porcelain=v2 &&
 
 	test_all_match git checkout update-deep &&
-	test_sparse_match git status &&
+	test_sparse_match git status --porcelain=v2 &&
 
 	test_all_match git checkout -b reset-test &&
 	test_all_match git reset --hard deepest &&

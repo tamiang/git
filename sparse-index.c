@@ -104,6 +104,10 @@ static struct cache_entry *construct_sparse_dir_entry(
 		(*end)++;
 	}
 
+	/*
+	 * This is probably the wrong tree if we are in a mixed state or
+	 * checking out a new tree!
+	 */
 	strbuf_addf(&HEAD_colon_tree, "HEAD:%s", sparse_dir);
 	if (get_oid(HEAD_colon_tree.buf, &tree_oid))
 		BUG("sparse-index cannot handle missing sparse directories");
