@@ -67,7 +67,10 @@ test_expect_success 'setup' '
 
 		git checkout -b deepest base &&
 		echo "updated deepest" >deep/deeper1/deepest/a &&
-		git commit -a -m "update deepest"
+		git commit -a -m "update deepest" &&
+
+		git checkout -f base &&
+		git reset --hard
 	)
 '
 
@@ -76,9 +79,14 @@ init_repos () {
 
 	# create repos in initial state
 	cp -r initial-repo full-checkout &&
+	git -C full-checkout reset --hard &&
+
 	cp -r initial-repo sparse-checkout &&
+	git -C sparse-checkout reset --hard &&
 	git -C sparse-checkout sparse-checkout init --cone &&
+
 	cp -r initial-repo sparse-index &&
+	git -C sparse-index reset --hard &&
 	GIT_TEST_SPARSE_INDEX=1 git -C sparse-index sparse-checkout init --cone &&
 
 	# initialize sparse-checkout definitions
@@ -86,11 +94,7 @@ init_repos () {
 	GIT_TEST_SPARSE_INDEX=1 git -C sparse-index sparse-checkout set deep
 }
 
-run_on_all () {
-	(
-		cd full-checkout &&
-		$* >../full-checkout-out 2>../full-checkout-err
-	) &&
+run_on_sparse () {
 	(
 		cd sparse-checkout &&
 		$* >../sparse-checkout-out 2>../sparse-checkout-err
@@ -101,8 +105,16 @@ run_on_all () {
 	)
 }
 
+run_on_all () {
+	(
+		cd full-checkout &&
+		$* >../full-checkout-out 2>../full-checkout-err
+	) &&
+	run_on_sparse $*
+}
+
 test_all_match () {
-	run_on_all "$*" &&
+	run_on_all $* &&
 	test_cmp full-checkout-out sparse-checkout-out &&
 	test_cmp full-checkout-out sparse-index-out &&
 	test_cmp full-checkout-err sparse-checkout-err &&
@@ -110,14 +122,7 @@ test_all_match () {
 }
 
 test_sparse_match () {
-	(
-		cd sparse-checkout &&
-		$* >../sparse-checkout-out 2>../sparse-checkout-err
-	) &&
-	(
-		cd sparse-index &&
-		GIT_TEST_SPARSE_INDEX=1 $* >../sparse-index-out 2>../sparse-index-err
-	) &&
+	run_on_sparse $* &&
 	test_cmp sparse-checkout-out sparse-index-out &&
 	test_cmp sparse-checkout-err sparse-index-err
 }
@@ -125,17 +130,17 @@ test_sparse_match () {
 test_expect_success 'status with options' '
 	init_repos &&
 	test_sparse_match ls &&
-	test_sparse_match git status &&
-	test_sparse_match git status -z -u &&
-	test_sparse_match git status -uno &&
+	test_all_match git status --porcelain=v2 &&
+	test_all_match git status --porcelain=v2 -z -u &&
+	test_all_match git status --porcelain=v2 -uno &&
 	run_on_all "touch README.md" &&
-	test_sparse_match git status &&
-	test_sparse_match git status -z -u &&
-	test_sparse_match git status -uno &&
+	test_all_match git status --porcelain=v2 &&
+	test_all_match git status --porcelain=v2 -z -u &&
+	test_all_match git status --porcelain=v2 -uno &&
 	test_all_match git add README.md &&
-	test_sparse_match git status &&
-	test_sparse_match git status -z -u &&
-	test_sparse_match git status -uno
+	test_all_match git status --porcelain=v2 &&
+	test_all_match git status --porcelain=v2 -z -u &&
+	test_all_match git status --porcelain=v2 -uno
 '
 
 test_expect_success 'add, commit, checkout' '
@@ -147,7 +152,7 @@ test_expect_success 'add, commit, checkout' '
 	run_on_all "../edit-contents" &&
 
 	test_all_match git add README.md &&
-	test_sparse_match git status &&
+	test_all_match git status --porcelain=v2 &&
 	test_all_match git commit -m "Add README.md" &&
 
 	test_all_match git checkout HEAD~1 &&
@@ -157,7 +162,7 @@ test_expect_success 'add, commit, checkout' '
 
 	export GIT_TRACE2_PERF="$(pwd)/add-trace" &&
 	test_all_match git add -A &&
-	test_sparse_match git status &&
+	test_all_match git status --porcelain=v2 &&
 	test_all_match git commit -m "Extend README.md" &&
 
 	test_all_match git checkout HEAD~1 &&
