@@ -304,4 +304,35 @@ test_expect_failure 'merge with outside renames' '
 	done
 '
 
+test_expect_success 'clean' '
+	init_repos &&
+
+	echo bogus >>.gitignore &&
+	run_on_all cp ../.gitignore . &&
+	test_all_match git add .gitignore &&
+	test_all_match git commit -m ignore-bogus-files &&
+
+	run_on_sparse mkdir folder1 &&
+	run_on_all touch folder1/bogus &&
+
+	test_all_match git status --porcelain=v2 &&
+	test_all_match git clean -f &&
+	test_all_match git status --porcelain=v2 &&
+	test_sparse_match ls &&
+	test_sparse_match ls folder1 &&
+
+	test_all_match git clean -xf &&
+	test_all_match git status --porcelain=v2 &&
+	test_sparse_match ls &&
+	test_sparse_match ls folder1 &&
+
+	test_all_match git clean -xdf &&
+	test_all_match git status --porcelain=v2 &&
+	test_sparse_match ls &&
+
+	# perhaps this is unexpected? at least it is consistent
+	test_path_is_dir sparse-checkout/folder1 &&
+	test_path_is_dir sparse-index/folder1
+'
+
 test_done
