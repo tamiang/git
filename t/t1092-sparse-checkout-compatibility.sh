@@ -131,7 +131,7 @@ test_sparse_match () {
 
 test_expect_success 'expanded in-memory index matches full index' '
 	init_repos &&
-	test_sparse_match test-tool read-cache --expand --table-no-stat
+	test_sparse_match test-tool read-cache --expand --table --no-stat
 '
 
 test_expect_success 'status with options' '
