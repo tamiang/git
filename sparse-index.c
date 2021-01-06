@@ -258,7 +258,7 @@ int ensure_full_index(struct repository *r, struct index_state *istate)
 
 	/* Copy back into original index, which _could_ be the_index */
 	/* TODO: extract to helper */
-	hashmap_clear_and_free(&istate->name_hash, struct cache_entry, ent);
+	/* hashmap_clear(&istate->name_hash); */
 	memcpy(&istate->name_hash, &full->name_hash, sizeof(full->name_hash));
 	istate->sparse_index = 0;
 	istate->cache = full->cache;

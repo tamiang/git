@@ -537,6 +537,8 @@ int cmd_add(int argc, const char **argv, const char *prefix)
 	if (read_cache_preload(&pathspec) < 0)
 		die(_("index file corrupt"));
 
+	ensure_full_index(the_repository, &the_index);
+
 	die_in_unpopulated_submodule(&the_index, prefix);
 	die_path_inside_submodule(&the_index, &pathspec);
 
