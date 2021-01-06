@@ -90,6 +90,7 @@ static struct cache_entry *construct_sparse_dir_entry(
 				struct pattern_list *pl,
 				int start, int *end)
 {
+	int all_sparse = 1;
 	struct cache_entry *de;
 	struct object_id tree_oid;
 	struct strbuf HEAD_colon_tree = STRBUF_INIT;
@@ -97,12 +98,18 @@ static struct cache_entry *construct_sparse_dir_entry(
 	*end = start + 1;
 
 	while (*end < istate->cache_nr &&
-	       starts_with(istate->cache[*end]->name, sparse_dir))
+	       starts_with(istate->cache[*end]->name, sparse_dir)) {
+		all_sparse &= !!(istate->cache[*end]->ce_flags & CE_SKIP_WORKTREE);
+		all_sparse &= !ce_stage(istate->cache[*end]);
 		(*end)++;
+	}
 
 	strbuf_addf(&HEAD_colon_tree, "HEAD:%s", sparse_dir);
 	if (get_oid(HEAD_colon_tree.buf, &tree_oid))
 		BUG("sparse-index cannot handle missing sparse directories");
+
+	if (!all_sparse)
+		return NULL;
 
 	de = make_cache_entry(istate, DIR_MODE, &tree_oid, sparse_dir, 0, 0);
 
@@ -139,14 +146,28 @@ int convert_to_sparse(struct index_state *istate)
 
 	remove_fsmonitor(istate);
 
-	for (i = 0; i < istate->cache_nr; cur_i++) {
+	for (i = 0; i < istate->cache_nr; ) {
 		int end;
+		struct cache_entry *se;
 		struct cache_entry *ce = istate->cache[i];
 
 		/* if not sparse, copy the entry and move forward */
 		if (!(ce->ce_flags & CE_SKIP_WORKTREE)) {
-			istate->cache[cur_i] = ce;
+			istate->cache[cur_i++] = ce;
 			i++;
+			continue;
+		}
+
+		se = construct_sparse_dir_entry(istate, &pl, i, &end);
+
+		if (!se) {
+			/*
+			 * Something in this directory is not safe for
+			 * creating a sparse directory entry. Copy all
+			 * subentries in the range.
+			 */
+			while (i < end)
+				istate->cache[cur_i++] = istate->cache[i++];
 			continue;
 		}
 
@@ -156,7 +177,7 @@ int convert_to_sparse(struct index_state *istate)
 		 * into the index as a sparse directory. Then skip all
 		 * entries that match that leading directory.
 		 */
-		istate->cache[cur_i] = construct_sparse_dir_entry(istate, &pl, i, &end);
+		istate->cache[cur_i++] = se;
 		discard_cache_entry(ce);
 
 		while (++i < end)
