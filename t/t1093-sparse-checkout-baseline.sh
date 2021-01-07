@@ -91,7 +91,7 @@ init_repos () {
 
 	# initialize sparse-checkout definitions
 	git -C sparse-checkout sparse-checkout set deep &&
-	GIT_TEST_SPARSE_INDEX=1 git -C sparse-index sparse-checkout set deep
+	GIT_TEST_SPARSE_INDEX=1 git -C sparse-index sparse-checkout set deep 2>sparse-index-set-err
 }
 
 run_on_sparse () {
@@ -205,7 +205,7 @@ test_expect_success 'add, commit, checkout' '
 	test_all_match git checkout -
 '
 
-test_expect_failure 'checkout and reset --hard' '
+test_expect_success 'checkout and reset --hard' '
 	init_repos &&
 
 	test_all_match git checkout update-folder1 &&
@@ -273,7 +273,7 @@ test_expect_success 'blame with pathspec inside sparse definition' '
 	test_all_match git blame deep/deeper1/deepest/a
 '
 
-test_expect_failure 'checkout and reset (mixed)' '
+test_expect_success 'checkout and reset (mixed)' '
 	init_repos &&
 
 	test_all_match git checkout -b reset-test update-deep &&

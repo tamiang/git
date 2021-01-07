@@ -19,114 +19,122 @@ static int get_sparse_checkout_patterns(struct pattern_list *pl)
 	int res;
 	char *sparse_filename = get_sparse_checkout_filename();
 
+	pl->use_cone_patterns = core_sparse_checkout_cone;
 	res = add_patterns_from_file_to_list(sparse_filename, "", 0, pl, NULL);
 
 	free(sparse_filename);
 	return res;
 }
 
-static int hashmap_contains_path(struct hashmap *map,
-				 struct strbuf *pattern)
-{
-	struct pattern_entry p;
-
-	/* Check straight mapping */
-	p.pattern = pattern->buf;
-	p.patternlen = pattern->len;
-	hashmap_entry_init(&p.ent,
-			   ignore_case ?
-			   strihash(p.pattern) :
-			   strhash(p.pattern));
-	return !!hashmap_get_entry(map, &p, ent, NULL);
-}
-
-static char *get_sparse_dir_name(struct pattern_list *pl,
-				 const char *sparse_path)
-{
-	struct strbuf path = STRBUF_INIT;
-	struct strbuf parent = STRBUF_INIT;
-	const char *slash_pos;
-
-	strbuf_addstr(&path, sparse_path);
-	slash_pos = strrchr(path.buf, '/');
-
-	if (slash_pos == path.buf)
-		BUG("path at root should not be sparse in cone mode");
-
-	/* definitely remove the filename from the path */
-	strbuf_setlen(&path, slash_pos - path.buf);
-
-	/* copy to the parent, then extract another directory */
-	strbuf_add(&parent, path.buf, slash_pos - path.buf);
-	slash_pos = strrchr(parent.buf, '/');
-
-	while (slash_pos > parent.buf) {
-		strbuf_setlen(&parent, slash_pos - parent.buf);
-
-		/*
-		 * If the parent is in the parent_hashmap, then we
-		 * found the boundary where 'parent' is included but
-		 * everything under 'path' is sparse.
-		 */
-		if (hashmap_contains_path(&pl->parent_hashmap, &parent))
-			break;
-
-		/* pop last path entry off 'path' */
-		strbuf_setlen(&path, parent.len);
-
-		/* pop last path entry off 'parent' */
-		slash_pos = strrchr(parent.buf, '/');
-	}
-
-	strbuf_release(&parent);
-	strbuf_addch(&path, '/');
-
-	return strbuf_detach(&path, NULL);
-}
-
 #define DIR_MODE 0100
 
 static struct cache_entry *construct_sparse_dir_entry(
 				struct index_state *istate,
-				struct pattern_list *pl,
-				int start, int *end)
+				const char *sparse_dir,
+				struct cache_tree *tree)
 {
-	int all_sparse = 1;
 	struct cache_entry *de;
-	struct object_id tree_oid;
-	struct strbuf HEAD_colon_tree = STRBUF_INIT;
-	char *sparse_dir = get_sparse_dir_name(pl, istate->cache[start]->name);
-	*end = start + 1;
 
-	while (*end < istate->cache_nr &&
-	       starts_with(istate->cache[*end]->name, sparse_dir)) {
-		all_sparse &= !!(istate->cache[*end]->ce_flags & CE_SKIP_WORKTREE);
-		all_sparse &= !ce_stage(istate->cache[*end]);
-		(*end)++;
-	}
-
-	/*
-	 * This is probably the wrong tree if we are in a mixed state or
-	 * checking out a new tree!
-	 */
-	strbuf_addf(&HEAD_colon_tree, "HEAD:%s", sparse_dir);
-	if (get_oid(HEAD_colon_tree.buf, &tree_oid))
-		BUG("sparse-index cannot handle missing sparse directories");
-
-	if (!all_sparse)
-		return NULL;
-
-	de = make_cache_entry(istate, DIR_MODE, &tree_oid, sparse_dir, 0, 0);
+	de = make_cache_entry(istate, DIR_MODE, &tree->oid, sparse_dir, 0, 0);
 
 	de->ce_flags |= CE_SKIP_WORKTREE;
-	strbuf_release(&HEAD_colon_tree);
-	free(sparse_dir);
 	return de;
+}
+
+/*
+ * Returns the number of entries "inserted" into the index.
+ */
+static int convert_to_sparse_rec(struct repository *repo,
+				 struct index_state *istate,
+				 int num_converted,
+				 int start, int end,
+				 const char *ct_path, size_t ct_pathlen,
+				 struct cache_tree *ct,
+				 struct pattern_list *pl)
+{
+	int i, sub, can_convert = 1;
+	int start_converted = num_converted;
+	enum pattern_match_result match;
+	int dtype;
+	struct strbuf next_subtree_match = STRBUF_INIT;
+
+	/*
+	 * Is the current path outside of the sparse cone?
+	 * Then check if the region can be replaced by a sparse
+	 * directory entry (everything is sparse and merged).
+	 */
+	match = path_matches_pattern_list(ct_path, ct_pathlen,
+					  NULL, &dtype, pl, istate);
+	if (match != NOT_MATCHED)
+		can_convert = 0;
+
+	for (i = start; can_convert && i < end; i++) {
+		struct cache_entry *ce = istate->cache[i];
+
+		if (ce_stage(ce) ||
+		    !(ce->ce_flags & CE_SKIP_WORKTREE))
+			can_convert = 0;
+	}
+
+	if (can_convert) {
+		struct cache_entry *se;
+		se = construct_sparse_dir_entry(istate, ct_path, ct);
+
+		istate->cache[num_converted++] = se;
+		return 1;
+	}
+
+	sub = 0;
+	if (ct->subtree_nr) {
+		strbuf_add(&next_subtree_match, ct_path, ct_pathlen);
+		strbuf_add(&next_subtree_match, ct->down[0]->name, ct->down[0]->namelen);
+		strbuf_addch(&next_subtree_match, '/');
+	}
+
+	for (i = start; i < end; ) {
+		int count;
+		int span;
+		struct cache_entry *ce = istate->cache[i];
+
+		/*
+		 * Detect if this is a normal entry oustide of the next
+		 * cache subtree entry.
+		 */
+		if (sub >= ct->subtree_nr ||
+		    ce->ce_namelen <= next_subtree_match.len ||
+		    strncmp(ce->name, next_subtree_match.buf, next_subtree_match.len)) {
+			istate->cache[num_converted++] = ce;
+			i++;
+			continue;
+		}
+
+		span = ct->down[sub]->cache_tree->entry_count;
+		count = convert_to_sparse_rec(repo, istate,
+					      num_converted, i, i + span,
+					      next_subtree_match.buf,
+					      next_subtree_match.len,
+					      ct->down[sub]->cache_tree,
+					      pl);
+		num_converted += count;
+		i += span;
+		sub++;
+
+		if (sub < ct->subtree_nr) {
+			strbuf_setlen(&next_subtree_match, ct_pathlen);
+			strbuf_add(&next_subtree_match,
+				   ct->down[sub]->name,
+				   ct->down[sub]->namelen);
+			strbuf_addch(&next_subtree_match, '/');
+		}
+	}
+
+	strbuf_release(&next_subtree_match);
+	return num_converted - start_converted;
 }
 
 int convert_to_sparse(struct repository *repo, struct index_state *istate)
 {
-	int i, cur_i = 0;
+	int res = 0;
 	struct pattern_list pl;
 
 	if (istate->split_index || istate->sparse_index ||
@@ -146,55 +154,29 @@ int convert_to_sparse(struct repository *repo, struct index_state *istate)
 	if (get_sparse_checkout_patterns(&pl))
 		return 0;
 
-	cache_tree_update(istate, 0);
+	if (!pl.use_cone_patterns) {
+		warning(_("attempting to use sparse-index without cone mode"));
+		res = 1;
+		goto done;
+	}
 
-	istate->drop_cache_tree = 1;
-	istate->sparse_index = 1;
+	if (cache_tree_update(istate, 0)) {
+		warning(_("unable to update cache-tree, staying full"));
+		goto done;
+	}
 
 	remove_fsmonitor(istate);
 
-	for (i = 0; i < istate->cache_nr; ) {
-		int end;
-		struct cache_entry *se;
-		struct cache_entry *ce = istate->cache[i];
+	istate->cache_nr = convert_to_sparse_rec(repo, istate,
+						 0, 0, istate->cache_nr,
+						 "", 0, istate->cache_tree,
+						 &pl);
+	istate->drop_cache_tree = 1;
+	istate->sparse_index = 1;
 
-		/* if not sparse, copy the entry and move forward */
-		if (!(ce->ce_flags & CE_SKIP_WORKTREE)) {
-			istate->cache[cur_i++] = ce;
-			i++;
-			continue;
-		}
-
-		se = construct_sparse_dir_entry(istate, &pl, i, &end);
-
-		if (!se) {
-			/*
-			 * Something in this directory is not safe for
-			 * creating a sparse directory entry. Copy all
-			 * subentries in the range.
-			 */
-			while (i < end)
-				istate->cache[cur_i++] = istate->cache[i++];
-			continue;
-		}
-
-		/*
-		 * We entered a sparse region. Discover the highest path
-		 * that does not match a parent pattern, and insert that
-		 * into the index as a sparse directory. Then skip all
-		 * entries that match that leading directory.
-		 */
-		istate->cache[cur_i++] = se;
-		discard_cache_entry(ce);
-
-		while (++i < end)
-			discard_cache_entry(istate->cache[i]);
-	}
-
-	istate->cache_nr = cur_i;
-
+done:
 	clear_pattern_list(&pl);
-	return 0;
+	return res;
 }
 
 static void set_index_entry(struct index_state *istate, int nr, struct cache_entry *ce)
