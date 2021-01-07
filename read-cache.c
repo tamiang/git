@@ -3113,7 +3113,7 @@ static int do_write_locked_index(struct index_state *istate, struct lock_file *l
 {
 	int ret;
 
-	if (convert_to_sparse(istate))
+	if (convert_to_sparse(the_repository, istate))
 		die(_("failed to convert to a sparse-index"));
 
 	/*
@@ -3218,7 +3218,7 @@ static int write_shared_index(struct index_state *istate,
 	struct split_index *si = istate->split_index;
 	int ret;
 
-	if (convert_to_sparse(istate))
+	if (convert_to_sparse(the_repository, istate))
 		die(_("failed to convert to a sparse-index"));
 
 	move_cache_to_base_index(istate);
@@ -3282,7 +3282,7 @@ int write_locked_index(struct index_state *istate, struct lock_file *lock,
 	int new_shared_index, ret;
 	struct split_index *si = istate->split_index;
 
-	if (convert_to_sparse(istate))
+	if (convert_to_sparse(the_repository, istate))
 		die(_("failed to convert to a sparse-index"));
 
 	if (git_env_bool("GIT_TEST_CHECK_CACHE_TREE", 0))

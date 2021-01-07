@@ -7,6 +7,7 @@
 #include "pathspec.h"
 #include "tree-walk.h"
 #include "fsmonitor.h"
+#include "cache-tree.h"
 
 static char *get_sparse_checkout_filename(void)
 {
@@ -123,10 +124,12 @@ static struct cache_entry *construct_sparse_dir_entry(
 	return de;
 }
 
-int convert_to_sparse(struct index_state *istate)
+int convert_to_sparse(struct repository *repo, struct index_state *istate)
 {
 	int i, cur_i = 0;
 	struct pattern_list pl;
+	struct object_id tree_oid;
+	struct tree *tree;
 
 	if (istate->split_index || istate->sparse_index ||
 	    !core_apply_sparse_checkout || !core_sparse_checkout_cone)
@@ -144,6 +147,11 @@ int convert_to_sparse(struct index_state *istate)
 	memset(&pl, 0, sizeof(pl));
 	if (get_sparse_checkout_patterns(&pl))
 		return 0;
+
+	repo_get_oid(repo, "HEAD^{tree}", &tree_oid);
+	tree = lookup_tree(repo, &tree_oid);
+
+	prime_cache_tree(repo, istate, tree);
 
 	istate->drop_cache_tree = 1;
 	istate->sparse_index = 1;

@@ -452,6 +452,9 @@ int cache_tree_update(struct index_state *istate, int flags)
 
 	ensure_full_index(the_repository, istate);
 
+	if (!istate->cache_tree)
+		istate->cache_tree = cache_tree();
+
 	it = istate->cache_tree;
 	cache = istate->cache;
 	entries = istate->cache_nr;

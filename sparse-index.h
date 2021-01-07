@@ -3,6 +3,6 @@
 
 struct index_state;
 
-int convert_to_sparse(struct index_state *istate);
+int convert_to_sparse(struct repository *repo, struct index_state *istate);
 
 #endif
