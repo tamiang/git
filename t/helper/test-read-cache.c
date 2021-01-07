@@ -45,6 +45,9 @@ int cmd__read_cache(int argc, const char **argv)
 	int table = 0;
 	int stat = 1;
 
+	prepare_repo_settings(r);
+	r->settings.force_full_index = 0;
+
 	if (argc > 1 && skip_prefix(argv[1], "--print-and-refresh=", &name)) {
 		argc--;
 		argv++;
