@@ -1,6 +1,7 @@
 #include "test-tool.h"
 #include "cache.h"
 #include "config.h"
+#include "sparse-index.h"
 
 static void print_cache_entry(struct cache_entry *ce, unsigned stat)
 {
@@ -44,8 +45,18 @@ int cmd__read_cache(int argc, const char **argv)
 	const char *name = NULL;
 	int table = 0;
 	int stat = 1;
+	int expand = 0;
+
+	initialize_the_repository();
+	prepare_repo_settings(r);
+	r->settings.command_requires_full_index = 0;
 
 	if (argc > 1 && skip_prefix(argv[1], "--print-and-refresh=", &name)) {
+		argc--;
+		argv++;
+	}
+	if (argc > 1 && !strcmp("--expand", argv[1])) {
+		expand = 1;
 		argc--;
 		argv++;
 	}
@@ -69,6 +80,10 @@ int cmd__read_cache(int argc, const char **argv)
 
 	for (i = 0; i < cnt; i++) {
 		repo_read_index(r);
+
+		if (expand)
+			ensure_full_index(r->index);
+
 		if (name) {
 			int pos;
 
