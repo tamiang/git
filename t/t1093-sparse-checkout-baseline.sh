@@ -205,7 +205,7 @@ test_expect_success 'add, commit, checkout' '
 	test_all_match git checkout -
 '
 
-test_expect_success 'checkout and reset --hard' '
+test_expect_failure 'checkout and reset --hard' '
 	init_repos &&
 
 	test_all_match git checkout update-folder1 &&
