@@ -21,3 +21,8 @@ Future Work
 ### Sparse-Index
 
 <TBD>
+
+To slowly enable "sparse aware" index logic, we start by requiring the
+index to be represented in-memory as a full index immediately after
+reading a sparse-index.
+
