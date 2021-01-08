@@ -264,6 +264,10 @@ int repo_read_index(struct repository *repo)
 	if (!repo->index)
 		repo->index = xcalloc(1, sizeof(*repo->index));
 
+	/* Complete the double-reference */
+	if (!repo->index->repo)
+		repo->index->repo = repo;
+
 	return read_index_from(repo->index, repo->index_file, repo->gitdir);
 }
 
