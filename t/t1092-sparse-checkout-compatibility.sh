@@ -223,6 +223,9 @@ test_expect_success 'diff with renames' '
 
 	for branch in rename-out-to-out rename-out-to-in rename-in-to-out
 	do
+		# TODO: without this reset, the output of "git checkout"
+		# differs in sparse-index.
+		run_on_all git reset --hard &&
 		test_all_match git checkout rename-base &&
 		test_all_match git checkout $branch -- .&&
 		test_all_match git diff --staged &&

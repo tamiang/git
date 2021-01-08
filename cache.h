@@ -204,6 +204,9 @@ struct cache_entry {
 #error "CE_EXTENDED_FLAGS out of range"
 #endif
 
+#define CE_MODE_SPARSE_DIRECTORY 01000755
+#define SPARSE_DIR_MODE 0100
+
 /* Forward structure decls */
 struct pathspec;
 struct child_process;
@@ -249,6 +252,8 @@ static inline unsigned int create_ce_mode(unsigned int mode)
 {
 	if (S_ISLNK(mode))
 		return S_IFLNK;
+	if (mode == SPARSE_DIR_MODE)
+		return CE_MODE_SPARSE_DIRECTORY;
 	if (S_ISDIR(mode) || S_ISGITLINK(mode))
 		return S_IFGITLINK;
 	return S_IFREG | ce_permissions(mode);
@@ -320,7 +325,8 @@ struct index_state {
 		 drop_cache_tree : 1,
 		 updated_workdir : 1,
 		 updated_skipworktree : 1,
-		 fsmonitor_has_run_once : 1;
+		 fsmonitor_has_run_once : 1,
+		 sparse_index : 1;
 	struct hashmap name_hash;
 	struct hashmap dir_hash;
 	struct object_id oid;
@@ -718,6 +724,8 @@ int do_read_index(struct index_state *istate, const char *path,
 int read_index_from(struct index_state *, const char *path,
 		    const char *gitdir);
 int is_index_unborn(struct index_state *);
+
+void ensure_full_index(struct index_state *istate);
 
 /* For use with `write_locked_index()`. */
 #define COMMIT_LOCK		(1 << 0)
