@@ -27,6 +27,7 @@ test_expect_success 'setup' '
 		cp a deep/deeper1 &&
 		cp a deep/deeper2 &&
 		cp a deep/deeper1/deepest &&
+		cp -r deep/deeper1/deepest deep/deeper2 &&
 		git add . &&
 		git commit -m "initial commit" &&
 		git checkout -b base &&
@@ -144,20 +145,20 @@ test_expect_success 'sparse-index contents' '
 			|| return 1
 	done &&
 
-	GIT_TEST_SPARSE_INDEX=1 git -C sparse-index sparse-checkout set deep/deeper1 &&
+	GIT_TEST_SPARSE_INDEX=1 git -C sparse-index sparse-checkout set folder1 &&
 
 	test-tool -C sparse-index read-cache --table-no-stat >cache &&
-	for dir in deep/deeper2 folder1 folder2 x
+	for dir in deep folder2 x
 	do
 		TREE=$(git -C sparse-index rev-parse HEAD:$dir) &&
 		grep "0b0000 0755 $TREE $dir/" cache \
 			|| return 1
 	done &&
 
-	GIT_TEST_SPARSE_INDEX=1 git -C sparse-index sparse-checkout set folder1 &&
+	GIT_TEST_SPARSE_INDEX=1 git -C sparse-index sparse-checkout set deep/deeper1 &&
 
 	test-tool -C sparse-index read-cache --table-no-stat >cache &&
-	for dir in deep folder2 x
+	for dir in deep/deeper2 folder1 folder2 x
 	do
 		TREE=$(git -C sparse-index rev-parse HEAD:$dir) &&
 		grep "0b0000 0755 $TREE $dir/" cache \
@@ -399,6 +400,21 @@ test_expect_success 'clean' '
 	test_sparse_match ls folder1 &&
 
 	test_sparse_match test_path_is_dir folder1
+'
+
+test_expect_success 'sparse-index is expanded and converted back' '
+	init_repos &&
+
+	(
+		export GIT_TEST_SPARSE_INDEX=1 &&
+		test_region index convert_to_sparse git -C sparse-index \
+			-c core.fsmonitor="" reset --hard &&
+		test_region index ensure_full_index git -C sparse-index \
+			-c core.fsmonitor="" reset --hard &&
+
+		test_region index ensure_full_index git -C sparse-index \
+			-c core.fsmonitor="" status -uno
+	)
 '
 
 test_done
