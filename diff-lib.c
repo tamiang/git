@@ -96,8 +96,6 @@ int run_diff_files(struct rev_info *revs, unsigned int option)
 	uint64_t start = getnanotime();
 	struct index_state *istate = revs->diffopt.repo->index;
 
-	ensure_full_index(istate);
-
 	diff_set_mnemonic_prefix(&revs->diffopt, "i/", "w/");
 
 	refresh_fsmonitor(istate);
