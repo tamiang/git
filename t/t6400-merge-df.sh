@@ -81,7 +81,12 @@ test_expect_success 'modify/delete + directory/file conflict' '
 
 	test 5 -eq $(git ls-files -s | wc -l) &&
 	test 4 -eq $(git ls-files -u | wc -l) &&
-	test 1 -eq $(git ls-files -o | wc -l) &&
+	if test "$GIT_TEST_MERGE_ALGORITHM" = ort
+	then
+		test 0 -eq $(git ls-files -o | wc -l)
+	else
+		test 1 -eq $(git ls-files -o | wc -l)
+	fi &&
 
 	test_path_is_file letters/file &&
 	test_path_is_file letters.txt &&
@@ -97,7 +102,12 @@ test_expect_success 'modify/delete + directory/file conflict; other way' '
 
 	test 5 -eq $(git ls-files -s | wc -l) &&
 	test 4 -eq $(git ls-files -u | wc -l) &&
-	test 1 -eq $(git ls-files -o | wc -l) &&
+	if test "$GIT_TEST_MERGE_ALGORITHM" = ort
+	then
+		test 0 -eq $(git ls-files -o | wc -l)
+	else
+		test 1 -eq $(git ls-files -o | wc -l)
+	fi &&
 
 	test_path_is_file letters/file &&
 	test_path_is_file letters.txt &&
@@ -124,7 +134,7 @@ test_expect_success 'Simple merge in repo with interesting pathnames' '
 		git add . &&
 		git commit -m initial &&
 
-		git branch main &&
+		git branch topic &&
 		git branch other &&
 
 		git checkout other &&
@@ -132,10 +142,10 @@ test_expect_success 'Simple merge in repo with interesting pathnames' '
 		git add -u &&
 		git commit -m other &&
 
-		git checkout main &&
-		echo main >foo/bar/baz &&
+		git checkout topic &&
+		echo topic >foo/bar/baz &&
 		git add -u &&
-		git commit -m main &&
+		git commit -m topic &&
 
 		git merge other &&
 		git ls-files -s >out &&

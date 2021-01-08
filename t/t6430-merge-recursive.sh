@@ -3,6 +3,7 @@
 test_description='merge-recursive backend test'
 
 . ./test-lib.sh
+. "$TEST_DIRECTORY"/lib-merge.sh
 
 test_expect_success 'setup 1' '
 
@@ -641,7 +642,7 @@ test_expect_success 'merge-recursive copy vs. rename' '
 	test_cmp expected actual
 '
 
-test_expect_failure 'merge-recursive rename vs. rename/symlink' '
+test_expect_merge_algorithm failure success 'merge-recursive rename vs. rename/symlink' '
 
 	git checkout -f rename &&
 	git merge rename-ln &&
@@ -663,7 +664,7 @@ test_expect_failure 'merge-recursive rename vs. rename/symlink' '
 
 test_expect_success 'merging with triple rename across D/F conflict' '
 	git reset --hard HEAD &&
-	git checkout -b main &&
+	git checkout -b topic &&
 	git rm -rf . &&
 
 	echo "just a file" >sub1 &&
@@ -682,7 +683,7 @@ test_expect_success 'merging with triple rename across D/F conflict' '
 	test_tick &&
 	git commit -a -m changesimplefile &&
 
-	git checkout main &&
+	git checkout topic &&
 	git rm sub1 &&
 	git mv sub2 sub1 &&
 	test_tick &&
