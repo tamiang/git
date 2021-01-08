@@ -1,0 +1,23 @@
+Sparse-checkout feature
+=======================
+
+This document intends to gather ideas around the design and implementation
+of the sparse-checkout feature. Plans for future work are also collected
+as planned and removed when completed.
+
+Design
+------
+
+<TBD>
+
+Implementation
+--------------
+
+<TBD>
+
+Future Work
+-----------
+
+### Sparse-Index
+
+<TBD>
