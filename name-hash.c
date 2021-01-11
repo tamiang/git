@@ -110,6 +110,12 @@ static void hash_index_entry(struct index_state *istate, struct cache_entry *ce)
 	if (ce->ce_flags & CE_HASHED)
 		return;
 	ce->ce_flags |= CE_HASHED;
+
+	if (ce->ce_mode == CE_MODE_SPARSE_DIRECTORY) {
+		add_dir_entry(istate, ce);
+		return;
+	}
+
 	hashmap_entry_init(&ce->ent, memihash(ce->name, ce_namelen(ce)));
 	hashmap_add(&istate->name_hash, &ce->ent);
 
