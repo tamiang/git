@@ -280,3 +280,10 @@ void ensure_full_index(struct index_state *istate)
 
 	trace2_region_leave("index", "ensure_full_index", istate->repo);
 }
+
+void expand_to_path(struct index_state *istate,
+		    const char *path, size_t pathlen, int icase)
+{
+	/* for now, do the obviously-correct, slow thing */
+	ensure_full_index(istate);
+}
