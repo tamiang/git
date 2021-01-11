@@ -1655,3 +1655,51 @@ test_subcommand () {
 		grep "\[$expr\]"
 	fi
 }
+
+# Check that the given command was invoked as part of the
+# trace2-format trace on stdin.
+#
+#	test_region [!] <category> <label> git <command> <args>...
+#
+# For example, to look for trace2_region_enter("index", "do_read_index", repo)
+# ininvocation of "git checkout HEAD~1", run
+#
+#	test_region index do_read_index git checkout HEAD~1
+#
+# If the first parameter passed is !, this instead checks that
+# the given region was not entered.
+#
+test_region () {
+	local expect_exit=0
+	if test "$1" = "!"
+	then
+		expect_exit=1
+		shift
+	fi
+
+	local pattern=
+	pattern="region_enter.*\"category\":\"$1\",\"label\":\"$2\""
+	shift
+	shift
+
+	local exitcode=
+
+	GIT_TRACE2_EVENT_NESTING=10 GIT_TRACE2_EVENT="$HOME/test-region" $@
+
+	exitcode=$?
+
+	if test $exitcode != 0
+	then
+		return $exitcode
+	fi
+
+	grep "$pattern" "$HOME/test-region"
+	exitcode=$?
+
+	if test $exitcode != $expect_exit
+	then
+		return 1
+	fi
+
+	rm -f "$HOME/test-region"
+}
