@@ -1874,6 +1874,7 @@ static int fast_forward_to(struct tree *head, struct tree *remote, int reset)
 	init_tree_desc(&t[0], head->buffer, head->size);
 	init_tree_desc(&t[1], remote->buffer, remote->size);
 
+	ensure_full_index(opts.src_index);
 	if (unpack_trees(2, t, &opts)) {
 		rollback_lock_file(&lock_file);
 		return -1;
@@ -1908,6 +1909,7 @@ static int merge_tree(struct tree *tree)
 	opts.fn = oneway_merge;
 	init_tree_desc(&t[0], tree->buffer, tree->size);
 
+	ensure_full_index(opts.src_index);
 	if (unpack_trees(1, t, &opts)) {
 		rollback_lock_file(&lock_file);
 		return -1;

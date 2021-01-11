@@ -329,6 +329,7 @@ static int fast_forward(struct repository *r, struct tree_desc *t,
 		opts.head_idx = nr - 1;
 	}
 
+	ensure_full_index(opts.src_index);
 	if (unpack_trees(nr, t, &opts))
 		return -1;
 
