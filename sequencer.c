@@ -3464,6 +3464,7 @@ static int do_reset(struct repository *r,
 		return -1;
 	}
 
+	ensure_full_index(unpack_tree_opts.src_index);
 	if (unpack_trees(1, &desc, &unpack_tree_opts)) {
 		rollback_lock_file(&lock);
 		free((void *)desc.buffer);
