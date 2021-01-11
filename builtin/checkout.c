@@ -641,6 +641,7 @@ static int reset_tree(struct tree *tree, const struct checkout_opts *o,
 			       NULL);
 	parse_tree(tree);
 	init_tree_desc(&tree_desc, tree->buffer, tree->size);
+	ensure_full_index(opts.src_index);
 	switch (unpack_trees(1, &tree_desc, &opts)) {
 	case -2:
 		*writeout_error = 1;

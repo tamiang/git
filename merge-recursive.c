@@ -429,6 +429,7 @@ static int unpack_trees_start(struct merge_options *opt,
 	init_tree_desc_from_tree(t+1, head);
 	init_tree_desc_from_tree(t+2, merge);
 
+	ensure_full_index(opt->priv->unpack_opts.src_index);
 	rc = unpack_trees(3, t, &opt->priv->unpack_opts);
 	cache_tree_free(&opt->repo->index->cache_tree);
 

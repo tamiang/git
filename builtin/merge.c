@@ -690,6 +690,7 @@ static int read_tree_trivial(struct object_id *common, struct object_id *head,
 		parse_tree(trees[i]);
 		init_tree_desc(t+i, trees[i]->buffer, trees[i]->size);
 	}
+	ensure_full_index(opts.src_index);
 	if (unpack_trees(nr_trees, t, &opts))
 		return -1;
 	return 0;

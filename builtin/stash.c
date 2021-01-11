@@ -258,6 +258,7 @@ static int reset_tree(struct object_id *i_tree, int update, int reset)
 	opts.update = update;
 	opts.fn = oneway_merge;
 
+	ensure_full_index(opts.src_index);
 	if (unpack_trees(nr_trees, t, &opts))
 		return -1;
 
