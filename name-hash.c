@@ -8,6 +8,7 @@
 #include "cache.h"
 #include "thread-utils.h"
 #include "trace2.h"
+#include "sparse-index.h"
 
 struct dir_entry {
 	struct hashmap_entry ent;
@@ -679,9 +680,8 @@ int index_dir_exists(struct index_state *istate, const char *name, int namelen)
 {
 	struct dir_entry *dir;
 
-	ensure_full_index(istate);
-
 	lazy_init_name_hash(istate);
+	expand_to_path(istate, name, namelen, 0);
 	dir = find_dir_entry(istate, name, namelen);
 	return dir && dir->nr;
 }
@@ -691,9 +691,8 @@ void adjust_dirname_case(struct index_state *istate, char *name)
 	const char *startPtr = name;
 	const char *ptr = startPtr;
 
-	ensure_full_index( istate);
-
 	lazy_init_name_hash(istate);
+	expand_to_path(istate, name, strlen(name), 0);
 	while (*ptr) {
 		while (*ptr && *ptr != '/')
 			ptr++;
@@ -716,9 +715,8 @@ struct cache_entry *index_file_exists(struct index_state *istate, const char *na
 	struct cache_entry *ce;
 	unsigned int hash = memihash(name, namelen);
 
-	ensure_full_index(istate);
-
 	lazy_init_name_hash(istate);
+	expand_to_path(istate, name, namelen, icase);
 
 	ce = hashmap_get_entry_from_hash(&istate->name_hash, hash, NULL,
 					 struct cache_entry, ent);
