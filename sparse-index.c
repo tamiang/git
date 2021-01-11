@@ -281,9 +281,62 @@ void ensure_full_index(struct index_state *istate)
 	trace2_region_leave("index", "ensure_full_index", istate->repo);
 }
 
+static int in_expand_to_path = 0;
+
 void expand_to_path(struct index_state *istate,
 		    const char *path, size_t pathlen, int icase)
 {
+	struct strbuf path_as_dir = STRBUF_INIT;
+	int pos;
+
+	/* prevent extra recursion */
+	if (in_expand_to_path)
+		return;
+
+	if (!istate || !istate->sparse_index)
+		return;
+
+	if (!istate->repo)
+		istate->repo = the_repository;
+
+	in_expand_to_path = 1;
+
+	/*
+	 * We only need to actually expand a region if the
+	 * following are both true:
+	 *
+	 * 1. 'path' is not already in the index.
+	 * 2. Some parent directory of 'path' is a sparse directory.
+	 */
+
+	strbuf_add(&path_as_dir, path, pathlen);
+	strbuf_addch(&path_as_dir, '/');
+
+	/* in_expand_to_path prevents infinite recursion here */
+	if (index_file_exists(istate, path, pathlen, icase))
+		goto cleanup;
+
+	pos = index_name_pos(istate, path_as_dir.buf, path_as_dir.len);
+
+	if (pos < 0)
+		pos = -pos - 1;
+
+	/*
+	 * Even if the path doesn't exist, if the value isn't exactly a
+	 * sparse-directory entry, then there is no need to expand the
+	 * index.
+	 */
+	if (istate->cache[pos]->ce_mode != CE_MODE_SPARSE_DIRECTORY)
+		goto cleanup;
+
+	trace2_region_enter("index", "expand_to_path", istate->repo);
+
 	/* for now, do the obviously-correct, slow thing */
 	ensure_full_index(istate);
+
+	trace2_region_leave("index", "expand_to_path", istate->repo);
+
+cleanup:
+	strbuf_release(&path_as_dir);
+	in_expand_to_path = 0;
 }
