@@ -11,6 +11,7 @@ GIT_TEST_SPARSE_INDEX=
 test_expect_success 'setup' '
 	git init initial-repo &&
 	(
+		export GIT_TEST_SPARSE_INDEX=0 &&
 		cd initial-repo &&
 		echo a >a &&
 		echo "after deep" >e &&
@@ -106,7 +107,7 @@ init_repos () {
 run_on_sparse () {
 	(
 		cd sparse-checkout &&
-		$* >../sparse-checkout-out 2>../sparse-checkout-err
+		GIT_TEST_SPARSE_INDEX=0 $* >../sparse-checkout-out 2>../sparse-checkout-err
 	) &&
 	(
 		cd sparse-index &&
@@ -117,7 +118,7 @@ run_on_sparse () {
 run_on_all () {
 	(
 		cd full-checkout &&
-		$* >../full-checkout-out 2>../full-checkout-err
+		GIT_TEST_SPARSE_INDEX=0 $* >../full-checkout-out 2>../full-checkout-err
 	) &&
 	run_on_sparse $*
 }
