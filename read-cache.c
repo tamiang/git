@@ -724,8 +724,6 @@ int add_to_index(struct index_state *istate, const char *path, struct stat *st, 
 	int hash_flags = HASH_WRITE_OBJECT;
 	struct object_id oid;
 
-	ensure_full_index(istate);
-
 	if (flags & ADD_CACHE_RENORMALIZE)
 		hash_flags |= HASH_RENORMALIZE;
 
@@ -733,6 +731,8 @@ int add_to_index(struct index_state *istate, const char *path, struct stat *st, 
 		return error(_("%s: can only add regular files, symbolic links or git-directories"), path);
 
 	namelen = strlen(path);
+	expand_to_path(istate, path, namelen, 0);
+
 	if (S_ISDIR(st_mode)) {
 		if (resolve_gitlink_ref(path, "HEAD", &oid) < 0)
 			return error(_("'%s' does not have a commit checked out"), path);
@@ -1104,7 +1104,8 @@ static int has_dir_name(struct index_state *istate,
 	size_t len_eq_last;
 	int cmp_last = 0;
 
-	ensure_full_index(istate);
+	/* TODO: use 'pos' here? */
+	expand_to_path(istate, ce->name, ce->ce_namelen, 0);
 
 	/*
 	 * We are frequently called during an iteration on a sorted
@@ -1349,7 +1350,7 @@ int add_index_entry(struct index_state *istate, struct cache_entry *ce, int opti
 {
 	int pos;
 
-	ensure_full_index(istate);
+	expand_to_path(istate, ce->name, ce->ce_namelen, 0);
 
 	if (option & ADD_CACHE_JUST_APPEND)
 		pos = istate->cache_nr;

@@ -18,6 +18,7 @@
 #include "ewah/ewok.h"
 #include "fsmonitor.h"
 #include "submodule-config.h"
+#include "sparse-index.h"
 
 /*
  * Tells read_directory_recursive how a file or directory should be treated.
@@ -899,9 +900,9 @@ static int read_skip_worktree_file_from_index(struct index_state *istate,
 {
 	int pos, len;
 
-	ensure_full_index(istate);
-
 	len = strlen(path);
+
+	expand_to_path(istate, path, len, 0);
 	pos = index_name_pos(istate, path, len);
 	if (pos < 0)
 		return -1;
@@ -1707,8 +1708,7 @@ static enum exist_status directory_exists_in_index(struct index_state *istate,
 	if (ignore_case)
 		return directory_exists_in_index_icase(istate, dirname, len);
 
-	ensure_full_index(istate);
-
+	expand_to_path(istate, dirname, len, 0);
 	pos = index_name_pos(istate, dirname, len);
 	if (pos < 0)
 		pos = -pos-1;
