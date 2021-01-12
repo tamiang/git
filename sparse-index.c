@@ -286,6 +286,7 @@ static int in_expand_to_path = 0;
 void expand_to_path(struct index_state *istate,
 		    const char *path, size_t pathlen, int icase)
 {
+	struct cache_entry *ce = NULL;
 	struct strbuf path_as_dir = STRBUF_INIT;
 	int pos;
 
@@ -320,13 +321,22 @@ void expand_to_path(struct index_state *istate,
 
 	if (pos < 0)
 		pos = -pos - 1;
+	if (pos < istate->cache_nr)
+		ce = istate->cache[pos];
 
 	/*
-	 * Even if the path doesn't exist, if the value isn't exactly a
-	 * sparse-directory entry, then there is no need to expand the
-	 * index.
+	 * If we didn't land on a sparse directory, then there is
+	 * nothing to expand.
 	 */
-	if (istate->cache[pos]->ce_mode != CE_MODE_SPARSE_DIRECTORY)
+	if (ce && istate->cache[pos]->ce_mode != CE_MODE_SPARSE_DIRECTORY)
+		goto cleanup;
+	/*
+	 * If that sparse directory is not a prefix of the path we
+	 * are looking for, then we don't need to expand.
+	 */
+	if (ce &&
+	    (ce->ce_namelen >= path_as_dir.len ||
+	     strncmp(ce->name, path_as_dir.buf, ce->ce_namelen)))
 		goto cleanup;
 
 	trace2_region_enter("index", "expand_to_path", istate->repo);
