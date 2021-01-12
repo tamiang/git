@@ -1093,7 +1093,7 @@ static int add_patterns(const char *fname, const char *base, int baselen,
 			int pos;
 
 			if (istate)
-				ensure_full_index(istate);
+				expand_to_path(istate, fname, strlen(fname), 0);
 
 			if (oid_stat->valid &&
 			    !match_stat_data_racy(istate, &oid_stat->stat, &st))
