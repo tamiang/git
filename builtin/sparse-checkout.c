@@ -123,6 +123,7 @@ static int update_working_directory(struct pattern_list *pl)
 	o.pl = pl;
 
 	setup_work_tree();
+	ensure_full_index(r->index);
 
 	repo_hold_locked_index(r, &lock_file, LOCK_DIE_ON_ERROR);
 
