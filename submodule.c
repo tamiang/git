@@ -346,8 +346,6 @@ void die_path_inside_submodule(struct index_state *istate,
 {
 	int i, j;
 
-	ensure_full_index(istate);
-
 	for (i = 0; i < istate->cache_nr; i++) {
 		struct cache_entry *ce = istate->cache[i];
 		int ce_len = ce_namelen(ce);
