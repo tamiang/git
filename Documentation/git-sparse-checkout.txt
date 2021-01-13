@@ -45,6 +45,20 @@ To avoid interfering with other worktrees, it first enables the
 When `--cone` is provided, the `core.sparseCheckoutCone` setting is
 also set, allowing for better performance with a limited set of
 patterns (see 'CONE PATTERN SET' below).
++
+Use the `--[no-]sparse-index` option to toggle the use of the sparse
+index format. This reduces the size of the index to be more closely
+aligned with your sparse-checkout definition. This can have significant
+performance advantages for commands such as `git status` or `git add`.
+This feature is still experimental. Some commands might be slower with
+a sparse index until they are properly integrated with the feature.
++
+**WARNING:** Using a sparse index requires modifying the index in a way
+that is not completely understood by other tools. Enabling sparse index
+enables the `extensions.spareseIndex` config value, which might cause
+other tools to stop working with your repository. If you have trouble with
+this compatibility, then run `git sparse-checkout sparse-index disable` to
+remove this config and rewrite your index to not be sparse.
 
 'set'::
 	Write a set of patterns to the sparse-checkout file, as given as
@@ -85,6 +99,7 @@ C-style quoted strings.
 	working directory to include all files. Leaves the sparse-checkout
 	file intact so a later 'git sparse-checkout init' command may
 	return the working directory to the same state.
+
 
 SPARSE CHECKOUT
 ---------------
