@@ -416,24 +416,24 @@ test_expect_success 'sparse-index is expanded and converted back' '
 	init_repos &&
 
 	test_region index convert_to_sparse git -C sparse-index \
-		-c core.fsmonitor="" reset --hard &&
+		reset --hard &&
 	test_region index ensure_full_index git -C sparse-index \
-		-c core.fsmonitor="" reset --hard
+		reset --hard
 '
 
 test_expect_success 'sparse-index is not expanded' '
 	init_repos &&
 
 	test_region ! index ensure_full_index git -C sparse-index \
-		-c core.fsmonitor="" status -uno &&
+		status -uno &&
 
 	echo >>sparse-index/README.md &&
 	test_region ! index ensure_full_index git -C sparse-index \
-		-c core.fsmonitor="" add -A &&
+		add -A &&
 
 	echo extra >>sparse-index/extra.txt &&
 	test_region ! index ensure_full_index git -C sparse-index \
-		-c core.fsmonitor="" add extra.txt
+		add extra.txt
 '
 
 test_done
