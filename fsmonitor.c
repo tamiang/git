@@ -58,6 +58,9 @@ int read_fsmonitor_extension(struct index_state *istate, const void *data,
 	uint64_t timestamp;
 	struct strbuf last_update = STRBUF_INIT;
 
+	if (istate->sparse_index)
+		return 0;
+
 	if (sz < sizeof(uint32_t) + 1 + sizeof(uint32_t))
 		return error("corrupt fsmonitor extension (too short)");
 
@@ -98,7 +101,8 @@ void fill_fsmonitor_bitmap(struct index_state *istate)
 {
 	unsigned int i, skipped = 0;
 
-	ensure_full_index(istate);
+	if (istate->sparse_index)
+		return;
 
 	istate->fsmonitor_dirty = ewah_new();
 	for (i = 0; i < istate->cache_nr; i++) {
@@ -161,11 +165,7 @@ static int query_fsmonitor(int version, const char *last_update, struct strbuf *
 
 static void fsmonitor_refresh_callback(struct index_state *istate, const char *name)
 {
-	int pos;
-
-	ensure_full_index(istate);
-
-	pos = index_name_pos(istate, name, strlen(name));
+	int pos = index_name_pos(istate, name, strlen(name));
 
 	if (pos >= 0) {
 		struct cache_entry *ce = istate->cache[pos];
@@ -190,7 +190,8 @@ void refresh_fsmonitor(struct index_state *istate)
 	char *buf;
 	unsigned int i;
 
-	if (!core_fsmonitor || istate->fsmonitor_has_run_once)
+	if (!core_fsmonitor || istate->fsmonitor_has_run_once ||
+	    istate->sparse_index)
 		return;
 
 	hook_version = fsmonitor_hook_version();
@@ -300,6 +301,9 @@ void add_fsmonitor(struct index_state *istate)
 	unsigned int i;
 	struct strbuf last_update = STRBUF_INIT;
 
+	if (istate->sparse_index)
+		return;
+
 	if (!istate->fsmonitor_last_update) {
 		trace_printf_key(&trace_fsmonitor, "add fsmonitor");
 		istate->cache_changed |= FSMONITOR_CHANGED;
@@ -334,6 +338,9 @@ void tweak_fsmonitor(struct index_state *istate)
 {
 	unsigned int i;
 	int fsmonitor_enabled = git_config_get_fsmonitor();
+
+	if (istate->sparse_index)
+		fsmonitor_enabled = 0;
 
 	if (istate->fsmonitor_dirty) {
 		if (fsmonitor_enabled) {
