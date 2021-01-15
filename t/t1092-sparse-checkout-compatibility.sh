@@ -390,7 +390,7 @@ test_expect_success 'sparse-index is expanded and converted back' '
 	init_repos &&
 
 	GIT_TRACE2_EVENT="$(pwd)/trace2.txt" GIT_TRACE2_EVENT_NESTING=10 \
-		git -C sparse-index -c core.fsmonitor="" reset --hard &&
+		git -C sparse-index reset --hard &&
 	test_region index convert_to_sparse trace2.txt &&
 	test_region index ensure_full_index trace2.txt
 '
@@ -400,19 +400,19 @@ test_expect_success 'sparse-index is not expanded' '
 
 	rm -f trace2.txt &&
 	GIT_TRACE2_EVENT="$(pwd)/trace2.txt" GIT_TRACE2_EVENT_NESTING=10 \
-		git -C sparse-index -c core.fsmonitor="" status -uno &&
+		git -C sparse-index status -uno &&
 	test_region ! index ensure_full_index trace2.txt &&
 
 	rm trace2.txt &&
 	echo >>sparse-index/README.md &&
 	GIT_TRACE2_EVENT="$(pwd)/trace2.txt" GIT_TRACE2_EVENT_NESTING=10 \
-		git -C sparse-index -c core.fsmonitor="" add -A &&
+		git -C sparse-index add -A &&
 	test_region ! index ensure_full_index trace2.txt &&
 
 	rm trace2.txt &&
 	echo >>sparse-index/extra.txt &&
 	GIT_TRACE2_EVENT="$(pwd)/trace2.txt" GIT_TRACE2_EVENT_NESTING=10 \
-		git -C sparse-index -c core.fsmonitor="" add extra.txt &&
+		git -C sparse-index add extra.txt &&
 	test_region ! index ensure_full_index trace2.txt
 '
 
