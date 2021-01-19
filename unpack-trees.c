@@ -1582,6 +1582,9 @@ int unpack_trees(unsigned len, struct tree_desc *t, struct unpack_trees_options 
 	trace_performance_enter();
 	trace2_region_enter("unpack_trees", "unpack_trees", the_repository);
 
+	ensure_full_index(o->src_index);
+	ensure_full_index(o->dst_index);
+
 	if (!core_apply_sparse_checkout || !o->update)
 		o->skip_sparse_checkout = 1;
 	if (!o->skip_sparse_checkout && !o->pl) {
