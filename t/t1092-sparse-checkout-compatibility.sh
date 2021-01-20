@@ -11,7 +11,7 @@ GIT_TEST_SPARSE_INDEX=
 test_expect_success 'setup' '
 	git init initial-repo &&
 	(
-		export GIT_TEST_SPARSE_INDEX=0 &&
+		(GIT_TEST_SPARSE_INDEX=0 && export GIT_TEST_SPARSE_INDEX) &&
 		cd initial-repo &&
 		echo a >a &&
 		echo "after deep" >e &&
@@ -313,9 +313,8 @@ test_expect_failure 'blame with pathspec outside sparse definition' '
 	test_all_match git blame deep/deeper2/deepest/a
 '
 
-# TODO: reset currently does not behave as expected when in a
-# sparse-checkout.
-test_expect_failure 'checkout and reset (mixed)' '
+# TODO: works in microsoft/git version, but not git/git version?
+test_expect_success 'checkout and reset (mixed)' '
 	init_repos &&
 
 	test_all_match git checkout -b reset-test update-deep &&
