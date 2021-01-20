@@ -1614,6 +1614,8 @@ int unpack_trees(unsigned len, struct tree_desc *t, struct unpack_trees_options 
 	nr_unpack_entry_at_start = get_nr_unpack_entry();
 
 	trace_performance_enter();
+	trace2_region_enter("unpack_trees", "unpack_trees", the_repository);
+
 	if (!core_apply_sparse_checkout || !o->update)
 		o->skip_sparse_checkout = 1;
 	if (!o->skip_sparse_checkout && !o->pl) {
@@ -1780,6 +1782,7 @@ int unpack_trees(unsigned len, struct tree_desc *t, struct unpack_trees_options 
 done:
 	if (free_pattern_list)
 		clear_pattern_list(&pl);
+	trace2_region_leave("unpack_trees", "unpack_trees", the_repository);
 	trace_performance_leave("unpack_trees");
 	trace2_data_intmax("unpack_trees", NULL, "unpack_trees/nr_unpack_entries",
 			   (intmax_t)(get_nr_unpack_entry() - nr_unpack_entry_at_start));
