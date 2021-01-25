@@ -148,7 +148,7 @@ int cmd_mv(int argc, const char **argv, const char *prefix)
 		die(_("index file corrupt"));
 	istate = the_repository->index;
 
-	ensure_full_index(&the_index);
+	ensure_full_index(istate);
 
 	source = internal_prefix_pathspec(prefix, argv, argc, 0);
 	modes = xcalloc(argc, sizeof(enum update_mode));
