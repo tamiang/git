@@ -13,14 +13,19 @@
 
 struct trace_key trace_fsmonitor = TRACE_KEY_INIT(FSMONITOR);
 
+static void assert_index_minimum(struct index_state *istate, size_t pos)
+{
+	if (pos > istate->cache_nr)
+		BUG("fsmonitor_dirty has more entries than the index (%"PRIuMAX" > %u)",
+		    (uintmax_t)pos, istate->cache_nr);
+}
+
 static void fsmonitor_ewah_callback(size_t pos, void *is)
 {
 	struct index_state *istate = (struct index_state *)is;
 	struct cache_entry *ce;
 
-	if (pos >= istate->cache_nr)
-		BUG("fsmonitor_dirty has more entries than the index (%"PRIuMAX" >= %u)",
-		    (uintmax_t)pos, istate->cache_nr);
+	assert_index_minimum(istate, pos + 1);
 
 	ce = istate->cache[pos];
 	ce->ce_flags &= ~CE_FSMONITOR_VALID;
@@ -53,6 +58,9 @@ int read_fsmonitor_extension(struct index_state *istate, const void *data,
 	uint64_t timestamp;
 	struct strbuf last_update = STRBUF_INIT;
 
+	if (istate->sparse_index)
+		return 0;
+
 	if (sz < sizeof(uint32_t) + 1 + sizeof(uint32_t))
 		return error("corrupt fsmonitor extension (too short)");
 
@@ -82,10 +90,8 @@ int read_fsmonitor_extension(struct index_state *istate, const void *data,
 	}
 	istate->fsmonitor_dirty = fsmonitor_dirty;
 
-	if (!istate->split_index &&
-	    istate->fsmonitor_dirty->bit_size > istate->cache_nr)
-		BUG("fsmonitor_dirty has more entries than the index (%"PRIuMAX" > %u)",
-		    (uintmax_t)istate->fsmonitor_dirty->bit_size, istate->cache_nr);
+	if (!istate->split_index)
+		assert_index_minimum(istate, istate->fsmonitor_dirty->bit_size);
 
 	trace_printf_key(&trace_fsmonitor, "read fsmonitor extension successful");
 	return 0;
@@ -94,6 +100,10 @@ int read_fsmonitor_extension(struct index_state *istate, const void *data,
 void fill_fsmonitor_bitmap(struct index_state *istate)
 {
 	unsigned int i, skipped = 0;
+
+	if (istate->sparse_index)
+		return;
+
 	istate->fsmonitor_dirty = ewah_new();
 	for (i = 0; i < istate->cache_nr; i++) {
 		if (istate->cache[i]->ce_flags & CE_REMOVE)
@@ -110,10 +120,8 @@ void write_fsmonitor_extension(struct strbuf *sb, struct index_state *istate)
 	uint32_t ewah_size = 0;
 	int fixup = 0;
 
-	if (!istate->split_index &&
-	    istate->fsmonitor_dirty->bit_size > istate->cache_nr)
-		BUG("fsmonitor_dirty has more entries than the index (%"PRIuMAX" > %u)",
-		    (uintmax_t)istate->fsmonitor_dirty->bit_size, istate->cache_nr);
+	if (!istate->split_index)
+		assert_index_minimum(istate, istate->fsmonitor_dirty->bit_size);
 
 	put_be32(&hdr_version, INDEX_EXTENSION_VERSION2);
 	strbuf_add(sb, &hdr_version, sizeof(uint32_t));
@@ -182,7 +190,8 @@ void refresh_fsmonitor(struct index_state *istate)
 	char *buf;
 	unsigned int i;
 
-	if (!core_fsmonitor || istate->fsmonitor_has_run_once)
+	if (!core_fsmonitor || istate->fsmonitor_has_run_once ||
+	    istate->sparse_index)
 		return;
 
 	hook_version = fsmonitor_hook_version();
@@ -295,6 +304,9 @@ void add_fsmonitor(struct index_state *istate)
 	unsigned int i;
 	struct strbuf last_update = STRBUF_INIT;
 
+	if (istate->sparse_index)
+		return;
+
 	if (!istate->fsmonitor_last_update) {
 		trace_printf_key(&trace_fsmonitor, "add fsmonitor");
 		istate->cache_changed |= FSMONITOR_CHANGED;
@@ -330,17 +342,20 @@ void tweak_fsmonitor(struct index_state *istate)
 	unsigned int i;
 	int fsmonitor_enabled = git_config_get_fsmonitor();
 
+	if (istate->sparse_index)
+		fsmonitor_enabled = 0;
+
 	if (istate->fsmonitor_dirty) {
 		if (fsmonitor_enabled) {
+			ensure_full_index(istate);
+
 			/* Mark all entries valid */
 			for (i = 0; i < istate->cache_nr; i++) {
 				istate->cache[i]->ce_flags |= CE_FSMONITOR_VALID;
 			}
 
 			/* Mark all previously saved entries as dirty */
-			if (istate->fsmonitor_dirty->bit_size > istate->cache_nr)
-				BUG("fsmonitor_dirty has more entries than the index (%"PRIuMAX" > %u)",
-				    (uintmax_t)istate->fsmonitor_dirty->bit_size, istate->cache_nr);
+			assert_index_minimum(istate, istate->fsmonitor_dirty->bit_size);
 			ewah_each_bit(istate->fsmonitor_dirty, fsmonitor_ewah_callback, istate);
 
 			refresh_fsmonitor(istate);

@@ -97,6 +97,7 @@ static int reset_index(const char *ref, const struct object_id *oid, int reset_t
 	}
 	nr++;
 
+	ensure_full_index(opts.src_index);
 	if (unpack_trees(nr, desc, &opts))
 		goto out;
 

@@ -603,6 +603,13 @@ static void mark_ce_used(struct cache_entry *ce, struct unpack_trees_options *o)
 {
 	ce->ce_flags |= CE_UNPACKED;
 
+	/*
+	 * If this is a sparse directory, don't advance cache_bottom.
+	 * That will be advanced later using the cache-tree data.
+	 */
+	if (ce->ce_mode == CE_MODE_SPARSE_DIRECTORY)
+		return;
+
 	if (o->cache_bottom < o->src_index->cache_nr &&
 	    o->src_index->cache[o->cache_bottom] == ce) {
 		int bottom = o->cache_bottom;
@@ -766,9 +773,12 @@ static int index_pos_by_traverse_info(struct name_entry *names,
 	strbuf_make_traverse_path(&name, info, names->path, names->pathlen);
 	strbuf_addch(&name, '/');
 	pos = index_name_pos(o->src_index, name.buf, name.len);
-	if (pos >= 0)
-		BUG("This is a directory and should not exist in index");
-	pos = -pos - 1;
+	if (pos >= 0) {
+		if (!o->src_index->sparse_index ||
+		    !(o->src_index->cache[pos]->ce_flags & CE_SKIP_WORKTREE))
+			BUG("This is a directory and should not exist in index");
+	} else
+		pos = -pos - 1;
 	if (pos >= o->src_index->cache_nr ||
 	    !starts_with(o->src_index->cache[pos]->name, name.buf) ||
 	    (pos > 0 && starts_with(o->src_index->cache[pos-1]->name, name.buf)))
@@ -997,6 +1007,9 @@ static int do_compare_entry(const struct cache_entry *ce,
 	ce_len -= pathlen;
 	ce_name = ce->name + pathlen;
 
+	/* remove directory separator if a sparse directory entry */
+	if (ce->ce_mode == CE_MODE_SPARSE_DIRECTORY)
+		ce_len--;
 	return df_name_compare(ce_name, ce_len, S_IFREG, name, namelen, mode);
 }
 
@@ -1005,6 +1018,10 @@ static int compare_entry(const struct cache_entry *ce, const struct traverse_inf
 	int cmp = do_compare_entry(ce, info, n->path, n->pathlen, n->mode);
 	if (cmp)
 		return cmp;
+
+	/* If ce is a sparse directory, then allow equality here. */
+	if (ce->ce_mode == CE_MODE_SPARSE_DIRECTORY)
+		return 0;
 
 	/*
 	 * Even if the beginning compared identically, the ce should
@@ -1256,6 +1273,7 @@ static int unpack_callback(int n, unsigned long mask, unsigned long dirmask, str
 	struct cache_entry *src[MAX_UNPACK_TREES + 1] = { NULL, };
 	struct unpack_trees_options *o = info->data;
 	const struct name_entry *p = names;
+	unsigned recurse = 1;
 
 	/* Find first entry with a real name (we could use "mask" too) */
 	while (!p->mode)
@@ -1297,12 +1315,16 @@ static int unpack_callback(int n, unsigned long mask, unsigned long dirmask, str
 					}
 				}
 				src[0] = ce;
+
+				if (ce->ce_mode == CE_MODE_SPARSE_DIRECTORY)
+					recurse = 0;
 			}
 			break;
 		}
 	}
 
-	if (unpack_nondirectories(n, mask, dirmask, src, names, info) < 0)
+	if (recurse &&
+	    unpack_nondirectories(n, mask, dirmask, src, names, info) < 0)
 		return -1;
 
 	if (o->merge && src[0]) {
@@ -1332,7 +1354,8 @@ static int unpack_callback(int n, unsigned long mask, unsigned long dirmask, str
 			}
 		}
 
-		if (traverse_trees_recursive(n, dirmask, mask & ~dirmask,
+		if (recurse &&
+		    traverse_trees_recursive(n, dirmask, mask & ~dirmask,
 					     names, info) < 0)
 			return -1;
 		return mask;
@@ -1579,14 +1602,10 @@ static void mark_new_skip_worktree(struct pattern_list *pl,
 static void populate_from_existing_patterns(struct unpack_trees_options *o,
 					    struct pattern_list *pl)
 {
-	char *sparse = git_pathdup("info/sparse-checkout");
-
-	pl->use_cone_patterns = core_sparse_checkout_cone;
-	if (add_patterns_from_file_to_list(sparse, "", 0, pl, NULL) < 0)
+	if (get_sparse_checkout_patterns(pl) < 0)
 		o->skip_sparse_checkout = 1;
 	else
 		o->pl = pl;
-	free(sparse);
 }
 
 
@@ -1601,6 +1620,7 @@ static int verify_absent(const struct cache_entry *,
  */
 int unpack_trees(unsigned len, struct tree_desc *t, struct unpack_trees_options *o)
 {
+	struct repository *repo = the_repository;
 	int i, ret;
 	static struct cache_entry *dfc;
 	struct pattern_list pl;
@@ -1615,6 +1635,12 @@ int unpack_trees(unsigned len, struct tree_desc *t, struct unpack_trees_options 
 
 	trace_performance_enter();
 	trace2_region_enter("unpack_trees", "unpack_trees", the_repository);
+
+	prepare_repo_settings(repo);
+	if (repo->settings.command_requires_full_index) {
+		ensure_full_index(o->src_index);
+		ensure_full_index(o->dst_index);
+	}
 
 	if (!core_apply_sparse_checkout || !o->update)
 		o->skip_sparse_checkout = 1;
@@ -1763,8 +1789,6 @@ int unpack_trees(unsigned len, struct tree_desc *t, struct unpack_trees_options 
 		if (!ret) {
 			if (git_env_bool("GIT_TEST_CHECK_CACHE_TREE", 0))
 				cache_tree_verify(the_repository, &o->result);
-			if (!o->result.cache_tree)
-				o->result.cache_tree = cache_tree();
 			if (!cache_tree_fully_valid(o->result.cache_tree))
 				cache_tree_update(&o->result,
 						  WRITE_TREE_SILENT |

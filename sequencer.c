@@ -680,9 +680,6 @@ static int do_recursive_merge(struct repository *r,
 
 static struct object_id *get_cache_tree_oid(struct index_state *istate)
 {
-	if (!istate->cache_tree)
-		istate->cache_tree = cache_tree();
-
 	if (!cache_tree_fully_valid(istate->cache_tree))
 		if (cache_tree_update(istate, 0)) {
 			error(_("unable to update cache tree"));
@@ -3475,6 +3472,7 @@ static int do_reset(struct repository *r,
 		return -1;
 	}
 
+	ensure_full_index(unpack_tree_opts.src_index);
 	if (unpack_trees(1, &desc, &unpack_tree_opts)) {
 		rollback_lock_file(&lock);
 		free((void *)desc.buffer);

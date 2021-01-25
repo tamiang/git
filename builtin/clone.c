@@ -808,6 +808,7 @@ static int checkout(int submodule_progress)
 	tree = parse_tree_indirect(&oid);
 	parse_tree(tree);
 	init_tree_desc(&t, tree->buffer, tree->size);
+	ensure_full_index(opts.src_index);
 	if (unpack_trees(1, &t, &opts) < 0)
 		die(_("unable to checkout working tree"));
 

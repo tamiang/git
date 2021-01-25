@@ -448,6 +448,8 @@ int is_empty_dir(const char *dir);
 
 void setup_standard_excludes(struct dir_struct *dir);
 
+char *get_sparse_checkout_filename(void);
+int get_sparse_checkout_patterns(struct pattern_list *pl);
 
 /* Constants for remove_dir_recursively: */
 
@@ -501,7 +503,7 @@ static inline int ce_path_match(const struct index_state *istate,
 				char *seen)
 {
 	return match_pathspec(istate, pathspec, ce->name, ce_namelen(ce), 0, seen,
-			      S_ISDIR(ce->ce_mode) || S_ISGITLINK(ce->ce_mode));
+			      (ce->ce_mode == CE_MODE_SPARSE_DIRECTORY) || S_ISDIR(ce->ce_mode) || S_ISGITLINK(ce->ce_mode));
 }
 
 static inline int dir_path_match(const struct index_state *istate,

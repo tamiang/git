@@ -27,6 +27,7 @@
 #include "fsmonitor.h"
 #include "thread-utils.h"
 #include "progress.h"
+#include "sparse-index.h"
 
 /* Mask for the name length in ce_flags in the on-disk index */
 
@@ -103,6 +104,9 @@ static const char *alternate_index_output;
 
 static void set_index_entry(struct index_state *istate, int nr, struct cache_entry *ce)
 {
+	if (S_ISSPARSEDIR(ce))
+		istate->sparse_index = 1;
+
 	istate->cache[nr] = ce;
 	add_name_hash(istate, ce);
 }
@@ -631,7 +635,11 @@ void remove_marked_cache_entries(struct index_state *istate, int invalidate)
 
 int remove_file_from_index(struct index_state *istate, const char *path)
 {
-	int pos = index_name_pos(istate, path, strlen(path));
+	int pos;
+
+	ensure_full_index(istate);
+
+	pos = index_name_pos(istate, path, strlen(path));
 	if (pos < 0)
 		pos = -pos-1;
 	cache_tree_invalidate_path(istate, path);
@@ -649,9 +657,12 @@ static int compare_name(struct cache_entry *ce, const char *path, int namelen)
 static int index_name_pos_also_unmerged(struct index_state *istate,
 	const char *path, int namelen)
 {
-	int pos = index_name_pos(istate, path, namelen);
+	int pos;
 	struct cache_entry *ce;
 
+	ensure_full_index(istate);
+
+	pos = index_name_pos(istate, path, namelen);
 	if (pos >= 0)
 		return pos;
 
@@ -733,6 +744,8 @@ int add_to_index(struct index_state *istate, const char *path, struct stat *st, 
 		return error(_("%s: can only add regular files, symbolic links or git-directories"), path);
 
 	namelen = strlen(path);
+	expand_to_path(istate, path, namelen, 0);
+
 	if (S_ISDIR(st_mode)) {
 		if (resolve_gitlink_ref(path, "HEAD", &oid) < 0)
 			return error(_("'%s' does not have a commit checked out"), path);
@@ -1012,8 +1025,15 @@ inside:
 
 			c = *path++;
 			if ((c == '.' && !verify_dotfile(path, mode)) ||
-			    is_dir_sep(c) || c == '\0')
+			    is_dir_sep(c))
 				return 0;
+			/*
+			 * allow terminating directory separators for
+			 * sparse directory enries.
+			 */
+			if (c == '\0')
+				return mode == CE_MODE_SPARSE_DIRECTORY ||
+				       mode == SPARSE_DIR_MODE;
 		} else if (c == '\\' && protect_ntfs) {
 			if (is_ntfs_dotgit(path))
 				return 0;
@@ -1096,6 +1116,9 @@ static int has_dir_name(struct index_state *istate,
 	const char *slash = name + ce_namelen(ce);
 	size_t len_eq_last;
 	int cmp_last = 0;
+
+	/* TODO: use 'pos' here? */
+	expand_to_path(istate, ce->name, ce->ce_namelen, 0);
 
 	/*
 	 * We are frequently called during an iteration on a sorted
@@ -1339,6 +1362,8 @@ static int add_index_entry_with_check(struct index_state *istate, struct cache_e
 int add_index_entry(struct index_state *istate, struct cache_entry *ce, int option)
 {
 	int pos;
+
+	expand_to_path(istate, ce->name, ce->ce_namelen, 0);
 
 	if (option & ADD_CACHE_JUST_APPEND)
 		pos = istate->cache_nr;
@@ -1585,6 +1610,7 @@ int refresh_index(struct index_state *istate, unsigned int flags,
 	 * we only have to do the special cases that are left.
 	 */
 	preload_index(istate, pathspec, 0);
+
 	for (i = 0; i < istate->cache_nr; i++) {
 		struct cache_entry *ce, *new_entry;
 		int cache_errno = 0;
@@ -1593,6 +1619,9 @@ int refresh_index(struct index_state *istate, unsigned int flags,
 
 		ce = istate->cache[i];
 		if (ignore_submodules && S_ISGITLINK(ce->ce_mode))
+			continue;
+
+		if (istate->sparse_index && ce->ce_mode == CE_MODE_SPARSE_DIRECTORY)
 			continue;
 
 		if (pathspec && !ce_path_match(istate, ce, pathspec, seen))
@@ -2324,6 +2353,12 @@ int do_read_index(struct index_state *istate, const char *path, int must_exist)
 			   istate->version);
 	trace2_data_intmax("index", the_repository, "read/cache_nr",
 			   istate->cache_nr);
+
+	if (!istate->repo)
+		istate->repo = the_repository;
+	prepare_repo_settings(istate->repo);
+	if (istate->repo->settings.command_requires_full_index)
+		ensure_full_index(istate);
 
 	return istate->cache_nr;
 
@@ -3061,7 +3096,8 @@ static int do_write_index(struct index_state *istate, struct tempfile *tempfile,
 		if (err)
 			return -1;
 	}
-	if (!strip_extensions && istate->fsmonitor_last_update) {
+	if (!strip_extensions && istate->fsmonitor_last_update &&
+	    !istate->sparse_index) {
 		struct strbuf sb = STRBUF_INIT;
 
 		write_fsmonitor_extension(&sb, istate);
@@ -3130,6 +3166,13 @@ static int do_write_locked_index(struct index_state *istate, struct lock_file *l
 				 unsigned flags)
 {
 	int ret;
+
+	ret = convert_to_sparse(istate);
+
+	if (ret) {
+		warning(_("failed to convert to a sparse-index"));
+		return ret;
+	}
 
 	/*
 	 * TODO trace2: replace "the_repository" with the actual repo instance

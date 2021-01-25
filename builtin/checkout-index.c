@@ -48,10 +48,13 @@ static void write_tempfile_record(const char *name, const char *prefix)
 static int checkout_file(const char *name, const char *prefix)
 {
 	int namelen = strlen(name);
-	int pos = cache_name_pos(name, namelen);
+	int pos;
 	int has_same_name = 0;
 	int did_checkout = 0;
 	int errs = 0;
+
+	ensure_full_index(the_repository->index);
+	pos = index_name_pos(the_repository->index, name, namelen);
 
 	if (pos < 0)
 		pos = -pos - 1;

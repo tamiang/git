@@ -247,6 +247,7 @@ int cmd_read_tree(int argc, const char **argv, const char *cmd_prefix)
 		parse_tree(tree);
 		init_tree_desc(t+i, tree->buffer, tree->size);
 	}
+	ensure_full_index(opts.src_index);
 	if (unpack_trees(nr_trees, t, &opts))
 		return 128;
 

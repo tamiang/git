@@ -509,6 +509,8 @@ static int unmerged_mask(struct index_state *istate, const char *path)
 	int pos, mask;
 	const struct cache_entry *ce;
 
+	ensure_full_index(istate);
+
 	pos = index_name_pos(istate, path, strlen(path));
 	if (0 <= pos)
 		return 0;
@@ -656,6 +658,8 @@ static void wt_status_collect_changes_initial(struct wt_status *s)
 {
 	struct index_state *istate = s->repo->index;
 	int i;
+
+	ensure_full_index(istate);
 
 	for (i = 0; i < istate->cache_nr; i++) {
 		struct string_list_item *it;
@@ -1500,9 +1504,12 @@ static void show_sparse_checkout_in_use(struct wt_status *s,
 	if (core_virtualfilesystem)
 		return;
 
-	status_printf_ln(s, color,
-			 _("You are in a sparse checkout with %d%% of tracked files present."),
-			 s->state.sparse_checkout_percentage);
+	if (s->state.sparse_checkout_percentage == SPARSE_CHECKOUT_SPARSE_INDEX)
+		status_printf_ln(s, color, _("You are in a sparse checkout."));
+	else
+		status_printf_ln(s, color,
+				_("You are in a sparse checkout with %d%% of tracked files present."),
+				s->state.sparse_checkout_percentage);
 	wt_longstatus_print_trailer(s);
 }
 
@@ -1657,6 +1664,11 @@ static void wt_status_check_sparse_checkout(struct repository *r,
 		 * aren't in a sparse checkout or would get division by 0.
 		 */
 		state->sparse_checkout_percentage = SPARSE_CHECKOUT_DISABLED;
+		return;
+	}
+
+	if (r->index->sparse_index) {
+		state->sparse_checkout_percentage = SPARSE_CHECKOUT_SPARSE_INDEX;
 		return;
 	}
 
@@ -2307,6 +2319,9 @@ static void wt_porcelain_v2_print_unmerged_entry(
 	 */
 	memset(stages, 0, sizeof(stages));
 	sum = 0;
+
+	ensure_full_index(istate);
+
 	pos = index_name_pos(istate, it->string, strlen(it->string));
 	assert(pos < 0);
 	pos = -pos-1;

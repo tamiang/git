@@ -295,6 +295,8 @@ int cmd_rm(int argc, const char **argv, const char *prefix)
 	istate = the_repository->index;
 	refresh_index(istate, REFRESH_QUIET|REFRESH_UNMERGED, &pathspec, NULL, NULL);
 
+	ensure_full_index(&the_index);
+
 	seen = xcalloc(pathspec.nr, 1);
 
 	for (i = 0; i < istate->cache_nr; i++) {

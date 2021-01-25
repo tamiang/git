@@ -19,6 +19,7 @@
 #include "ewah/ewok.h"
 #include "fsmonitor.h"
 #include "submodule-config.h"
+#include "sparse-index.h"
 
 /*
  * Tells read_directory_recursive how a file or directory should be treated.
@@ -893,7 +894,7 @@ void add_pattern(const char *string, const char *base,
 	add_pattern_to_hashsets(pl, pattern);
 }
 
-static int read_skip_worktree_file_from_index(const struct index_state *istate,
+static int read_skip_worktree_file_from_index(struct index_state *istate,
 					      const char *path,
 					      size_t *size_out, char **data_out,
 					      struct oid_stat *oid_stat)
@@ -901,6 +902,8 @@ static int read_skip_worktree_file_from_index(const struct index_state *istate,
 	int pos, len;
 
 	len = strlen(path);
+
+	expand_to_path(istate, path, len, 0);
 	pos = index_name_pos(istate, path, len);
 	if (pos < 0)
 		return -1;
@@ -1132,6 +1135,10 @@ static int add_patterns(const char *fname, const char *base, int baselen,
 		close(fd);
 		if (oid_stat) {
 			int pos;
+
+			if (istate)
+				expand_to_path(istate, fname, strlen(fname), 0);
+
 			if (oid_stat->valid &&
 			    !match_stat_data_racy(istate, &oid_stat->stat, &st))
 				; /* no content change, oid_stat->oid still good */
@@ -1432,6 +1439,11 @@ enum pattern_match_result path_matches_pattern_list(
 
 	strbuf_addch(&parent_pathname, '/');
 	strbuf_add(&parent_pathname, pathname, pathlen);
+
+	/* Directory requests should be added as if they are a file */
+	if (parent_pathname.len > 1 &&
+	    parent_pathname.buf[parent_pathname.len - 1] == '/')
+		strbuf_add(&parent_pathname, "-", 1);
 
 	if (hashmap_contains_path(&pl->recursive_hashmap,
 				  &parent_pathname)) {
@@ -1763,6 +1775,7 @@ static enum exist_status directory_exists_in_index(struct index_state *istate,
 	if (ignore_case)
 		return directory_exists_in_index_icase(istate, dirname, len);
 
+	expand_to_path(istate, dirname, len, 0);
 	pos = index_name_pos(istate, dirname, len);
 	if (pos < 0)
 		pos = -pos-1;
@@ -2116,6 +2129,8 @@ static int get_index_dtype(struct index_state *istate,
 {
 	int pos;
 	const struct cache_entry *ce;
+
+	ensure_full_index(istate);
 
 	ce = index_file_exists(istate, path, len, 0);
 	if (ce) {
@@ -3069,6 +3084,23 @@ void setup_standard_excludes(struct dir_struct *dir)
 	}
 }
 
+char *get_sparse_checkout_filename(void)
+{
+	return git_pathdup("info/sparse-checkout");
+}
+
+int get_sparse_checkout_patterns(struct pattern_list *pl)
+{
+	int res;
+	char *sparse_filename = get_sparse_checkout_filename();
+
+	pl->use_cone_patterns = core_sparse_checkout_cone;
+	res = add_patterns_from_file_to_list(sparse_filename, "", 0, pl, NULL);
+
+	free(sparse_filename);
+	return res;
+}
+
 int remove_path(const char *name)
 {
 	char *slash;
@@ -3589,6 +3621,8 @@ static void connect_wt_gitdir_in_nested(const char *sub_worktree,
 
 	if (repo_read_index(&subrepo) < 0)
 		die(_("index file corrupt in repo %s"), subrepo.gitdir);
+
+	ensure_full_index(subrepo.index);
 
 	for (i = 0; i < subrepo.index->cache_nr; i++) {
 		const struct cache_entry *ce = subrepo.index->cache[i];

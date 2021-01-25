@@ -644,6 +644,7 @@ static int reset_tree(struct tree *tree, const struct checkout_opts *o,
 			       NULL);
 	parse_tree(tree);
 	init_tree_desc(&tree_desc, tree->buffer, tree->size);
+	ensure_full_index(opts.src_index);
 	switch (unpack_trees(1, &tree_desc, &opts)) {
 	case -2:
 		*writeout_error = 1;
@@ -823,9 +824,6 @@ static int merge_working_tree(const struct checkout_opts *opts,
 				return ret;
 		}
 	}
-
-	if (!active_cache_tree)
-		active_cache_tree = cache_tree();
 
 	if (!cache_tree_fully_valid(active_cache_tree))
 		cache_tree_update(&the_index, WRITE_TREE_SILENT | WRITE_TREE_REPAIR);

@@ -428,6 +428,7 @@ static void create_base_index(const struct commit *current_head)
 		die(_("failed to unpack HEAD tree object"));
 	parse_tree(tree);
 	init_tree_desc(&t, tree->buffer, tree->size);
+	ensure_full_index(opts.src_index);
 	if (unpack_trees(1, &t, &opts))
 		exit(128); /* We've already reported the error, finish dying */
 }
@@ -1558,6 +1559,9 @@ int cmd_status(int argc, const char **argv, const char *prefix)
 
 	if (argc == 2 && !strcmp(argv[1], "-h"))
 		usage_with_options(builtin_status_usage, builtin_status_options);
+
+	prepare_repo_settings(the_repository);
+	the_repository->settings.command_requires_full_index = 0;
 
 	status_init_config(&s, git_status_config);
 	argc = parse_options(argc, argv, prefix,

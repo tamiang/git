@@ -430,6 +430,7 @@ static int unpack_trees_start(struct merge_options *opt,
 	init_tree_desc_from_tree(t+1, head);
 	init_tree_desc_from_tree(t+2, merge);
 
+	ensure_full_index(opt->priv->unpack_opts.src_index);
 	rc = unpack_trees(3, t, &opt->priv->unpack_opts);
 	cache_tree_free(&opt->repo->index->cache_tree);
 
@@ -522,6 +523,8 @@ static struct string_list *get_unmerged(struct index_state *istate)
 	int i;
 
 	unmerged->strdup_strings = 1;
+
+	ensure_full_index(istate);
 
 	for (i = 0; i < istate->cache_nr; i++) {
 		struct string_list_item *item;
@@ -763,6 +766,8 @@ static int dir_in_way(struct index_state *istate, const char *path,
 	strbuf_addstr(&dirpath, path);
 	strbuf_addch(&dirpath, '/');
 
+	ensure_full_index(istate);
+
 	pos = index_name_pos(istate, dirpath.buf, dirpath.len);
 
 	if (pos < 0)
@@ -786,8 +791,12 @@ static int dir_in_way(struct index_state *istate, const char *path,
 static int was_tracked_and_matches(struct merge_options *opt, const char *path,
 				   const struct diff_filespec *blob)
 {
-	int pos = index_name_pos(&opt->priv->orig_index, path, strlen(path));
+	int pos;
 	struct cache_entry *ce;
+
+	ensure_full_index(&opt->priv->orig_index);
+
+	pos = index_name_pos(&opt->priv->orig_index, path, strlen(path));
 
 	if (0 > pos)
 		/* we were not tracking this path before the merge */
@@ -803,7 +812,11 @@ static int was_tracked_and_matches(struct merge_options *opt, const char *path,
  */
 static int was_tracked(struct merge_options *opt, const char *path)
 {
-	int pos = index_name_pos(&opt->priv->orig_index, path, strlen(path));
+	int pos;
+
+	ensure_full_index(&opt->priv->orig_index);
+
+	pos = index_name_pos(&opt->priv->orig_index, path, strlen(path));
 
 	if (0 <= pos)
 		/* we were tracking this path before the merge */
@@ -815,6 +828,9 @@ static int was_tracked(struct merge_options *opt, const char *path)
 static int would_lose_untracked(struct merge_options *opt, const char *path)
 {
 	struct index_state *istate = opt->repo->index;
+	int pos;
+
+	ensure_full_index(istate);
 
 	/*
 	 * This may look like it can be simplified to:
@@ -833,7 +849,7 @@ static int would_lose_untracked(struct merge_options *opt, const char *path)
 	 * update_file()/would_lose_untracked(); see every comment in this
 	 * file which mentions "update_stages".
 	 */
-	int pos = index_name_pos(istate, path, strlen(path));
+	pos = index_name_pos(istate, path, strlen(path));
 
 	if (pos < 0)
 		pos = -1 - pos;
@@ -3086,6 +3102,7 @@ static int handle_content_merge(struct merge_file_info *mfi,
 		 * flag to avoid making the file appear as if it were
 		 * deleted by the user.
 		 */
+		ensure_full_index(&opt->priv->orig_index);
 		pos = index_name_pos(&opt->priv->orig_index, path, strlen(path));
 		ce = opt->priv->orig_index.cache[pos];
 		if (ce_skip_worktree(ce)) {
