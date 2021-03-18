@@ -2819,6 +2819,10 @@ static int record_ieot(void)
 	return !git_config_get_index_threads(&val) && val != 1;
 }
 
+struct write_index_context {
+	struct repository *repo;
+};
+
 /*
  * On success, `tempfile` is closed. If it is the temporary file
  * of a `struct lock_file`, we will therefore effectively perform
@@ -2844,6 +2848,9 @@ static int do_write_index(struct index_state *istate, struct tempfile *tempfile,
 	int ieot_entries = 1;
 	struct index_entry_offset_table *ieot = NULL;
 	int nr, nr_threads;
+	struct write_index_context ctx = {};
+
+	ctx.repo = istate->repo ? istate->repo : the_repository;
 
 	for (i = removed = extended = 0; i < entries; i++) {
 		if (cache[i]->ce_flags & CE_REMOVE)
@@ -2858,7 +2865,7 @@ static int do_write_index(struct index_state *istate, struct tempfile *tempfile,
 	}
 
 	if (!istate->version) {
-		istate->version = get_index_format_default(the_repository);
+		istate->version = get_index_format_default(ctx.repo);
 		if (git_env_bool("GIT_TEST_SPLIT_INDEX", 0))
 			init_split_index(istate);
 	}
@@ -3092,15 +3099,8 @@ static int do_write_index(struct index_state *istate, struct tempfile *tempfile,
 	istate->timestamp.sec = (unsigned int)st.st_mtime;
 	istate->timestamp.nsec = ST_MTIME_NSEC(st);
 	trace_performance_since(start, "write index, changed mask = %x", istate->cache_changed);
-
-	/*
-	 * TODO trace2: replace "the_repository" with the actual repo instance
-	 * that is associated with the given "istate".
-	 */
-	trace2_data_intmax("index", the_repository, "write/version",
-			   istate->version);
-	trace2_data_intmax("index", the_repository, "write/cache_nr",
-			   istate->cache_nr);
+	trace2_data_intmax("index", ctx.repo, "write/version", istate->version);
+	trace2_data_intmax("index", ctx.repo, "write/cache_nr", istate->cache_nr);
 
 	return 0;
 }
