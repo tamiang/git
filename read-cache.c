@@ -2821,7 +2821,53 @@ static int record_ieot(void)
 
 struct write_index_context {
 	struct repository *repo;
+	struct index_state *istate;
+
+	int nr_threads;
+	int ieot_entries;
+	struct index_entry_offset_table *ieot;
 };
+
+#define WRITE_INDEX_CONTEXT_INIT {\
+	.ieot_entries = 1,\
+}
+
+static void check_if_eoie_applies(struct write_index_context *ctx)
+{
+	int ieot_blocks, cpus;
+
+	if (!HAVE_THREADS ||
+	    git_config_get_index_threads(&ctx->nr_threads))
+		ctx->nr_threads = 1;
+	if (ctx->nr_threads == 1 || !record_ieot())
+		return;
+
+	/*
+	 * ensure default number of ieot blocks maps evenly to the
+	 * default number of threads that will process them leaving
+	 * room for the thread to load the index extensions.
+	 */
+	if (!ctx->nr_threads) {
+		ieot_blocks = ctx->istate->cache_nr / THREAD_COST;
+		cpus = online_cpus();
+		if (ieot_blocks > cpus - 1)
+			ieot_blocks = cpus - 1;
+	} else {
+		ieot_blocks = ctx->nr_threads;
+		if (ieot_blocks > ctx->istate->cache_nr)
+			ieot_blocks = ctx->istate->cache_nr;
+	}
+
+	/*
+	 * no reason to write out the IEOT extension if we don't
+	 * have enough blocks to utilize multi-threading
+	 */
+	if (ieot_blocks > 1) {
+		ctx->ieot = xcalloc(1, sizeof(struct index_entry_offset_table)
+			+ (ieot_blocks * sizeof(struct index_entry_offset)));
+		ctx->ieot_entries = DIV_ROUND_UP(ctx->istate->cache_nr, ieot_blocks);
+	}
+}
 
 /*
  * On success, `tempfile` is closed. If it is the temporary file
@@ -2845,10 +2891,8 @@ static int do_write_index(struct index_state *istate, struct tempfile *tempfile,
 	struct strbuf previous_name_buf = STRBUF_INIT, *previous_name;
 	int drop_cache_tree = istate->drop_cache_tree;
 	off_t offset;
-	int ieot_entries = 1;
-	struct index_entry_offset_table *ieot = NULL;
-	int nr, nr_threads;
-	struct write_index_context ctx = {};
+	int nr;
+	struct write_index_context ctx = WRITE_INDEX_CONTEXT_INIT;
 
 	ctx.repo = istate->repo ? istate->repo : the_repository;
 
@@ -2884,42 +2928,11 @@ static int do_write_index(struct index_state *istate, struct tempfile *tempfile,
 	if (ce_write(&c, newfd, &hdr, sizeof(hdr)) < 0)
 		return -1;
 
-	if (!HAVE_THREADS || git_config_get_index_threads(&nr_threads))
-		nr_threads = 1;
-
-	if (nr_threads != 1 && record_ieot()) {
-		int ieot_blocks, cpus;
-
-		/*
-		 * ensure default number of ieot blocks maps evenly to the
-		 * default number of threads that will process them leaving
-		 * room for the thread to load the index extensions.
-		 */
-		if (!nr_threads) {
-			ieot_blocks = istate->cache_nr / THREAD_COST;
-			cpus = online_cpus();
-			if (ieot_blocks > cpus - 1)
-				ieot_blocks = cpus - 1;
-		} else {
-			ieot_blocks = nr_threads;
-			if (ieot_blocks > istate->cache_nr)
-				ieot_blocks = istate->cache_nr;
-		}
-
-		/*
-		 * no reason to write out the IEOT extension if we don't
-		 * have enough blocks to utilize multi-threading
-		 */
-		if (ieot_blocks > 1) {
-			ieot = xcalloc(1, sizeof(struct index_entry_offset_table)
-				+ (ieot_blocks * sizeof(struct index_entry_offset)));
-			ieot_entries = DIV_ROUND_UP(entries, ieot_blocks);
-		}
-	}
+	check_if_eoie_applies(&ctx);
 
 	offset = lseek(newfd, 0, SEEK_CUR);
 	if (offset < 0) {
-		free(ieot);
+		free(ctx.ieot);
 		return -1;
 	}
 	offset += write_buffer_len;
@@ -2945,10 +2958,10 @@ static int do_write_index(struct index_state *istate, struct tempfile *tempfile,
 
 			drop_cache_tree = 1;
 		}
-		if (ieot && i && (i % ieot_entries == 0)) {
-			ieot->entries[ieot->nr].nr = nr;
-			ieot->entries[ieot->nr].offset = offset;
-			ieot->nr++;
+		if (ctx.ieot && i && (i % ctx.ieot_entries == 0)) {
+			ctx.ieot->entries[ctx.ieot->nr].nr = nr;
+			ctx.ieot->entries[ctx.ieot->nr].offset = offset;
+			ctx.ieot->nr++;
 			/*
 			 * If we have a V4 index, set the first byte to an invalid
 			 * character to ensure there is nothing common with the previous
@@ -2959,7 +2972,7 @@ static int do_write_index(struct index_state *istate, struct tempfile *tempfile,
 			nr = 0;
 			offset = lseek(newfd, 0, SEEK_CUR);
 			if (offset < 0) {
-				free(ieot);
+				free(ctx.ieot);
 				return -1;
 			}
 			offset += write_buffer_len;
@@ -2971,22 +2984,22 @@ static int do_write_index(struct index_state *istate, struct tempfile *tempfile,
 			break;
 		nr++;
 	}
-	if (ieot && nr) {
-		ieot->entries[ieot->nr].nr = nr;
-		ieot->entries[ieot->nr].offset = offset;
-		ieot->nr++;
+	if (ctx.ieot && nr) {
+		ctx.ieot->entries[ctx.ieot->nr].nr = nr;
+		ctx.ieot->entries[ctx.ieot->nr].offset = offset;
+		ctx.ieot->nr++;
 	}
 	strbuf_release(&previous_name_buf);
 
 	if (err) {
-		free(ieot);
+		free(ctx.ieot);
 		return err;
 	}
 
 	/* Write extension data here */
 	offset = lseek(newfd, 0, SEEK_CUR);
 	if (offset < 0) {
-		free(ieot);
+		free(ctx.ieot);
 		return -1;
 	}
 	offset += write_buffer_len;
@@ -2999,14 +3012,14 @@ static int do_write_index(struct index_state *istate, struct tempfile *tempfile,
 	 * strip_extensions parameter as we need it when loading the shared
 	 * index.
 	 */
-	if (ieot) {
+	if (ctx.ieot) {
 		struct strbuf sb = STRBUF_INIT;
 
-		write_ieot_extension(&sb, ieot);
+		write_ieot_extension(&sb, ctx.ieot);
 		err = write_index_ext_header(&c, &eoie_c, newfd, CACHE_EXT_INDEXENTRYOFFSETTABLE, sb.len) < 0
 			|| ce_write(&c, newfd, sb.buf, sb.len) < 0;
 		strbuf_release(&sb);
-		free(ieot);
+		free(ctx.ieot);
 		if (err)
 			return -1;
 	}
