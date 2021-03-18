@@ -2823,6 +2823,8 @@ struct write_index_context {
 	struct repository *repo;
 	struct index_state *istate;
 
+	int format_version;
+
 	int nr_threads;
 	int ieot_entries;
 	struct index_entry_offset_table *ieot;
@@ -2883,7 +2885,7 @@ static int do_write_index(struct index_state *istate, struct tempfile *tempfile,
 	int newfd = tempfile->fd;
 	git_hash_ctx c, eoie_c;
 	struct cache_header hdr;
-	int i, err = 0, removed, extended, hdr_version;
+	int i, err = 0, removed, extended;
 	struct cache_entry **cache = istate->cache;
 	int entries = istate->cache_nr;
 	struct stat st;
@@ -2908,20 +2910,19 @@ static int do_write_index(struct index_state *istate, struct tempfile *tempfile,
 		}
 	}
 
-	if (!istate->version) {
-		istate->version = get_index_format_default(ctx.repo);
+	ctx.format_version = istate->version;
+	if (!ctx.format_version) {
+		ctx.format_version = get_index_format_default(ctx.repo);
 		if (git_env_bool("GIT_TEST_SPLIT_INDEX", 0))
 			init_split_index(istate);
 	}
 
 	/* demote version 3 to version 2 when the latter suffices */
-	if (istate->version == 3 || istate->version == 2)
-		istate->version = extended ? 3 : 2;
-
-	hdr_version = istate->version;
+	if (ctx.format_version == 3 || ctx.format_version == 2)
+		ctx.format_version = extended ? 3 : 2;
 
 	hdr.hdr_signature = htonl(CACHE_SIGNATURE);
-	hdr.hdr_version = htonl(hdr_version);
+	hdr.hdr_version = htonl(ctx.format_version);
 	hdr.hdr_entries = htonl(entries - removed);
 
 	the_hash_algo->init_fn(&c);
@@ -2937,7 +2938,7 @@ static int do_write_index(struct index_state *istate, struct tempfile *tempfile,
 	}
 	offset += write_buffer_len;
 	nr = 0;
-	previous_name = (hdr_version == 4) ? &previous_name_buf : NULL;
+	previous_name = (ctx.format_version == 4) ? &previous_name_buf : NULL;
 
 	for (i = 0; i < entries; i++) {
 		struct cache_entry *ce = cache[i];
