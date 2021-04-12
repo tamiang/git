@@ -6,11 +6,30 @@
 #include "gettext.h"
 #include "parse-options.h"
 #include "config.h"
+#include "run-command.h"
 
 static const char scalar_usage[] =
 	N_("scalar <command> [<options>]\n\n"
 	   "Commands: clone, config, diagnose, list\n"
 	   "\tregister, run, unregister");
+
+static int run_git(const char *dir, const char *arg, ...)
+{
+	struct strvec argv;
+	va_list args;
+	const char *p;
+	int res;
+
+	va_start(args, arg);
+	while ((p = va_arg(args, const char *)))
+		strvec_push(&argv, p);
+	va_end(args);
+
+	res = run_command_v_opt_cd_env(argv.v, RUN_GIT_CMD, dir, NULL);
+
+	strvec_clear(&argv);
+	return res;
+}
 
 static int set_recommended_config(void)
 {
@@ -89,11 +108,20 @@ static int cmd_list(int argc, const char **argv)
 	die(N_("'%s' not yet implemented"), argv[0]);
 }
 
+static int toggle_maintenance(int enable)
+{
+	return run_git(NULL, "maintenance", enable ? "start" : "unregister",
+		       NULL);
+}
+
 static int cmd_register(int argc, const char **argv)
 {
-	set_recommended_config();
+	int res = 0;
 
-	return 0;
+	res = res || set_recommended_config();
+	res = res || toggle_maintenance(1);
+
+	return res;
 }
 
 static int cmd_run(int argc, const char **argv)
@@ -103,7 +131,8 @@ static int cmd_run(int argc, const char **argv)
 
 static int cmd_unregister(int argc, const char **argv)
 {
-	die(N_("'%s' not yet implemented"), argv[0]);
+	toggle_maintenance(0);
+	return 0;
 }
 
 struct {
