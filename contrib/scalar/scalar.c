@@ -106,7 +106,30 @@ static int cmd_diagnose(int argc, const char **argv)
 
 static int cmd_list(int argc, const char **argv)
 {
-	die(N_("'%s' not yet implemented"), argv[0]);
+	return run_git(NULL, "config", "--get-all", "scalar.repo", NULL);
+}
+
+static int add_or_remove_enlistment(int add)
+{
+	int res;
+
+	if (!the_repository->worktree)
+		die(_("Scalar enlistments require a worktree"));
+
+	res = run_git(NULL, "config", "--global", "--get",
+		      "--fixed-value", "scalar.repo", the_repository->worktree, NULL);
+
+	/*
+	 * If we want to add and the setting is already there, then do nothing.
+	 * If we want to remove and the setting is not there, then do nothing.
+	 */
+	if ((add && !res) || (!add && res))
+		return 0;
+
+	return run_git(NULL, "config", "--global",
+		       add ? "--add" : "--unset",
+		       "--fixed-value", "scalar.repo",
+		       the_repository->worktree, NULL);
 }
 
 static int initialize_enlistment_id(void)
@@ -141,6 +164,7 @@ static int cmd_register(int argc, const char **argv)
 {
 	int res = 0;
 
+	res = res || add_or_remove_enlistment(1);
 	res = res || initialize_enlistment_id(); /* TODO: should we do that only on `clone`? */
 	res = res || set_recommended_config();
 	res = res || toggle_maintenance(1);
@@ -155,8 +179,11 @@ static int cmd_run(int argc, const char **argv)
 
 static int cmd_unregister(int argc, const char **argv)
 {
-	toggle_maintenance(0);
-	return 0;
+	int res = 0;
+
+	res = res || add_or_remove_enlistment(0);
+	res = res || toggle_maintenance(0);
+	return res;
 }
 
 struct {
