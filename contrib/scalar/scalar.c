@@ -14,6 +14,8 @@ static const char scalar_usage[] =
 	   "Commands: clone, config, diagnose, list\n"
 	   "\tregister, run, unregister");
 
+static char *scalar_executable_path;
+
 static int run_git(const char *dir, const char *arg, ...)
 {
 	struct strvec argv;
@@ -32,7 +34,32 @@ static int run_git(const char *dir, const char *arg, ...)
 	return res;
 }
 
-static int set_recommended_config(void)
+static int is_non_empty_dir(const char *path)
+{
+	DIR *dir = opendir(path);
+	struct dirent *entry;
+
+	if (!dir) {
+		if (errno != ENOENT) {
+			error_errno(_("could not open directory '%s'"), path);
+		}
+		return 0;
+	}
+
+	while ((entry = readdir(dir))) {
+		const char *name = entry->d_name;
+
+		if (strcmp(name, ".") && strcmp(name, "..")) {
+			closedir(dir);
+			return 1;
+		}
+	}
+
+	closedir(dir);
+	return 0;
+}
+
+static int set_recommended_config(const char *file)
 {
 	struct {
 		const char *key;
@@ -77,21 +104,159 @@ static int set_recommended_config(void)
 	for (i = 0; config[i].key; i++) {
 		char *value;
 
-		if (git_config_get_string(config[i].key, &value)) {
+		if (file || git_config_get_string(config[i].key, &value)) {
 			trace2_data_string("scalar", the_repository, config[i].key, "created");
-			git_config_set_gently(config[i].key, config[i].value);
+			git_config_set_in_file_gently(file, config[i].key,
+						      config[i].value);
 		} else {
 			trace2_data_string("scalar", the_repository, config[i].key, "exists");
 			free(value);
 		}
 	}
-
 	return 0;
 }
 
 static int cmd_clone(int argc, const char **argv)
 {
-	die(N_("'%s' not yet implemented"), argv[0]);
+	int is_unattended = git_env_bool("Scalar_UNATTENDED", 0);
+	char *cache_server_url = NULL, *branch = NULL;
+	int single_branch = 0, no_fetch_commits_and_trees = 0;
+	char *local_cache_path = NULL;
+	int full_clone = 0;
+	struct option clone_options[] = {
+		OPT_STRING(0, "cache-server-url", &cache_server_url,
+			   N_("<url>"),
+			   N_("the url or friendly name of the cache server")),
+		OPT_STRING('b', "branch", &branch, N_("<branch>"),
+			   N_("branch to checkout after clone")),
+		OPT_BOOL(0, "single-branch", &single_branch,
+			 N_("only download metadata for the branch that will be checked out")),
+		OPT_BOOL(0, "no-fetch-commits-and-trees",
+			 &no_fetch_commits_and_trees,
+			 N_("skip fetching commits and trees after clone")),
+		OPT_STRING(0, "local-cache-path", &local_cache_path,
+			   N_("<path>"),
+			   N_("override the path for the local Scalar cache")),
+		OPT_BOOL(0, "full-clone", &full_clone,
+			 N_("when cloning, create full working directory")),
+		OPT_END(),
+	};
+	const char * const clone_usage[] = {
+		N_("git clone [<options>] [--] <repo> [<dir>]"),
+		NULL
+	};
+	const char *url;
+	char *dir, *config_path;
+	struct strbuf buf = STRBUF_INIT;
+	struct strvec args = STRVEC_INIT;
+	int res;
+
+	argc = parse_options(argc, argv, NULL, clone_options, clone_usage,
+			     PARSE_OPT_KEEP_DASHDASH |
+			     PARSE_OPT_STOP_AT_NON_OPTION);
+
+	if (argc == 2) {
+		url = argv[0];
+		dir = xstrdup(argv[1]);
+	} else if (argc == 1) {
+		url = argv[0];
+
+		strbuf_addstr(&buf, url);
+		/* Strip trailing slashes, if any */
+		while (buf.len > 0 && is_dir_sep(buf.buf[buf.len - 1]))
+			strbuf_setlen(&buf, buf.len - 1);
+		/* Strip suffix `.git`, if any */
+		strbuf_strip_suffix(&buf, ".git");
+
+		dir = find_last_dir_sep(buf.buf);
+		if (!dir) {
+			die(_("cannot deduce worktree name from '%s'"), url);
+		}
+		dir = xstrdup(dir + 1);
+	} else {
+		usage_msg_opt(N_("need a URL"), clone_usage, clone_options);
+	}
+
+	/* TODO: verify that '--local-cache-path' isn't inside the src folder */
+	/* TODO: CheckNotInsideExistingRepo */
+
+	if (is_non_empty_dir(dir)) {
+		die(_("'%s' exists and is not empty"), dir);
+	}
+
+	if ((res = run_git(NULL, "init", "--", dir, NULL)))
+		goto cleanup;
+
+	/* TODO: trace command-line options, is_unattended, elevated, dir */
+	trace2_data_intmax("scalar", the_repository, "unattended",
+			   is_unattended);
+
+	/* TODO: handle local cache root */
+
+	/* TODO: check whether to use the GVFS protocol */
+
+	config_path = xstrfmt("%s/.git/config", dir);
+
+	/* TODO: this should be removed, right? */
+	/* protocol.version=2 is broken right now. */
+	if (git_config_set_in_file_gently(config_path,
+					  "protocol.version", "1") ||
+	    git_config_set_in_file_gently(config_path,
+					  "remote.origin.url", url) ||
+	    git_config_set_in_file_gently(config_path,
+					  "remote.origin.fetch",
+					  /*
+					   * TODO: should we respect
+					   * single_branch here?
+					   */
+					  "+refs/heads/*:refs/remotes/origin/*") ||
+	    git_config_set_in_file_gently(config_path,
+					  "remote.origin.promisor", "true") ||
+	    git_config_set_in_file_gently(config_path,
+					  "remote.origin.partialCloneFilter",
+					  "blob:none"))
+		return error(_("could not configure '%s'"), dir);
+
+	if (!full_clone &&
+	    (res = run_git(dir, "-c", "core.useGVFSHelper=false",
+			   "sparse-checkout", "init", "--cone", NULL)))
+		goto cleanup;
+
+	if (set_recommended_config(config_path))
+		return error(_("could not configure '%s'"), dir);
+
+	/*
+	 * TODO: should we pipe the output and grep for "filtering not
+	 * recognized by server", and suppress the error output in
+	 * that case?
+	 */
+	if ((res = run_git(dir, "-c", "core.useGVFSHelper=false", "fetch",
+			   "--quiet", "origin", NULL))) {
+		warning(_("Partial clone failed; Trying full clone"));
+
+		if (git_config_set_in_file_gently(config_path,
+						  "remote.origin.promisor",
+						  NULL) ||
+		    git_config_set_in_file_gently(config_path,
+						  "remote.origin.partialCloneFilter",
+						  NULL)) {
+			res = error(_("could not configure for full clone"));
+			strvec_clear(&args);
+			goto cleanup;
+		}
+
+		if ((res = run_git(dir, "-c", "core.useGVFSHelper=false",
+				   "fetch", "--quiet", "origin", NULL)))
+			goto cleanup;
+	}
+
+
+	die("To be continued");
+
+cleanup:
+	free(dir);
+	strbuf_release(&buf);
+	return res;
 }
 
 static int cmd_config(int argc, const char **argv)
@@ -132,14 +297,14 @@ static int add_or_remove_enlistment(int add)
 		       the_repository->worktree, NULL);
 }
 
-static int initialize_enlistment_id(void)
+static int initialize_enlistment_id(const char *file)
 {
 	const char *key = "scalar.enlistment-id";
 	char *value;
 	struct strbuf id = STRBUF_INIT;
 	int res;
 
-	if (!git_config_get_string(key, &value)) {
+	if (!file && !git_config_get_string(key, &value)) {
 		trace2_data_string("scalar", the_repository, "enlistment-id", value);
 		free(value);
 		return 0;
@@ -148,7 +313,7 @@ static int initialize_enlistment_id(void)
 	strbuf_addstr(&id, "TODO:GENERATE-GUID");
 
 	trace2_data_string("scalar", the_repository, "enlistment-id", id.buf);
-	res = git_config_set_gently(key, id.buf);
+	res = git_config_set_in_file_gently(file, key, id.buf);
 	/* TODO: CONFIG_FLAGS_MULTI_REPLACE */
 	strbuf_release(&id);
 	return res;
@@ -165,8 +330,8 @@ static int cmd_register(int argc, const char **argv)
 	int res = 0;
 
 	res = res || add_or_remove_enlistment(1);
-	res = res || initialize_enlistment_id(); /* TODO: should we do that only on `clone`? */
-	res = res || set_recommended_config();
+	res = res || initialize_enlistment_id(NULL); /* TODO: should we do that only on `clone`? */
+	res = res || set_recommended_config(NULL);
 	res = res || toggle_maintenance(1);
 
 	return res;
@@ -207,6 +372,11 @@ int cmd_main(int argc, const char **argv)
 
 	if (argc < 2)
 		usage(scalar_usage);
+
+	scalar_executable_path = real_pathdup(argv[0], 0);
+	if (!scalar_executable_path)
+		die(_("could not determine full path of `scalar`"));
+
 	argv++;
 	argc--;
 
