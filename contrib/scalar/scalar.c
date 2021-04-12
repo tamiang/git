@@ -153,6 +153,7 @@ static int initialize_enlistment_id(void)
 
 static int toggle_maintenance(int enable)
 {
+	int res;
 	struct strvec args = STRVEC_INIT;
 
 	strvec_push(&args, "maintenance");
@@ -162,7 +163,10 @@ static int toggle_maintenance(int enable)
 	else
 		strvec_push(&args, "unregister");
 
-	return run_command_v_opt(args.v, RUN_GIT_CMD);
+	res = run_command_v_opt(args.v, RUN_GIT_CMD);
+	strvec_clear(&args);
+
+	return res;
 }
 
 static int cmd_register(int argc, const char **argv)
