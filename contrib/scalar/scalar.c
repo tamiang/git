@@ -2,17 +2,80 @@
  * This is a port of Scalar to C.
  */
 
-#include "git-compat-util.h"
+#include "cache.h"
 #include "gettext.h"
 #include "parse-options.h"
 #include "strbuf.h"
 #include "strvec.h"
 #include "run-command.h"
+#include "config.h"
+#include "strvec.h"
 
 static const char scalar_usage[] =
 	N_("scalar <command> [<options>]\n\n"
 	   "Commands: clone, config, diagnose, list\n"
 	   "\tregister, run, unregister");
+
+struct config_setting {
+	const char *key;
+	const char *value;
+};
+
+static int set_recommended_config(void)
+{
+	int i = 0;
+	struct config_setting config[] = {
+		{ "am.keepcr", "true" },
+		{ "commitGraph.generationVersion", "1" },
+		{ "core.autocrlf", "false" },
+		{ "core.fscache", "true" },
+		{ "core.logallrefupdates", "true" },
+		{ "core.multiPackIndex", "true" },
+		{ "core.preloadIndex", "true" },
+		{ "core.safecrlf", "false" },
+		{ "credential.validate", "false" },
+		{ "feature.manyFiles", "false" },
+		{ "feature.experimental", "false" },
+		{ "fetch.unpackLimit", "1" },
+		{ "fetch.writeCommitGraph", "false" },
+		{ "gc.auto", "0" },
+		{ "gui.gcwarning", "false" },
+		{ "index.threads", "true" },
+		{ "index.version", "4" },
+		{ "maintenance.auto", "false" },
+		{ "merge.stat", "false" },
+		{ "merge.renames", "false" },
+		{ "pack.useBitmaps", "false" },
+		{ "pack.useSparse", "true" },
+		{ "receive.autogc", "false" },
+		{ "reset.quiet", "true" },
+		{ "status.aheadbehind", "false" },
+
+#ifdef MINGW
+		/*
+		 * Windows-specific settings.
+		 */
+		{ "core.untrackedCache", "true" },
+		{ "core.filemode", "true" },
+#endif
+		{ NULL, NULL },
+	};
+
+	while (config[i].key) {
+		char *value;
+
+		if (git_config_get_string(config[i].key, &value)) {
+			trace2_data_string("scalar", the_repository, config[i].key, "created");
+			git_config_set_gently(config[i].key, config[i].value);
+		} else {
+			trace2_data_string("scalar", the_repository, config[i].key, "exists");
+			free(value);
+		}
+		i++;
+	}
+
+	return 0;
+}
 
 static int cmd_clone(int argc, const char **argv)
 {
@@ -74,7 +137,9 @@ static int cmd_list(int argc, const char **argv)
 
 static int cmd_register(int argc, const char **argv)
 {
-	die(N_("'%s' not yet implemented"), argv[0]);
+	set_recommended_config();
+
+	return 0;
 }
 
 static int cmd_run(int argc, const char **argv)
