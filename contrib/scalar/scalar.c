@@ -11,13 +11,8 @@
 
 static const char scalar_usage[] =
 	N_("scalar <command> [<options>]\n\n"
-	   "Commands: cache-server, clone, config, delete, diagnose, list\n"
-	   "\tpause, register, resume, run, unregister, upgrade");
-
-static int cmd_cache_server(int argc, const char **argv)
-{
-	die(N_("'%s' not yet implemented"), argv[0]);
-}
+	   "Commands: clone, config, diagnose, list\n"
+	   "\tregister, run, unregister");
 
 static int cmd_clone(int argc, const char **argv)
 {
@@ -77,17 +72,7 @@ static int cmd_list(int argc, const char **argv)
 	die(N_("'%s' not yet implemented"), argv[0]);
 }
 
-static int cmd_pause(int argc, const char **argv)
-{
-	die(N_("'%s' not yet implemented"), argv[0]);
-}
-
 static int cmd_register(int argc, const char **argv)
-{
-	die(N_("'%s' not yet implemented"), argv[0]);
-}
-
-static int cmd_resume(int argc, const char **argv)
 {
 	die(N_("'%s' not yet implemented"), argv[0]);
 }
@@ -102,42 +87,36 @@ static int cmd_unregister(int argc, const char **argv)
 	die(N_("'%s' not yet implemented"), argv[0]);
 }
 
-static int cmd_upgrade(int argc, const char **argv)
-{
-	die(N_("'%s' not yet implemented"), argv[0]);
-}
+struct scalar_builtin {
+	const char *name;
+	int (*fn)(int, const char **);
+};
+
+struct scalar_builtin builtins[] = {
+	{ "clone", cmd_clone },
+	{ "config", cmd_config },
+	{ "delete", cmd_delete },
+	{ "diagnose", cmd_diagnose },
+	{ "list", cmd_list },
+	{ "register", cmd_register },
+	{ "run", cmd_run },
+	{ "unregister", cmd_unregister },
+	{ NULL, NULL},
+};
 
 int cmd_main(int argc, const char **argv)
 {
-	if (argc < 2) {
+	int i = 0;
+
+	if (argc < 2)
 		usage(scalar_usage);
-	} else if (!strcmp(argv[1], "cache-server")) {
-		return !!cmd_cache_server(argc - 1, argv + 1);
-	} else if (!strcmp(argv[1], "clone")) {
-		return !!cmd_clone(argc - 1, argv + 1);
-	} else if (!strcmp(argv[1], "config")) {
-		return !!cmd_config(argc - 1, argv + 1);
-	} else if (!strcmp(argv[1], "delete")) {
-		return !!cmd_delete(argc - 1, argv + 1);
-	} else if (!strcmp(argv[1], "diagnose")) {
-		return !!cmd_diagnose(argc - 1, argv + 1);
-	} else if (!strcmp(argv[1], "list")) {
-		return !!cmd_list(argc - 1, argv + 1);
-	} else if (!strcmp(argv[1], "pause")) {
-		return !!cmd_pause(argc - 1, argv + 1);
-	} else if (!strcmp(argv[1], "register")) {
-		return !!cmd_register(argc - 1, argv + 1);
-	} else if (!strcmp(argv[1], "resume")) {
-		return !!cmd_resume(argc - 1, argv + 1);
-	} else if (!strcmp(argv[1], "run")) {
-		return !!cmd_run(argc - 1, argv + 1);
-	} else if (!strcmp(argv[1], "unregister")) {
-		return !!cmd_unregister(argc - 1, argv + 1);
-	} else if (!strcmp(argv[1], "upgrade")) {
-		return !!cmd_upgrade(argc - 1, argv + 1);
-	} else {
-		usage(scalar_usage);
+
+	while (builtins[i].name) {
+		if (!strcmp(builtins[i].name, argv[1]))
+			return builtins[i].fn(argc, argv);
+		i++;
 	}
 
-	return 0;
+	usage(scalar_usage);
+	return -1;
 }
