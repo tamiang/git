@@ -7,13 +7,57 @@
 #include "parse-options.h"
 
 static const char scalar_usage[] =
-	N_("scalar <command> [<options>]");
+	N_("scalar <command> [<options>]\n\n"
+	   "Commands: clone, config, diagnose, list\n"
+	   "\tregister, run, unregister");
+
+static int cmd_clone(int argc, const char **argv)
+{
+	die(N_("'%s' not yet implemented"), argv[0]);
+}
+
+static int cmd_config(int argc, const char **argv)
+{
+	die(N_("'%s' not yet implemented"), argv[0]);
+}
+
+static int cmd_diagnose(int argc, const char **argv)
+{
+	die(N_("'%s' not yet implemented"), argv[0]);
+}
+
+static int cmd_list(int argc, const char **argv)
+{
+	die(N_("'%s' not yet implemented"), argv[0]);
+}
+
+static int cmd_register(int argc, const char **argv)
+{
+	die(N_("'%s' not yet implemented"), argv[0]);
+}
+
+static int cmd_run(int argc, const char **argv)
+{
+	die(N_("'%s' not yet implemented"), argv[0]);
+}
+
+static int cmd_unregister(int argc, const char **argv)
+{
+	die(N_("'%s' not yet implemented"), argv[0]);
+}
 
 struct {
 	const char *name;
 	int (*fn)(int, const char **);
 	int needs_git_repo;
 } builtins[] = {
+	{ "clone", cmd_clone, 0 },
+	{ "config", cmd_config, 1 },
+	{ "diagnose", cmd_diagnose, 1 },
+	{ "list", cmd_list, 0 },
+	{ "register", cmd_register, 1 },
+	{ "run", cmd_run, 1 },
+	{ "unregister", cmd_unregister, 1 },
 	{ NULL, NULL},
 };
 
