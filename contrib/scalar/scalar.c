@@ -127,7 +127,51 @@ static int cmd_diagnose(int argc, const char **argv)
 
 static int cmd_list(int argc, const char **argv)
 {
-	die(N_("'%s' not yet implemented"), argv[0]);
+	int res;
+	struct strvec args = STRVEC_INIT;
+
+	strvec_pushl(&args, "config", "--get-all", "scalar.repo", NULL);
+
+	res = run_command_v_opt(args.v, RUN_GIT_CMD);
+
+	strvec_clear(&args);
+	return res;
+}
+
+static int add_or_remove_enlistment(int add)
+{
+	int res;
+	struct strvec args = STRVEC_INIT;
+
+	if (!the_repository->worktree)
+		die(_("Scalar enlistments require a worktree"));
+
+	strvec_pushl(&args, "config", "--global", "--get",
+		     "--fixed-value", "scalar.repo", the_repository->worktree, NULL);
+
+	res = run_command_v_opt(args.v, RUN_GIT_CMD);
+	strvec_clear(&args);
+
+	/*
+	 * If we want to add and the setting is already there, then do nothing.
+	 * If we want to remove and the setting is not there, then do nothing.
+	 */
+	if ((add && !res) || (!add && res))
+		return 0;
+
+	strvec_pushl(&args, "config", "--global", NULL);
+
+	if (add)
+		strvec_push(&args, "--add");
+	else
+		strvec_pushl(&args, "--unset", "--fixed-value", NULL);
+
+	strvec_pushl(&args, "scalar.repo", the_repository->worktree, NULL);
+
+	res = run_command_v_opt(args.v, RUN_GIT_CMD);
+
+	strvec_clear(&args);
+	return res;
 }
 
 static int initialize_enlistment_id(void)
@@ -173,6 +217,7 @@ static int cmd_register(int argc, const char **argv)
 {
 	int res = 0;
 
+	res = res || add_or_remove_enlistment(1);
 	res = res || initialize_enlistment_id();
 	res = res || set_recommended_config();
 	res = res || toggle_maintenance(1);
@@ -187,8 +232,11 @@ static int cmd_run(int argc, const char **argv)
 
 static int cmd_unregister(int argc, const char **argv)
 {
-	toggle_maintenance(0);
-	return 0;
+	int res = 0;
+
+	res = res || add_or_remove_enlistment(0);
+	res = res || toggle_maintenance(0);
+	return res;
 }
 
 struct scalar_builtin {
