@@ -120,11 +120,6 @@ static int cmd_config(int argc, const char **argv)
 	die(N_("'%s' not yet implemented"), argv[0]);
 }
 
-static int cmd_delete(int argc, const char **argv)
-{
-	die(N_("'%s' not yet implemented"), argv[0]);
-}
-
 static int cmd_diagnose(int argc, const char **argv)
 {
 	die(N_("'%s' not yet implemented"), argv[0]);
@@ -135,11 +130,28 @@ static int cmd_list(int argc, const char **argv)
 	die(N_("'%s' not yet implemented"), argv[0]);
 }
 
+static int toggle_maintenance(int enable)
+{
+	struct strvec args = STRVEC_INIT;
+
+	strvec_push(&args, "maintenance");
+
+	if (enable)
+		strvec_push(&args, "start");
+	else
+		strvec_push(&args, "unregister");
+
+	return run_command_v_opt(args.v, RUN_GIT_CMD);
+}
+
 static int cmd_register(int argc, const char **argv)
 {
-	set_recommended_config();
+	int res = 0;
 
-	return 0;
+	res = res || set_recommended_config();
+	res = res || toggle_maintenance(1);
+
+	return res;
 }
 
 static int cmd_run(int argc, const char **argv)
@@ -149,23 +161,24 @@ static int cmd_run(int argc, const char **argv)
 
 static int cmd_unregister(int argc, const char **argv)
 {
-	die(N_("'%s' not yet implemented"), argv[0]);
+	toggle_maintenance(0);
+	return 0;
 }
 
 struct scalar_builtin {
 	const char *name;
 	int (*fn)(int, const char **);
+	int needs_git_repo;
 };
 
 struct scalar_builtin builtins[] = {
-	{ "clone", cmd_clone },
-	{ "config", cmd_config },
-	{ "delete", cmd_delete },
-	{ "diagnose", cmd_diagnose },
-	{ "list", cmd_list },
-	{ "register", cmd_register },
-	{ "run", cmd_run },
-	{ "unregister", cmd_unregister },
+	{ "clone", cmd_clone, 0 },
+	{ "config", cmd_config, 1 },
+	{ "diagnose", cmd_diagnose, 1 },
+	{ "list", cmd_list, 0 },
+	{ "register", cmd_register, 1 },
+	{ "run", cmd_run, 1 },
+	{ "unregister", cmd_unregister, 1 },
 	{ NULL, NULL},
 };
 
@@ -177,8 +190,11 @@ int cmd_main(int argc, const char **argv)
 		usage(scalar_usage);
 
 	while (builtins[i].name) {
-		if (!strcmp(builtins[i].name, argv[1]))
+		if (!strcmp(builtins[i].name, argv[1])) {
+			if (builtins[i].needs_git_repo)
+				setup_git_directory();
 			return builtins[i].fn(argc, argv);
+		}
 		i++;
 	}
 
