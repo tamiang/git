@@ -7,6 +7,7 @@
 #include "parse-options.h"
 #include "config.h"
 #include "run-command.h"
+#include "strbuf.h"
 
 static const char scalar_usage[] =
 	N_("scalar <command> [<options>]\n\n"
@@ -108,6 +109,27 @@ static int cmd_list(int argc, const char **argv)
 	die(N_("'%s' not yet implemented"), argv[0]);
 }
 
+static int initialize_enlistment_id(void)
+{
+	const char *key = "scalar.enlistment-id";
+	char *value;
+	struct strbuf id = STRBUF_INIT;
+	int res;
+
+	if (!git_config_get_string(key, &value)) {
+		trace2_data_string("scalar", the_repository, "enlistment-id", value);
+		free(value);
+		return 0;
+	}
+
+	strbuf_addstr(&id, "TODO:GENERATE-GUID");
+
+	trace2_data_string("scalar", the_repository, "enlistment-id", id.buf);
+	res = git_config_set_gently(key, id.buf);
+	strbuf_release(&id);
+	return res;
+}
+
 static int toggle_maintenance(int enable)
 {
 	return run_git(NULL, "maintenance", enable ? "start" : "unregister",
@@ -118,6 +140,7 @@ static int cmd_register(int argc, const char **argv)
 {
 	int res = 0;
 
+	res = res || initialize_enlistment_id(); /* TODO: should we do that only on `clone`? */
 	res = res || set_recommended_config();
 	res = res || toggle_maintenance(1);
 
