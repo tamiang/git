@@ -21,6 +21,39 @@ static int cmd_cache_server(int argc, const char **argv)
 
 static int cmd_clone(int argc, const char **argv)
 {
+	char *cache_server_url = NULL, *branch = NULL;
+	int single_branch = 0, no_fetch_commits_and_trees = 0;
+	char *local_cache_path = NULL;
+	int full_clone = 0;
+	struct option clone_options[] = {
+		OPT_STRING(0, "cache-server-url", &cache_server_url,
+			   N_("<url>"),
+			   N_("The url or friendly name of the cache server")),
+		OPT_STRING('b', "branch", &branch, N_("<branch>"),
+			   N_("Branch to checkout after clone")),
+		OPT_BOOL(0, "single-branch", &single_branch,
+			 N_("Use this option to only download metadata for the branch that will be checked out")),
+		OPT_BOOL(0, "no-fetch-commits-and-trees",
+			 &no_fetch_commits_and_trees,
+			 N_("Use this option to skip fetching commits and trees after clone")),
+		OPT_STRING(0, "local-cache-path", &local_cache_path,
+			   N_("<path>"),
+			   N_("Use this option to override the path for the local Scalar cache.")),
+		OPT_BOOL(0, "full-clone", &full_clone,
+			 N_("When cloning, create full working directory.")),
+		OPT_END(),
+	};
+	const char * const clone_usage[] = {
+		N_("git clone [<options>] [--] <repo> [<dir>]"),
+		NULL
+	};
+
+	argc = parse_options(argc, argv, NULL, clone_options, clone_usage, 0);
+
+	if (argc != 1) {
+		usage_msg_opt(N_("need a URL"), clone_usage, clone_options);
+	}
+
 	die(N_("'%s' not yet implemented"), argv[0]);
 }
 
