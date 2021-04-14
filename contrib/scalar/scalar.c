@@ -303,7 +303,7 @@ static int toggle_maintenance(int enable)
 		       NULL);
 }
 
-static int cmd_register(int argc, const char **argv)
+static int run_config_task(void)
 {
 	int res = 0;
 
@@ -312,6 +312,11 @@ static int cmd_register(int argc, const char **argv)
 	res = res || toggle_maintenance(1);
 
 	return res;
+}
+
+static int cmd_register(int argc, const char **argv)
+{
+	return run_config_task();
 }
 
 static const char scalar_run_usage[] =
@@ -327,7 +332,7 @@ static int cmd_run(int argc, const char **argv)
 	if (!strcmp(argv[2], "all")) {
 		die("job 'all' not implemented");
 	} else if (!strcmp(argv[2], "config")) {
-		die("job 'config' not implemented");
+		return run_config_task();
 	} else if (!strcmp(argv[2], "commit-graph")) {
 		die("job 'commit-graph' not implemented");
 	} else if (!strcmp(argv[2], "fetch")) {
