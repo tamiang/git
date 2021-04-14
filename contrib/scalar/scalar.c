@@ -314,9 +314,31 @@ static int cmd_register(int argc, const char **argv)
 	return res;
 }
 
+static const char scalar_run_usage[] =
+	N_("scalar run <task>\n"
+	   "\ttasks: all, config, commit-graph,\n"
+	   "\t       fetch, loose-objects, pack-files");
+
 static int cmd_run(int argc, const char **argv)
 {
-	die(N_("'%s' not yet implemented"), argv[0]);
+	if (argc < 3)
+		usage(scalar_run_usage);
+
+	if (!strcmp(argv[2], "all")) {
+		die("job 'all' not implemented");
+	} else if (!strcmp(argv[2], "config")) {
+		die("job 'config' not implemented");
+	} else if (!strcmp(argv[2], "commit-graph")) {
+		die("job 'commit-graph' not implemented");
+	} else if (!strcmp(argv[2], "fetch")) {
+		die("job 'fetch' not implemented");
+	} else if (!strcmp(argv[2], "loose-objects")) {
+		die("job 'loose-objects' not implemented");
+	} else if (!strcmp(argv[2], "pack-files")) {
+		die("job 'pack-files' not implemented");
+	}
+
+	usage(scalar_run_usage);
 }
 
 static int cmd_unregister(int argc, const char **argv)
