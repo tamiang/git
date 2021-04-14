@@ -126,6 +126,7 @@ static int initialize_enlistment_id(void)
 
 	trace2_data_string("scalar", the_repository, "enlistment-id", id.buf);
 	res = git_config_set_gently(key, id.buf);
+	/* TODO: CONFIG_FLAGS_MULTI_REPLACE */
 	strbuf_release(&id);
 	return res;
 }
