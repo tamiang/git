@@ -343,23 +343,42 @@ static int run_commit_graph_task(void)
 	return run_maintenance_task("commit-graph");
 }
 
+static int run_fetch_task(void)
+{
+	return run_maintenance_task("prefetch");
+}
+
+static int run_loose_objects_task(void)
+{
+	return run_maintenance_task("loose-objects");
+}
+
+static int run_pack_files_task(void)
+{
+	return run_maintenance_task("incremental-repack");
+}
+
 static int cmd_run(int argc, const char **argv)
 {
 	if (argc < 2)
 		usage(scalar_run_usage);
 
 	if (!strcmp(argv[1], "all")) {
-		die("job 'all' not implemented");
+		return run_config_task() ||
+		       run_fetch_task() ||
+		       run_commit_graph_task() ||
+		       run_loose_objects_task() ||
+		       run_pack_files_task();
 	} else if (!strcmp(argv[1], "config")) {
 		return run_config_task();
 	} else if (!strcmp(argv[1], "commit-graph")) {
 		return run_commit_graph_task();
 	} else if (!strcmp(argv[1], "fetch")) {
-		die("job 'fetch' not implemented");
+		return run_fetch_task();
 	} else if (!strcmp(argv[1], "loose-objects")) {
-		die("job 'loose-objects' not implemented");
+		return run_loose_objects_task();
 	} else if (!strcmp(argv[1], "pack-files")) {
-		die("job 'pack-files' not implemented");
+		return run_pack_files_task();
 	}
 
 	usage(scalar_run_usage);
