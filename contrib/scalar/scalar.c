@@ -297,28 +297,6 @@ static int add_or_remove_enlistment(int add)
 		       the_repository->worktree, NULL);
 }
 
-static int initialize_enlistment_id(const char *file)
-{
-	const char *key = "scalar.enlistment-id";
-	char *value;
-	struct strbuf id = STRBUF_INIT;
-	int res;
-
-	if (!file && !git_config_get_string(key, &value)) {
-		trace2_data_string("scalar", the_repository, "enlistment-id", value);
-		free(value);
-		return 0;
-	}
-
-	strbuf_addstr(&id, "TODO:GENERATE-GUID");
-
-	trace2_data_string("scalar", the_repository, "enlistment-id", id.buf);
-	res = git_config_set_in_file_gently(file, key, id.buf);
-	/* TODO: CONFIG_FLAGS_MULTI_REPLACE */
-	strbuf_release(&id);
-	return res;
-}
-
 static int toggle_maintenance(int enable)
 {
 	return run_git(NULL, "maintenance", enable ? "start" : "unregister",
@@ -330,7 +308,6 @@ static int cmd_register(int argc, const char **argv)
 	int res = 0;
 
 	res = res || add_or_remove_enlistment(1);
-	res = res || initialize_enlistment_id(NULL); /* TODO: should we do that only on `clone`? */
 	res = res || set_recommended_config(NULL);
 	res = res || toggle_maintenance(1);
 
