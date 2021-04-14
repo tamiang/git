@@ -1,0 +1,16 @@
+scalar(1)
+=========
+
+NAME
+----
+scalar - TBD
+
+SYNOPSIS
+--------
+[verse]
+scalar [<options>]
+
+DESCRIPTION
+-----------
+
+TBD
