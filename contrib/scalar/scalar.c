@@ -324,22 +324,41 @@ static const char scalar_run_usage[] =
 	   "\ttasks: all, config, commit-graph,\n"
 	   "\t       fetch, loose-objects, pack-files");
 
+static int run_maintenance_task(const char *task)
+{
+	int res;
+	struct strvec args = STRVEC_INIT;
+
+	strvec_pushl(&args, "maintenance", "run", NULL);
+	strvec_pushf(&args, "--task=%s", task);
+
+	res = run_command_v_opt(args.v, RUN_GIT_CMD);
+
+	strvec_clear(&args);
+	return res;
+}
+
+static int run_commit_graph_task(void)
+{
+	return run_maintenance_task("commit-graph");
+}
+
 static int cmd_run(int argc, const char **argv)
 {
-	if (argc < 3)
+	if (argc < 2)
 		usage(scalar_run_usage);
 
-	if (!strcmp(argv[2], "all")) {
+	if (!strcmp(argv[1], "all")) {
 		die("job 'all' not implemented");
-	} else if (!strcmp(argv[2], "config")) {
+	} else if (!strcmp(argv[1], "config")) {
 		return run_config_task();
-	} else if (!strcmp(argv[2], "commit-graph")) {
-		die("job 'commit-graph' not implemented");
-	} else if (!strcmp(argv[2], "fetch")) {
+	} else if (!strcmp(argv[1], "commit-graph")) {
+		return run_commit_graph_task();
+	} else if (!strcmp(argv[1], "fetch")) {
 		die("job 'fetch' not implemented");
-	} else if (!strcmp(argv[2], "loose-objects")) {
+	} else if (!strcmp(argv[1], "loose-objects")) {
 		die("job 'loose-objects' not implemented");
-	} else if (!strcmp(argv[2], "pack-files")) {
+	} else if (!strcmp(argv[1], "pack-files")) {
 		die("job 'pack-files' not implemented");
 	}
 
