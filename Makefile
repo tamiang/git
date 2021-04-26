@@ -2593,6 +2593,7 @@ GIT_OBJS += git.o
 .PHONY: git-objs
 git-objs: $(GIT_OBJS)
 
+SCALAR_OBJS := json-parser.o
 SCALAR_OBJS += scalar.o
 .PHONY: scalar-objs
 scalar-objs: $(SCALAR_OBJS)
