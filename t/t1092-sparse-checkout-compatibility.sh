@@ -330,6 +330,33 @@ test_expect_success 'checkout and reset (mixed) [sparse]' '
 	test_sparse_match git reset update-folder2
 '
 
+for command in cherry-pick merge rebase
+do
+	test_expect_success "$command with conflicts" "
+		init_repos &&
+
+		write_script edit-conflict <<-\EOF &&
+		echo \$1 >conflict
+		EOF
+
+		test_all_match git checkout -b target &&
+		run_on_all ../edit-conflict ABC &&
+		test_all_match git add conflict &&
+		test_all_match git commit -m conflict1 &&
+
+		test_all_match git checkout -B base HEAD~1 &&
+		run_on_all ../edit-conflict DEF &&
+		test_all_match git add conflict &&
+		test_all_match git commit -m conflict2 &&
+
+		test_all_match test_must_fail git $command target &&
+		run_on_all ../edit-conflict GHI &&
+		test_all_match git add conflict &&
+		test_all_match git $command --continue &&
+		test_all_match git status --porcelain=v2
+	"
+done
+
 test_expect_success 'merge' '
 	init_repos &&
 
@@ -350,67 +377,6 @@ test_expect_success 'merge with outside renames' '
 		test_all_match git merge -m "$type" rename-$type &&
 		test_all_match git rev-parse HEAD^{tree} || return 1
 	done
-'
-
-test_expect_success 'clean' '
-	init_repos &&
-
-	echo bogus >>.gitignore &&
-	run_on_all cp ../.gitignore . &&
-	test_all_match git add .gitignore &&
-	test_all_match git commit -m "ignore bogus files" &&
-
-	run_on_sparse mkdir folder1 &&
-	run_on_all touch folder1/bogus &&
-
-	test_all_match git status --porcelain=v2 &&
-	test_all_match git clean -f &&
-	test_all_match git status --porcelain=v2 &&
-	test_sparse_match ls &&
-	test_sparse_match ls folder1 &&
-
-	test_all_match git clean -xf &&
-	test_all_match git status --porcelain=v2 &&
-	test_sparse_match ls &&
-	test_sparse_match ls folder1 &&
-
-	test_all_match git clean -xdf &&
-	test_all_match git status --porcelain=v2 &&
-	test_sparse_match ls &&
-	test_sparse_match ls folder1 &&
-
-	test_sparse_match test_path_is_dir folder1
-'
-
-test_expect_success 'submodule handling' '
-	init_repos &&
-
-	test_all_match mkdir modules &&
-	test_all_match touch modules/a &&
-	test_all_match git add modules &&
-	test_all_match git commit -m "add modules directory" &&
-
-	run_on_all git submodule add "$(pwd)/initial-repo" modules/sub &&
-	test_all_match git commit -m "add submodule" &&
-
-	# having a submodule prevents "modules" from collapse
-	test-tool -C sparse-index read-cache --table >cache &&
-	grep "100644 blob .*	modules/a" cache &&
-	grep "160000 commit $(git -C initial-repo rev-parse HEAD)	modules/sub" cache
-'
-
-test_expect_success 'sparse-index is expanded and converted back' '
-	init_repos &&
-
-	GIT_TRACE2_EVENT="$(pwd)/trace2.txt" GIT_TRACE2_EVENT_NESTING=10 \
-		git -C sparse-index -c core.fsmonitor="" reset --hard &&
-	test_region index convert_to_sparse trace2.txt &&
-	test_region index ensure_full_index trace2.txt &&
-
-	rm trace2.txt &&
-	GIT_TRACE2_EVENT="$(pwd)/trace2.txt" GIT_TRACE2_EVENT_NESTING=10 \
-		git -C sparse-index -c core.fsmonitor="" status -uno &&
-	test_region index ensure_full_index trace2.txt
 '
 
 test_done
