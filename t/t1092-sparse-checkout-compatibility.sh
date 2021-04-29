@@ -402,7 +402,7 @@ test_expect_success 'merge with outside renames' '
 
 # Sparse-index fails to convert the index in the
 # final 'git cherry-pick' command.
-test_expect_failure 'cherry-pick with conflicts' '
+test_expect_success 'cherry-pick with conflicts' '
 	init_repos &&
 
 	write_script edit-conflict <<-\EOF &&
