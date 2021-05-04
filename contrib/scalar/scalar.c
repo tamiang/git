@@ -741,15 +741,6 @@ cleanup:
 	return res;
 }
 
-/*
- * Dummy implementation; Using `get_version_info()` would cause a link error
- * without this.
- */
-void load_builtin_commands(const char *prefix, struct cmdnames *cmds)
-{
-	die("not implemented");
-}
-
 static void dir_file_stats(struct strbuf *buf, const char *path)
 {
 	DIR *dir = opendir(path);
