@@ -741,15 +741,6 @@ cleanup:
 	return res;
 }
 
-/*
- * Dummy implementation; Using `get_version_info()` would cause a link error
- * without this.
- */
-void load_builtin_commands(const char *prefix, struct cmdnames *cmds)
-{
-	die("not implemented");
-}
-
 static void dir_file_stats(struct strbuf *buf, const char *path)
 {
 	DIR *dir = opendir(path);
@@ -1178,6 +1169,25 @@ static int cmd_delete(int argc, const char **argv)
 	return res;
 }
 
+static int cmd_help(int argc, const char **argv)
+{
+	struct option options[] = {
+		OPT_END(),
+	};
+	const char * const usage[] = {
+		N_("scalar help"),
+		NULL
+	};
+
+	argc = parse_options(argc, argv, NULL, options,
+			     usage, 0);
+
+	if (argc != 0)
+		usage_with_options(usage, options);
+
+	return run_git("help", "scalar", NULL);
+}
+
 static int cmd_version(int argc, const char **argv)
 {
 	int verbose = 0, build_options = 0;
@@ -1217,6 +1227,7 @@ static struct {
 	{ "run", cmd_run },
 	{ "reconfigure", cmd_reconfigure },
 	{ "delete", cmd_delete },
+	{ "help", cmd_help },
 	{ "version", cmd_version },
 	{ "diagnose", cmd_diagnose },
 	{ NULL, NULL},
