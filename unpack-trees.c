@@ -822,9 +822,6 @@ static int traverse_by_cache_tree(int pos, int nr_entries, int nr_names,
 
 		src[0] = o->src_index->cache[pos + i];
 
-		if (S_ISSPARSEDIR(src[0]->ce_mode))
-			continue;
-
 		len = ce_namelen(src[0]);
 		new_ce_len = cache_entry_size(len);
 
@@ -1095,9 +1092,6 @@ static int unpack_nondirectories(int n, unsigned long mask,
 
 	/* Do we have *only* directories? Nothing to do */
 	if (mask == dirmask && !src[0])
-		return 0;
-
-	if (src[0] && S_ISSPARSEDIR(src[0]->ce_mode))
 		return 0;
 
 	/*
