@@ -427,6 +427,9 @@ static void do_oneway_diff(struct unpack_trees_options *o,
 		return;
 	}
 
+	if (idx && S_ISSPARSEDIR(idx->ce_mode))
+		return;
+
 	/*
 	 * Something added to the tree?
 	 */
