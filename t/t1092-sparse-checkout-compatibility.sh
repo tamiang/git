@@ -515,6 +515,9 @@ test_expect_success 'blame with pathspec outside sparse definition' '
 	done
 '
 
+# NEEDSWORK: a sparse-checkout behaves differently from a full checkout
+# in this scenario, but it shouldn't.
+# TODO: This behaves correctly in microsoft/git. Why?
 test_expect_success 'checkout and reset (mixed)' '
 	init_repos &&
 
