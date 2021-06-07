@@ -57,7 +57,11 @@ void fprintf_or_die(FILE *f, const char *fmt, ...)
 
 void fsync_or_die(int fd, const char *msg)
 {
+#ifdef WIN32
+	if (fsync(fd) < 0) {
+#else
 	while (fsync(fd) < 0) {
+#endif
 		if (errno != EINTR)
 			die_errno("fsync error on '%s'", msg);
 	}
