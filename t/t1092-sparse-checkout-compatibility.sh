@@ -390,7 +390,7 @@ test_expect_success 'diff with renames and conflicts' '
 		      fd-conflict
 	do
 		test_all_match git checkout rename-base &&
-		test_all_match git checkout $branch -- .&&
+		test_all_match git checkout $branch -- . &&
 		test_all_match git status --porcelain=v2 &&
 		test_all_match git diff --staged --no-renames &&
 		test_all_match git diff --staged --find-renames || return 1
