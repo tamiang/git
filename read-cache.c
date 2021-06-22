@@ -2829,6 +2829,9 @@ static int do_write_index(struct index_state *istate, struct tempfile *tempfile,
 
 	f = hashfd(tempfile->fd, tempfile->filename.buf);
 
+	if (gvfs_config_is_set(GVFS_SKIP_SHA_ON_INDEX))
+		f->skip_hash = 1;
+
 	for (i = removed = extended = 0; i < entries; i++) {
 		if (cache[i]->ce_flags & CE_REMOVE)
 			removed++;
