@@ -42,6 +42,12 @@ test_expect_success 'setup' '
 		cp -r deep/deeper1/0 folder2 &&
 		echo >>folder1/0/0/0 &&
 		echo >>folder2/0/1 &&
+
+		cat >.gitignore <<-\EOF &&
+		obj/
+		*.o
+		EOF
+
 		git add . &&
 		git commit -m "initial commit" &&
 		git checkout -b base &&
@@ -62,6 +68,7 @@ test_expect_success 'setup' '
 		EOF
 		cp folder1/larger-content folder2/ &&
 		cp folder1/larger-content deep/deeper1/ &&
+
 		git add . &&
 		git commit -m "add interesting rename content" &&
 
@@ -561,6 +568,44 @@ ensure_not_expanded () {
 
 test_expect_success 'sparse-index is not expanded' '
 	init_repos &&
+
+	ensure_not_expanded status &&
+	ensure_not_expanded commit --allow-empty -m empty &&
+	echo >>sparse-index/a &&
+	ensure_not_expanded commit -a -m a &&
+	echo >>sparse-index/a &&
+	ensure_not_expanded commit --include a -m a &&
+	echo >>sparse-index/deep/deeper1/a &&
+	ensure_not_expanded commit --include deep/deeper1/a -m deeper &&
+	ensure_not_expanded checkout rename-out-to-out &&
+	ensure_not_expanded checkout - &&
+	ensure_not_expanded switch rename-out-to-out &&
+	ensure_not_expanded switch - &&
+	git -C sparse-index reset --hard &&
+	ensure_not_expanded checkout rename-out-to-out -- deep/deeper1 &&
+	git -C sparse-index reset --hard &&
+	ensure_not_expanded restore -s rename-out-to-out -- deep/deeper1 &&
+
+	echo >>sparse-index/README.md &&
+	ensure_not_expanded add -A &&
+	echo >>sparse-index/extra.txt &&
+	ensure_not_expanded add extra.txt &&
+	echo >>sparse-index/untracked.txt &&
+	ensure_not_expanded add .
+'
+
+test_expect_failure 'sparse-index is not expanded (with ignored files outside cone)' '
+	init_repos &&
+
+	write_script adjust_repo <<-\EOF &&
+	mkdir folder1 obj folder1/obj &&
+	echo ignored >folder1/obj/a &&
+	echo ignored >obj/a &&c
+	echo ignored >folder1/file.o &&
+	echo ignored >folder1.o
+	EOF
+
+	run_on_all ../adjust_repo &&
 
 	ensure_not_expanded status &&
 	ensure_not_expanded commit --allow-empty -m empty &&
