@@ -594,7 +594,7 @@ test_expect_success 'sparse-index is not expanded' '
 	ensure_not_expanded add .
 '
 
-test_expect_failure 'sparse-index is not expanded (with ignored files outside cone)' '
+test_expect_success 'sparse-index is not expanded (with ignored files outside cone)' '
 	init_repos &&
 
 	write_script adjust_repo <<-\EOF &&
@@ -606,6 +606,7 @@ test_expect_failure 'sparse-index is not expanded (with ignored files outside co
 	EOF
 
 	run_on_all ../adjust_repo &&
+	git -C sparse-index sparse-checkout reapply &&
 
 	ensure_not_expanded status &&
 	ensure_not_expanded commit --allow-empty -m empty &&
@@ -623,7 +624,6 @@ test_expect_failure 'sparse-index is not expanded (with ignored files outside co
 	ensure_not_expanded checkout rename-out-to-out -- deep/deeper1 &&
 	git -C sparse-index reset --hard &&
 	ensure_not_expanded restore -s rename-out-to-out -- deep/deeper1 &&
-
 	echo >>sparse-index/README.md &&
 	ensure_not_expanded add -A &&
 	echo >>sparse-index/extra.txt &&
