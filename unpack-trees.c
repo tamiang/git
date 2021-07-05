@@ -1286,9 +1286,10 @@ static int sparse_dir_matches_path(const struct cache_entry *ce,
 static struct cache_entry *find_cache_entry(struct traverse_info *info,
 					    const struct name_entry *p)
 {
-	struct cache_entry *ce;
+	struct cache_entry *ce = NULL;
 	int pos = find_cache_pos(info, p->path, p->pathlen);
 	struct unpack_trees_options *o = info->data;
+	struct strbuf full_path = STRBUF_INIT;
 
 	if (0 <= pos)
 		return o->src_index->cache[pos];
@@ -1304,6 +1305,10 @@ static struct cache_entry *find_cache_entry(struct traverse_info *info,
 	if (pos < 0 || pos >= o->src_index->cache_nr)
 		return NULL;
 
+	strbuf_addstr(&full_path, info->traverse_path);
+	strbuf_add(&full_path, p->path, p->pathlen);
+	strbuf_addch(&full_path, '/');
+
 	/*
 	 * We might have multiple entries between 'pos' and
 	 * the actual sparse-directory entry, so start walking
@@ -1315,17 +1320,20 @@ static struct cache_entry *find_cache_entry(struct traverse_info *info,
 		/*
 		 * Have we walked too far?
 		 */
-		if (strncmp(ce->name, p->path, p->pathlen))
-			return NULL;
+		if (strncmp(ce->name, full_path.buf, full_path.len)) {
+			ce = NULL;
+			break;
+		}
 
 		if (S_ISSPARSEDIR(ce->ce_mode) &&
 		    sparse_dir_matches_path(ce, info, p))
-			return ce;
+			break;
 
 		pos--;
 	}
 
-	return NULL;
+	strbuf_release(&full_path);
+	return ce;
 }
 
 static void debug_path(struct traverse_info *info)
