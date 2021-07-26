@@ -51,7 +51,7 @@ test_expect_success 'setup' '
 		git checkout -b base &&
 		for dir in folder1 folder2 deep
 		do
-			git checkout -b update-$dir &&
+			git checkout -b update-$dir base &&
 			echo "updated $dir" >$dir/a &&
 			git commit -a -m "update $dir" || return 1
 		done &&
@@ -604,6 +604,31 @@ test_expect_success 'submodule handling' '
 	grep "160000 commit $(git -C initial-repo rev-parse HEAD)	modules/sub" cache
 '
 
+ensure_expanded () {
+	rm -f trace2.txt &&
+	echo >>sparse-index/untracked.txt &&
+	GIT_TRACE2_EVENT="$(pwd)/trace2.txt" GIT_TRACE2_EVENT_NESTING=10 \
+		git -C sparse-index "$@" &&
+	test_region index ensure_full_index trace2.txt &&
+	test_region index convert_to_sparse trace2.txt
+}
+
+# Check that the given command fails, and only check for ensure_full_index
+# because convert_to_sparse only happens on an index write, especially
+# only on an index write that _can_ be converted (i.e. no merge conflicts).
+ensure_expanded_fail () {
+	rm -f trace2.txt &&
+	echo >>sparse-index/untracked.txt &&
+	(
+		GIT_TRACE2_EVENT="$(pwd)/trace2.txt" &&
+		GIT_TRACE2_EVENT_NESTING=10 &&
+		export GIT_TRACE2_EVENT &&
+		export GIT_TRACE2_EVENT_NESTING &&
+		test_must_fail git -C sparse-index "$@" &&
+		test_region index ensure_full_index trace2.txt
+	)
+}
+
 test_expect_success 'sparse-index is expanded and converted back' '
 	init_repos &&
 
@@ -646,7 +671,13 @@ test_expect_success 'sparse-index is not expanded' '
 	echo >>sparse-index/extra.txt &&
 	ensure_not_expanded add extra.txt &&
 	echo >>sparse-index/untracked.txt &&
-	ensure_not_expanded add .
+	ensure_not_expanded add . &&
+
+	ensure_not_expanded checkout -f update-deep &&
+	GIT_TEST_MERGE_ALGORITHM=ort \
+		ensure_not_expanded merge -m merge update-folder1 &&
+	GIT_TEST_MERGE_ALGORITHM=ort \
+		ensure_not_expanded merge -m merge update-folder2
 '
 
 # NEEDSWORK: a sparse-checkout behaves differently from a full checkout
