@@ -153,11 +153,8 @@ int convert_to_sparse(struct index_state *istate)
 	if (!istate->repo->settings.sparse_index)
 		return 0;
 
-	if (!istate->sparse_checkout_patterns) {
-		istate->sparse_checkout_patterns = xcalloc(1, sizeof(struct pattern_list));
-		if (get_sparse_checkout_patterns(istate->sparse_checkout_patterns) < 0)
-			return 0;
-	}
+	if (init_sparse_checkout_patterns(istate) < 0)
+		return 0;
 
 	/*
 	 * We need cone-mode patterns to use sparse-index. If a user edits
