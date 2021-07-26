@@ -7,6 +7,11 @@ GIT_TEST_SPARSE_INDEX=
 
 . ./test-lib.sh
 
+# Force the use of the ORT merge algorithm until testing with the
+# recursive strategy. We expect ORT to be used with sparse-index.
+GIT_TEST_MERGE_ALGORITHM=ort
+export GIT_TEST_MERGE_ALGORITHM
+
 test_expect_success 'setup' '
 	git init initial-repo &&
 	(
@@ -501,7 +506,7 @@ test_expect_success 'merge with conflict outside cone' '
 
 	test_all_match git checkout -b merge-tip merge-left &&
 	test_all_match git status --porcelain=v2 &&
-	test_all_match test_must_fail git merge -m merge merge-right &&
+	test_all_match test_must_fail git merge -sort -m merge merge-right &&
 	test_all_match git status --porcelain=v2 &&
 
 	# Resolve the conflict in different ways:
@@ -531,7 +536,7 @@ test_expect_success 'merge with outside renames' '
 	do
 		test_all_match git reset --hard &&
 		test_all_match git checkout -f -b merge-$type update-deep &&
-		test_all_match git merge -m "$type" rename-$type &&
+		test_all_match git merge -sort -m "$type" rename-$type &&
 		test_all_match git rev-parse HEAD^{tree} || return 1
 	done
 '
