@@ -14,6 +14,7 @@
 #include "utf8.h"
 #include "quote.h"
 #include "thread-utils.h"
+#include "dir.h"
 
 const char git_attr__true[] = "(builtin)true";
 const char git_attr__false[] = "\0(builtin)false";
@@ -742,6 +743,17 @@ static struct attr_stack *read_attr_from_index(struct index_state *istate,
 	int lineno = 0;
 
 	if (!istate)
+		return NULL;
+
+	/*
+	 * In the case of cone-mode sparse-checkout, getting the
+	 * .gitattributes file from a directory is meaningless: all
+	 * contained paths will be sparse if the .gitattributes is also
+	 * sparse. In the case of a sparse index, it is critical that we
+	 * don't go looking for one as it will expand the index.
+	 */
+	if (core_sparse_checkout_cone &&
+	    path_in_sparse_checkout(path, istate) == NOT_MATCHED)
 		return NULL;
 
 	buf = read_blob_data_from_index(istate, path, NULL);
