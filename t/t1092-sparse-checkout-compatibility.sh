@@ -9,7 +9,8 @@ GIT_TEST_SPARSE_INDEX=
 
 # Force the use of the ORT merge algorithm until testing with the
 # recursive strategy. We expect ORT to be used with sparse-index.
-export GIT_TEST_MERGE_ALGORITHM=ort
+GIT_TEST_MERGE_ALGORITHM=ort
+export GIT_TEST_MERGE_ALGORITHM
 
 test_expect_success 'setup' '
 	git init initial-repo &&
