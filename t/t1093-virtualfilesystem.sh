@@ -374,6 +374,7 @@ test_expect_success 'virtualfilsystem hook disables built-in FSMonitor ' '
 	write_script .git/hooks/virtualfilesystem <<-\EOF &&
 		printf "dir1/\0"
 	EOF
+	git config core.virtualfilesystem .git/hooks/virtualfilesystem &&
 	git status &&
 	test_must_fail git fsmonitor--daemon status
 '
