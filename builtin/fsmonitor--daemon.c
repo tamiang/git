@@ -8,6 +8,7 @@
 #include "simple-ipc.h"
 #include "khash.h"
 #include "pkt-line.h"
+#include "strmap.h"
 
 static const char * const builtin_fsmonitor__daemon_usage[] = {
 	N_("git fsmonitor--daemon start [<options>]"),
@@ -633,6 +634,37 @@ static int fsmonitor_parse_client_token(const char *buf_token,
 
 KHASH_INIT(str, const char *, int, 0, kh_str_hash_func, kh_str_hash_equal);
 
+static void lstat_path_and_parents(const char *worktree,
+				   const char *path,
+				   struct strmap *map)
+{
+#ifdef WIN32
+	struct strbuf parent = STRBUF_INIT;
+	char *slash;
+	struct stat st;
+	size_t baselen;
+
+	strbuf_addstr(&parent, worktree);
+	strbuf_addch(&parent, '/');
+	baselen = parent.len;
+	strbuf_addstr(&parent, path);
+
+	while ((slash = find_last_dir_sep(parent.buf)) &&
+	       (slash - parent.buf) > baselen) {
+		*slash = '\0';
+
+		if (!strmap_contains(map, parent.buf)) {
+			strmap_put(map, xstrdup(parent.buf), NULL);
+			lstat(parent.buf, &st);
+		} else {
+			break;
+		}
+	}
+
+	strbuf_release(&parent);
+#endif
+}
+
 static int do_handle_client(struct fsmonitor_daemon_state *state,
 			    const char *command,
 			    ipc_server_reply_cb *reply,
@@ -655,6 +687,7 @@ static int do_handle_client(struct fsmonitor_daemon_state *state,
 	int do_flush = 0;
 	int do_cookie = 0;
 	enum fsmonitor_cookie_item_result cookie_result;
+	struct strmap lstatted_paths = STRMAP_INIT;
 
 	/*
 	 * We expect `command` to be of the form:
@@ -861,6 +894,10 @@ static int do_handle_client(struct fsmonitor_daemon_state *state,
 			else {
 				kh_put_str(shown, s, &hash_ret);
 
+				lstat_path_and_parents(
+					state->path_worktree_watch.buf,
+					s, &lstatted_paths);
+
 				trace_printf_key(&trace_fsmonitor,
 						 "send[%"PRIuMAX"]: %s",
 						 count, s);
@@ -923,7 +960,10 @@ static int do_handle_client(struct fsmonitor_daemon_state *state,
 	trace2_data_intmax("fsmonitor", the_repository, "response/length", total_response_len);
 	trace2_data_intmax("fsmonitor", the_repository, "response/count/files", count);
 	trace2_data_intmax("fsmonitor", the_repository, "response/count/duplicates", duplicates);
+	trace2_data_intmax("fsmonitor", the_repository, "response/count/lstats",
+			   strmap_get_size(&lstatted_paths));
 
+	strmap_clear(&lstatted_paths, 1);
 	strbuf_release(&response_token);
 	strbuf_release(&requested_token_id);
 	strbuf_release(&payload);
