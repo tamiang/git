@@ -751,11 +751,12 @@ static struct attr_stack *read_attr_from_index(struct index_state *istate,
 	 * contained paths will be sparse if the .gitattributes is also
 	 * sparse. In the case of a sparse index, it is critical that we
 	 * don't go looking for one as it will expand the index.
+	 *
+	 * Note that if path_in_sparse_checkout() returns false, then it
+	 * has populated istate->sparse_checkout_patterns.
 	 */
-	init_sparse_checkout_patterns(istate);
-	if (istate->sparse_checkout_patterns &&
-	    istate->sparse_checkout_patterns->use_cone_patterns &&
-	    path_in_sparse_checkout(path, istate) == NOT_MATCHED)
+	if (!path_in_sparse_checkout(path, istate) &&
+	    istate->sparse_checkout_patterns->use_cone_patterns)
 		return NULL;
 
 	buf = read_blob_data_from_index(istate, path, NULL);
