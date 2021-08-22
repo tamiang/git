@@ -199,8 +199,7 @@ static int refresh(int verbose, const struct pathspec *pathspec)
 			const char *path = pathspec->items[i].original;
 
 			if (matches_skip_worktree(pathspec, i, &skip_worktree_seen) ||
-			    (core_apply_sparse_checkout &&
-			     path_in_sparse_checkout(path, &the_index) == NOT_MATCHED)) {
+			    !path_in_sparse_checkout(path, &the_index)) {
 				string_list_append(&only_match_skip_worktree,
 						   pathspec->items[i].original);
 			} else {

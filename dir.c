@@ -1510,21 +1510,42 @@ int init_sparse_checkout_patterns(struct index_state *istate)
 	return 0;
 }
 
-int path_in_sparse_checkout(const char *path,
-			    struct index_state *istate)
+static int path_in_sparse_checkout_1(const char *path,
+				     struct index_state *istate,
+				     int require_cone_mode)
 {
 	const char *base;
 	int dtype = DT_REG;
 	init_sparse_checkout_patterns(istate);
 
-	if (!istate->sparse_checkout_patterns)
-		return MATCHED;
+	/*
+	 * We default to accepting a path if there are no patterns or
+	 * they are of the wrong type.
+	 */
+	if (!istate->sparse_checkout_patterns ||
+	    (require_cone_mode &&
+	     !istate->sparse_checkout_patterns->use_cone_patterns))
+		return 1;
+
+
 
 	base = strrchr(path, '/');
 	return path_matches_pattern_list(path, strlen(path), base ? base + 1 : path,
 					 &dtype,
 					 istate->sparse_checkout_patterns,
 					 istate) > 0;
+}
+
+int path_in_sparse_checkout(const char *path,
+			    struct index_state *istate)
+{
+	return path_in_sparse_checkout_1(path, istate, 0);
+}
+
+int path_in_cone_modesparse_checkout(const char *path,
+				     struct index_state *istate)
+{
+	return path_in_sparse_checkout_1(path, istate, 1);
 }
 
 static struct path_pattern *last_matching_pattern_from_lists(

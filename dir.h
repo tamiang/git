@@ -399,6 +399,8 @@ int init_sparse_checkout_patterns(struct index_state *state);
 
 int path_in_sparse_checkout(const char *path,
 			    struct index_state *istate);
+int path_in_cone_modesparse_checkout(const char *path,
+				     struct index_state *istate);
 
 struct dir_entry *dir_add_ignored(struct dir_struct *dir,
 				  struct index_state *istate,
