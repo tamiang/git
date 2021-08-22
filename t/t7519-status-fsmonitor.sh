@@ -434,7 +434,7 @@ check_sparse_index_behavior () {
 }
 
 test_expect_success 'status succeeds with sparse index' '
-	git clone --sparse . full &&
+	git clone . full &&
 	git clone --sparse . sparse &&
 	git -C sparse sparse-checkout init --cone --sparse-index &&
 	git -C sparse sparse-checkout set dir1 dir2 &&
