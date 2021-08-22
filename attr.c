@@ -746,17 +746,16 @@ static struct attr_stack *read_attr_from_index(struct index_state *istate,
 		return NULL;
 
 	/*
-	 * In the case of cone-mode sparse-checkout, getting the
-	 * .gitattributes file from a directory is meaningless: all
-	 * contained paths will be sparse if the .gitattributes is also
-	 * sparse. In the case of a sparse index, it is critical that we
-	 * don't go looking for one as it will expand the index.
+	 * The .gitattributes file only applies to files within its
+	 * parent directory. In the case of cone-mode sparse-checkout,
+	 * the .gitattributes file is sparse if and only if all paths
+	 * within that directory are also sparse. Thus, don't load the
+	 * .gitattributes file since it will not matter.
 	 *
-	 * Note that if path_in_sparse_checkout() returns false, then it
-	 * has populated istate->sparse_checkout_patterns.
+	 * In the case of a sparse index, it is critical that we don't go
+	 * looking for a .gitattributes file, as the index will expand.
 	 */
-	if (!path_in_sparse_checkout(path, istate) &&
-	    istate->sparse_checkout_patterns->use_cone_patterns)
+	if (!path_in_cone_modesparse_checkout(path, istate))
 		return NULL;
 
 	buf = read_blob_data_from_index(istate, path, NULL);
