@@ -7,11 +7,6 @@ GIT_TEST_SPARSE_INDEX=
 
 . ./test-lib.sh
 
-# Force the use of the ORT merge algorithm until testing with the
-# recursive strategy. We expect ORT to be used with sparse-index.
-GIT_TEST_MERGE_ALGORITHM=ort
-export GIT_TEST_MERGE_ALGORITHM
-
 test_expect_success 'setup' '
 	git init initial-repo &&
 	(
@@ -488,7 +483,7 @@ test_expect_success 'checkout and reset (mixed) [sparse]' '
 test_expect_success 'merge, cherry-pick, and rebase' '
 	init_repos &&
 
-	for OPERATION in "merge -s ort -m merge" cherry-pick rebase
+	for OPERATION in "merge -m merge" cherry-pick rebase
 	do
 		test_all_match git checkout -B temp update-deep &&
 		test_all_match git $OPERATION update-folder1 &&
@@ -508,7 +503,7 @@ test_expect_success 'merge with conflict outside cone' '
 
 	test_all_match git checkout -b merge-tip merge-left &&
 	test_all_match git status --porcelain=v2 &&
-	test_all_match test_must_fail git merge -sort -m merge merge-right &&
+	test_all_match test_must_fail git merge -m merge merge-right &&
 	test_all_match git status --porcelain=v2 &&
 
 	# Resolve the conflict in different ways:
@@ -570,7 +565,7 @@ test_expect_success 'merge with outside renames' '
 	do
 		test_all_match git reset --hard &&
 		test_all_match git checkout -f -b merge-$type update-deep &&
-		test_all_match git merge -sort -m "$type" rename-$type &&
+		test_all_match git merge -m "$type" rename-$type &&
 		test_all_match git rev-parse HEAD^{tree} || return 1
 	done
 '
@@ -701,25 +696,35 @@ test_expect_success 'sparse-index is not expanded' '
 	echo >>sparse-index/untracked.txt &&
 	ensure_not_expanded add . &&
 
-	for OPERATION in "merge -s ort -m merge" cherry-pick rebase
-	do
-		ensure_not_expanded checkout -f -B temp update-deep &&
-		ensure_not_expanded $OPERATION update-folder1 &&
-		ensure_not_expanded $OPERATION update-folder2 || return 1
-	done
+	(
+		# To avoid expansion, use the ORT algorithm
+		GIT_TEST_MERGE_ALGORITHM=ort &&
+		export GIT_TEST_MERGE_ALGORITHM &&
+		for OPERATION in "merge -m merge" cherry-pick rebase
+		do
+			ensure_not_expanded checkout -f -B temp update-deep &&
+			ensure_not_expanded $OPERATION update-folder1 &&
+			ensure_not_expanded $OPERATION update-folder2 || return 1
+		done
+	)
 '
 
 test_expect_success 'sparse-index is not expanded: merge conflict in cone' '
 	init_repos &&
 
-	for side in right left
-	do
-		git -C sparse-index checkout -b expand-$side base &&
-		echo $side >sparse-index/deep/a &&
-		git -C sparse-index commit -a -m "$side" || return 1
-	done &&
+	(
+		# To avoid expansion, use the ORT algorithm
+		GIT_TEST_MERGE_ALGORITHM=ort &&
+		export GIT_TEST_MERGE_ALGORITHM &&
+		for side in right left
+		do
+			git -C sparse-index checkout -b expand-$side base &&
+			echo $side >sparse-index/deep/a &&
+			git -C sparse-index commit -a -m "$side" || return 1
+		done &&
 
-	ensure_not_expanded ! merge -m merged expand-right
+		ensure_not_expanded ! merge -m merged expand-right
+	)
 '
 
 # NEEDSWORK: a sparse-checkout behaves differently from a full checkout
