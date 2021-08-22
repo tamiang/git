@@ -131,7 +131,7 @@ static void clean_tracked_sparse_directories(struct repository *r)
 		 * prevents us from converting to a sparse index, then do
 		 * not try deleting files.
 		 */
-		if (convert_to_sparse(r->index, SPARSE_INDEX_IGNORE_CONFIG))
+		if (convert_to_sparse(r->index, SPARSE_INDEX_MEMORY_ONLY))
 			return;
 		was_full = 1;
 	}

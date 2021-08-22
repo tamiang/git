@@ -128,14 +128,20 @@ int convert_to_sparse(struct index_state *istate, int flags)
 {
 	int test_env;
 
-	if (istate->split_index || istate->sparse_index || !istate->cache_nr ||
+	if (istate->sparse_index || !istate->cache_nr ||
 	    !core_apply_sparse_checkout || !core_sparse_checkout_cone)
 		return 0;
 
 	if (!istate->repo)
 		istate->repo = the_repository;
 
-	if (!(flags & SPARSE_INDEX_IGNORE_CONFIG)) {
+	if (!(flags & SPARSE_INDEX_MEMORY_ONLY)) {
+		/*
+		 * The sparse index is not integrated with a split index.
+		 */
+		if (istate->sparse_index)
+			return 0;
+
 		/*
 		 * The GIT_TEST_SPARSE_INDEX environment variable triggers the
 		 * index.sparse config variable to be on.
