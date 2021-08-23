@@ -655,13 +655,9 @@ ensure_not_expanded () {
 	if test "$1" = "!"
 	then
 		shift &&
-		(
-			GIT_TRACE2_EVENT="$(pwd)/trace2.txt" &&
-			GIT_TRACE2_EVENT_NESTING=10 &&
-			export GIT_TRACE2_EVENT &&
-			export GIT_TRACE2_EVENT_NESTING &&
-			test_must_fail git -C sparse-index "$@" || return 1
-		)
+		test_must_fail env \
+			GIT_TRACE2_EVENT="$(pwd)/trace2.txt" GIT_TRACE2_EVENT_NESTING=10 \
+			git -C sparse-index "$@" || return 1
 	else
 		GIT_TRACE2_EVENT="$(pwd)/trace2.txt" GIT_TRACE2_EVENT_NESTING=10 \
 			git -C sparse-index "$@" || return 1
