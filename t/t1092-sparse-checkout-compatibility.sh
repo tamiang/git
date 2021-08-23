@@ -605,6 +605,43 @@ test_expect_success 'submodule handling' '
 	grep "160000 commit $(git -C initial-repo rev-parse HEAD)	modules/sub" cache
 '
 
+test_expect_success 'ls-files' '
+	init_repos &&
+
+	# Behavior agrees by default. Sparse index is expanded.
+	test_all_match git ls-files &&
+
+	# With --sparse, the sparse index data changes behavior.
+	git -C sparse-index ls-files --sparse >sparse-index-out &&
+	grep "^folder1/\$" sparse-index-out &&
+	grep "^folder2/\$" sparse-index-out &&
+
+	# With --sparse and no sparse index, nothing changes.
+	git -C sparse-checkout ls-files --sparse >sparse-checkout-out &&
+	grep "^folder1/0/0/0\$" sparse-checkout-out &&
+	! grep "/\$" sparse-checkout-out &&
+
+	write_script edit-content <<-\EOF &&
+	mkdir folder1 &&
+	echo content >>folder1/a
+	EOF
+	run_on_sparse ../edit-content &&
+
+	# ls-files does not notice modified files whose
+	# cache entries are marked SKIP_WORKTREE.
+	test_sparse_match git ls-files --modified &&
+	test_must_be_empty sparse-checkout-out &&
+	test_must_be_empty sparse-index-out &&
+
+	git -C sparse-index ls-files --sparse --modified >sparse-index-out &&
+	test_must_be_empty sparse-index-out &&
+
+	run_on_sparse git sparse-checkout add folder1 &&
+	test_sparse_match git ls-files --modified &&
+	grep "^folder1/a\$" sparse-checkout-out &&
+	grep "^folder1/a\$" sparse-index-out
+'
+
 test_expect_success 'sparse-index is expanded and converted back' '
 	init_repos &&
 
@@ -626,6 +663,7 @@ test_expect_success 'sparse-index is not expanded' '
 	init_repos &&
 
 	ensure_not_expanded status &&
+	ensure_not_expanded ls-files --sparse &&
 	ensure_not_expanded commit --allow-empty -m empty &&
 	echo >>sparse-index/a &&
 	ensure_not_expanded commit -a -m a &&
