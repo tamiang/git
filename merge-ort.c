@@ -36,7 +36,6 @@
 #include "tree.h"
 #include "unpack-trees.h"
 #include "xdiff-interface.h"
-#include "dir.h"
 
 /*
  * We have many arrays of size 3.  Whenever we have such an array, the
