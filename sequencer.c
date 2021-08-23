@@ -2360,7 +2360,7 @@ static int read_and_refresh_cache(struct repository *r,
 	 * If we are resolving merges in any way other than "ort", then
 	 * expand the sparse index.
 	 */
-	if (!opts->strategy || strcmp(opts->strategy, "ort"))
+	if (opts->strategy && strcmp(opts->strategy, "ort"))
 		ensure_full_index(r->index);
 	return 0;
 }
