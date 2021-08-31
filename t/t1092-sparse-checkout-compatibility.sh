@@ -480,6 +480,62 @@ test_expect_success 'checkout and reset (mixed) [sparse]' '
 	test_sparse_match git reset update-folder2
 '
 
+# NEEDSWORK: with mixed reset, files with differences between HEAD and <commit>
+# will be added to the work tree even if outside the sparse checkout
+# definition, and even if the file is modified to a state of having no local
+# changes. The file is "re-ignored" if a hard reset is executed.
+test_expect_success 'checkout and mixed reset file tracking [sparse]' '
+	init_repos &&
+
+	test_all_match git checkout -b reset-test update-deep &&
+	test_all_match git reset update-folder1 &&
+	test_all_match git reset update-deep &&
+
+	# At this point, there are no changes in the working tree. However,
+	# folder1/a now exists locally (even though it is outside of the sparse
+	# paths).
+	run_on_sparse test_path_exists folder1 &&
+
+	run_on_all rm folder1/a &&
+	test_all_match git status --porcelain=v2 &&
+
+	test_all_match git reset --hard update-deep &&
+	run_on_sparse test_path_is_missing folder1 &&
+	test_path_exists full-checkout/folder1
+'
+
+test_expect_success 'checkout and reset (merge)' '
+	init_repos &&
+
+	write_script edit-contents <<-\EOF &&
+	echo text >>$1
+	EOF
+
+	test_all_match git checkout -b reset-test update-deep &&
+	run_on_all ../edit-contents a &&
+	test_all_match git reset --merge deepest &&
+
+	test_all_match git reset --hard update-deep &&
+	run_on_all ../edit-contents deep/a &&
+	test_all_match test_must_fail git reset --merge deepest
+'
+
+test_expect_success 'checkout and reset (keep)' '
+	init_repos &&
+
+	write_script edit-contents <<-\EOF &&
+	echo text >>$1
+	EOF
+
+	test_all_match git checkout -b reset-test update-deep &&
+	run_on_all ../edit-contents a &&
+	test_all_match git reset --keep deepest &&
+
+	test_all_match git reset --hard update-deep &&
+	run_on_all ../edit-contents deep/a &&
+	test_all_match test_must_fail git reset --keep deepest
+'
+
 test_expect_success 'merge, cherry-pick, and rebase' '
 	init_repos &&
 
@@ -639,15 +695,6 @@ test_expect_success 'submodule handling' '
 	grep "160000 commit $(git -C initial-repo rev-parse HEAD)	modules/sub" cache
 '
 
-test_expect_success 'sparse-index is expanded and converted back' '
-	init_repos &&
-
-	GIT_TRACE2_EVENT="$(pwd)/trace2.txt" GIT_TRACE2_EVENT_NESTING=10 \
-		git -C sparse-index -c core.fsmonitor="" reset --hard &&
-	test_region index convert_to_sparse trace2.txt &&
-	test_region index ensure_full_index trace2.txt
-'
-
 ensure_not_expanded () {
 	rm -f trace2.txt &&
 	echo >>sparse-index/untracked.txt &&
@@ -680,9 +727,9 @@ test_expect_success 'sparse-index is not expanded' '
 	ensure_not_expanded checkout - &&
 	ensure_not_expanded switch rename-out-to-out &&
 	ensure_not_expanded switch - &&
-	git -C sparse-index reset --hard &&
+	ensure_not_expanded reset --hard &&
 	ensure_not_expanded checkout rename-out-to-out -- deep/deeper1 &&
-	git -C sparse-index reset --hard &&
+	ensure_not_expanded reset --hard &&
 	ensure_not_expanded restore -s rename-out-to-out -- deep/deeper1 &&
 
 	echo >>sparse-index/README.md &&
@@ -691,6 +738,13 @@ test_expect_success 'sparse-index is not expanded' '
 	ensure_not_expanded add extra.txt &&
 	echo >>sparse-index/untracked.txt &&
 	ensure_not_expanded add . &&
+
+	ensure_not_expanded reset --hard &&
+	echo >>sparse-index/README.md &&
+	ensure_not_expanded reset --mixed &&
+	ensure_not_expanded reset --keep update-deep &&
+	ensure_not_expanded reset --merge rename-out-to-out &&
+	ensure_not_expanded reset --hard &&
 
 	ensure_not_expanded checkout -f update-deep &&
 	(
