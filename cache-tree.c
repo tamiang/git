@@ -785,6 +785,23 @@ static void prime_cache_tree_rec(struct repository *r,
 	int cnt;
 
 	oidcpy(&it->oid, &tree->object.oid);
+
+	/*
+	 * If this entry is a sparse directory with a sparse index, set the entry
+	 * count to 1 and exit without populating subtrees.
+	 * TODO: find a way to make this cleaner/more efficient (i.e., don't loop
+	 * over the index multiple times).
+	 */
+	if (r->index->sparse_index && !path_in_cone_modesparse_checkout(tree_path->buf, r->index)) {
+		for (int i=0; i < r->index->cache_nr; i++) {
+			if (!subtree_name_cmp(r->index->cache[i]->name, r->index->cache[i]->ce_namelen,
+					tree_path->buf, tree_path->len)) {
+				it->entry_count = 1;
+				return;
+			}
+		}
+	}
+
 	init_tree_desc(&desc, tree->buffer, tree->size);
 	cnt = 0;
 	while (tree_entry(&desc, &entry)) {
@@ -819,7 +836,6 @@ void prime_cache_tree(struct repository *r,
 	cache_tree_free(&istate->cache_tree);
 	istate->cache_tree = cache_tree();
 
-	ensure_full_index(istate);
 	prime_cache_tree_rec(r, istate->cache_tree, tree, &tree_path);
 	strbuf_release(&tree_path);
 	istate->cache_changed |= CACHE_TREE_CHANGED;
