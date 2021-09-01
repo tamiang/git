@@ -792,14 +792,11 @@ static void prime_cache_tree_rec(struct repository *r,
 	 * TODO: find a way to make this cleaner/more efficient (i.e., don't loop
 	 * over the index multiple times).
 	 */
-	if (r->index->sparse_index && !path_in_cone_modesparse_checkout(tree_path->buf, r->index)) {
-		for (int i=0; i < r->index->cache_nr; i++) {
-			if (!subtree_name_cmp(r->index->cache[i]->name, r->index->cache[i]->ce_namelen,
-					tree_path->buf, tree_path->len)) {
-				it->entry_count = 1;
-				return;
-			}
-		}
+	if (r->index->sparse_index &&
+	    !path_in_cone_modesparse_checkout(tree_path->buf, r->index) &&
+	    index_name_pos(r->index, tree_path->buf, tree_path->len) >= 0) {
+		it->entry_count = 1;
+		return;
 	}
 
 	init_tree_desc(&desc, tree->buffer, tree->size);
