@@ -780,6 +780,7 @@ static void prime_cache_tree_rec(struct repository *r,
 				 struct tree *tree,
 				 struct strbuf *tree_path)
 {
+	struct strbuf subtree_path = STRBUF_INIT;
 	struct tree_desc desc;
 	struct name_entry entry;
 	int cnt;
@@ -813,14 +814,19 @@ static void prime_cache_tree_rec(struct repository *r,
 				parse_tree(subtree);
 			sub = cache_tree_sub(it, entry.path);
 			sub->cache_tree = cache_tree();
-			strbuf_addf(&subtree_path, "%s%s/", tree_path->buf, entry.path);
+			strbuf_reset(&subtree_path);
+			strbuf_grow(&subtree_path, tree_path->len + entry.pathlen + 1);
+			strbuf_addbuf(&subtree_path, tree_path);
+			strbuf_add(&subtree_path, entry.path, entry.pathlen);
+			strbuf_addch(&subtree_path, '/');
+
 			prime_cache_tree_rec(r, sub->cache_tree, subtree, &subtree_path);
 			cnt += sub->cache_tree->entry_count;
-
-			strbuf_release(&subtree_path);
 		}
 	}
 	it->entry_count = cnt;
+
+	strbuf_release(&subtree_path);
 }
 
 void prime_cache_tree(struct repository *r,
