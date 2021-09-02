@@ -251,6 +251,16 @@ void ensure_full_index(struct index_state *istate)
 	if (!istate->repo)
 		istate->repo = the_repository;
 
+	if (!istate->repo->settings.command_requires_full_index) {
+		static int fail_on_expand = -1;
+
+		if (fail_on_expand < 0)
+			fail_on_expand = git_env_bool("GIT_TEST_FAIL_ENSURE_FULL_INDEX", 0);
+
+		if (fail_on_expand)
+			die("sparse index will expand in an integrated command");
+	}
+
 	trace2_region_enter("index", "ensure_full_index", istate->repo);
 
 	/* initialize basics of new index */
