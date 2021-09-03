@@ -1358,35 +1358,16 @@ static struct path_pattern *last_matching_pattern_from_list(const char *pathname
 	return res;
 }
 
-/*
- * Scan the list of patterns to determine if the ordered list
- * of patterns matches on 'pathname'.
- *
- * Return 1 for a match, 0 for not matched and -1 for undecided.
- */
-enum pattern_match_result path_matches_pattern_list(
+enum pattern_match_result path_matches_cone_mode_pattern_list(
 				const char *pathname, int pathlen,
-				const char *basename, int *dtype,
-				struct pattern_list *pl,
-				struct index_state *istate)
+				struct pattern_list *pl)
 {
-	struct path_pattern *pattern;
 	struct strbuf parent_pathname = STRBUF_INIT;
 	int result = NOT_MATCHED;
 	size_t slash_pos;
 
-	if (!pl->use_cone_patterns) {
-		pattern = last_matching_pattern_from_list(pathname, pathlen, basename,
-							dtype, pl, istate);
-		if (pattern) {
-			if (pattern->flags & PATTERN_FLAG_NEGATIVE)
-				return NOT_MATCHED;
-			else
-				return MATCHED;
-		}
-
-		return UNDECIDED;
-	}
+	if (!pl->use_cone_patterns)
+		BUG("path_matches_cone_mode_pattern_list requires cone mode patterns");
 
 	if (pl->full_cone)
 		return MATCHED;
@@ -1437,6 +1418,35 @@ enum pattern_match_result path_matches_pattern_list(
 done:
 	strbuf_release(&parent_pathname);
 	return result;
+}
+
+/*
+ * Scan the list of patterns to determine if the ordered list
+ * of patterns matches on 'pathname'.
+ *
+ * Return 1 for a match, 0 for not matched and -1 for undecided.
+ */
+enum pattern_match_result path_matches_pattern_list(
+				const char *pathname, int pathlen,
+				const char *basename, int *dtype,
+				struct pattern_list *pl,
+				struct index_state *istate)
+{
+	if (!pl->use_cone_patterns) {
+		struct path_pattern *pattern = last_matching_pattern_from_list(
+							pathname, pathlen, basename,
+							dtype, pl, istate);
+		if (pattern) {
+			if (pattern->flags & PATTERN_FLAG_NEGATIVE)
+				return NOT_MATCHED;
+			else
+				return MATCHED;
+		}
+
+		return UNDECIDED;
+	}
+
+	return path_matches_cone_mode_pattern_list(pathname, pathlen, pl);
 }
 
 int init_sparse_checkout_patterns(struct index_state *istate)
