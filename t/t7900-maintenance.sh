@@ -20,17 +20,6 @@ test_xmllint () {
 	fi
 }
 
-test_lazy_prereq SYSTEMD_ANALYZE '
-	systemd-analyze verify /lib/systemd/system/basic.target
-'
-
-test_systemd_analyze_verify () {
-	if test_have_prereq SYSTEMD_ANALYZE
-	then
-		systemd-analyze verify "$@"
-	fi
-}
-
 test_expect_success 'help text' '
 	test_expect_code 129 git maintenance -h 2>err &&
 	test_i18ngrep "usage: git maintenance <subcommand>" err &&
@@ -658,10 +647,50 @@ test_expect_success 'start and stop Linux/systemd maintenance' '
 	# start registers the repo
 	git config --get --global --fixed-value maintenance.repo "$(pwd)" &&
 
-	test_systemd_analyze_verify "systemd/user/git-maintenance@.service" &&
-
 	printf -- "--user enable --now git-maintenance@%s.timer\n" hourly daily weekly >expect &&
 	test_cmp expect args &&
+
+	GIT_PATH="$(dirname "$GIT_EXEC_PATH")" &&
+
+	cat >expect <<-EOF &&
+	# This file was created and is maintained by Git.
+	# Any edits made in this file might be replaced in the future
+	# by a Git command.
+
+	[Unit]
+	Description=Optimize Git repositories data
+
+	[Service]
+	Type=oneshot
+	ExecStart="$GIT_PATH/git" --exec-path="$GIT_PATH" for-each-repo --config=maintenance.repo maintenance run --schedule=%i
+	LockPersonality=yes
+	MemoryDenyWriteExecute=yes
+	NoNewPrivileges=yes
+	RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+	RestrictNamespaces=yes
+	RestrictRealtime=yes
+	RestrictSUIDSGID=yes
+	SystemCallArchitectures=native
+	SystemCallFilter=@system-service
+	EOF
+	test_cmp expect "systemd/user/git-maintenance@.service" &&
+
+	cat >expect <<-\EOF &&
+	# This file was created and is maintained by Git.
+	# Any edits made in this file might be replaced in the future
+	# by a Git command.
+
+	[Unit]
+	Description=Optimize Git repositories data
+
+	[Timer]
+	OnCalendar=%i
+	Persistent=true
+
+	[Install]
+	WantedBy=timers.target
+	EOF
+	test_cmp expect "systemd/user/git-maintenance@.timer" &&
 
 	rm -f args &&
 	GIT_TEST_MAINT_SCHEDULER="systemctl:./print-args" git maintenance stop &&
