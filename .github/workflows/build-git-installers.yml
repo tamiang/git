@@ -540,6 +540,7 @@ jobs:
             var createdRelease = await github.repos.createRelease({
               ...releaseMetadata,
               draft: true,
+              generate_release_notes: true,
               tag_name: tagName,
               name: tagName
             });
