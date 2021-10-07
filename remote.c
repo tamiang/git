@@ -623,7 +623,7 @@ static void validate_remote_url(struct remote *remote)
 	struct strbuf redacted = STRBUF_INIT;
 	int warn_not_die;
 
-	if (git_config_get_string_tmp("fetch.credentialsinurl", &value))
+	if (git_config_get_string_tmp("transfer.credentialsinurl", &value))
 		return;
 
 	if (!strcmp("warn", value))
@@ -633,7 +633,7 @@ static void validate_remote_url(struct remote *remote)
 	else if (!strcmp("allow", value))
 		return;
 	else
-		die(_("unrecognized value fetch.credentialsInURL: '%s'"), value);
+		die(_("unrecognized value transfer.credentialsInUrl: '%s'"), value);
 
 	for (i = 0; i < remote->url_nr; i++) {
 		struct url_info url_info = { 0 };
@@ -2274,7 +2274,16 @@ int format_tracking_info(struct branch *branch, struct strbuf *sb,
 	char *base;
 	int upstream_is_gone = 0;
 
+	trace2_region_enter("tracking", "stat_tracking_info", NULL);
 	sti = stat_tracking_info(branch, &ours, &theirs, &full_base, 0, abf);
+	trace2_data_intmax("tracking", NULL, "stat_tracking_info/ab_flags", abf);
+	trace2_data_intmax("tracking", NULL, "stat_tracking_info/ab_result", sti);
+	if (sti >= 0 && abf == AHEAD_BEHIND_FULL) {
+	    trace2_data_intmax("tracking", NULL, "stat_tracking_info/ab_ahead", ours);
+	    trace2_data_intmax("tracking", NULL, "stat_tracking_info/ab_behind", theirs);
+	}
+	trace2_region_leave("tracking", "stat_tracking_info", NULL);
+
 	if (sti < 0) {
 		if (!full_base)
 			return 0;
@@ -2846,7 +2855,7 @@ char *relative_url(const char *remote_url, const char *url,
 	 * When the url starts with '../', remove that and the
 	 * last directory in remoteurl.
 	 */
-	while (url) {
+	while (*url) {
 		if (starts_with_dot_dot_slash_native(url)) {
 			url += 3;
 			colonsep |= chop_last_dir(&remoteurl, is_relative);

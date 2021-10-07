@@ -937,7 +937,8 @@ test_expect_success 'fetch with branches' '
 	mk_empty testrepo &&
 	git branch second $the_first_commit &&
 	git checkout second &&
-	echo ".." > testrepo/.git/branches/branch1 &&
+	mkdir -p testrepo/.git/branches &&
+	echo ".." >testrepo/.git/branches/branch1 &&
 	(
 		cd testrepo &&
 		git fetch branch1 &&
@@ -950,7 +951,8 @@ test_expect_success 'fetch with branches' '
 
 test_expect_success 'fetch with branches containing #' '
 	mk_empty testrepo &&
-	echo "..#second" > testrepo/.git/branches/branch2 &&
+	mkdir -p testrepo/.git/branches &&
+	echo "..#second" >testrepo/.git/branches/branch2 &&
 	(
 		cd testrepo &&
 		git fetch branch2 &&
@@ -964,7 +966,8 @@ test_expect_success 'fetch with branches containing #' '
 test_expect_success 'push with branches' '
 	mk_empty testrepo &&
 	git checkout second &&
-	echo "testrepo" > .git/branches/branch1 &&
+	mkdir -p .git/branches &&
+	echo "testrepo" >.git/branches/branch1 &&
 	git push branch1 &&
 	(
 		cd testrepo &&
@@ -976,7 +979,8 @@ test_expect_success 'push with branches' '
 
 test_expect_success 'push with branches containing #' '
 	mk_empty testrepo &&
-	echo "testrepo#branch3" > .git/branches/branch2 &&
+	mkdir -p .git/branches &&
+	echo "testrepo#branch3" >.git/branches/branch2 &&
 	git push branch2 &&
 	(
 		cd testrepo &&
@@ -1504,7 +1508,7 @@ EOF
 	git init no-thin &&
 	git --git-dir=no-thin/.git config receive.unpacklimit 0 &&
 	git push no-thin/.git refs/heads/main:refs/heads/foo &&
-	echo modified >> path1 &&
+	echo modified >>path1 &&
 	git commit -am modified &&
 	git repack -adf &&
 	rcvpck="git receive-pack --reject-thin-pack-for-testing" &&
@@ -1834,33 +1838,33 @@ test_expect_success 'refuse to push a hidden ref, and make sure do not pollute t
 	test_dir_is_empty testrepo/.git/objects/pack
 '
 
-test_expect_success 'fetch warns or fails when using username:password' '
+test_expect_success LIBCURL 'fetch warns or fails when using username:password' '
 	message="URL '\''https://username:<redacted>@localhost/'\'' uses plaintext credentials" &&
-	test_must_fail git -c fetch.credentialsInUrl=allow fetch https://username:password@localhost 2>err &&
+	test_must_fail git -c transfer.credentialsInUrl=allow fetch https://username:password@localhost 2>err &&
 	! grep "$message" err &&
 
-	test_must_fail git -c fetch.credentialsInUrl=warn fetch https://username:password@localhost 2>err &&
+	test_must_fail git -c transfer.credentialsInUrl=warn fetch https://username:password@localhost 2>err &&
 	grep "warning: $message" err >warnings &&
 	test_line_count = 3 warnings &&
 
-	test_must_fail git -c fetch.credentialsInUrl=die fetch https://username:password@localhost 2>err &&
+	test_must_fail git -c transfer.credentialsInUrl=die fetch https://username:password@localhost 2>err &&
 	grep "fatal: $message" err >warnings &&
 	test_line_count = 1 warnings &&
 
-	test_must_fail git -c fetch.credentialsInUrl=die fetch https://username:@localhost 2>err &&
+	test_must_fail git -c transfer.credentialsInUrl=die fetch https://username:@localhost 2>err &&
 	grep "fatal: $message" err >warnings &&
 	test_line_count = 1 warnings
 '
 
 
-test_expect_success 'push warns or fails when using username:password' '
+test_expect_success LIBCURL 'push warns or fails when using username:password' '
 	message="URL '\''https://username:<redacted>@localhost/'\'' uses plaintext credentials" &&
-	test_must_fail git -c fetch.credentialsInUrl=allow push https://username:password@localhost 2>err &&
+	test_must_fail git -c transfer.credentialsInUrl=allow push https://username:password@localhost 2>err &&
 	! grep "$message" err &&
 
-	test_must_fail git -c fetch.credentialsInUrl=warn push https://username:password@localhost 2>err &&
+	test_must_fail git -c transfer.credentialsInUrl=warn push https://username:password@localhost 2>err &&
 	grep "warning: $message" err >warnings &&
-	test_must_fail git -c fetch.credentialsInUrl=die push https://username:password@localhost 2>err &&
+	test_must_fail git -c transfer.credentialsInUrl=die push https://username:password@localhost 2>err &&
 	grep "fatal: $message" err >warnings &&
 	test_line_count = 1 warnings
 '
