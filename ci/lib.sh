@@ -29,8 +29,14 @@ else
 		set +x
 		begin_group "$1"
 		shift
-		"$@"
-		res=$?
+		# work around `dash` not supporting `set -o pipefail`
+		(
+			"$@" 2>&1
+			echo $? >exit.status
+		) |
+		sed 's/^\(\([^ ]*\):\([0-9]*\):\([0-9]*:\) \)\(error\|warning\): /::\5 file=\2,line=\3::\1/'
+		res=$(cat exit.status)
+		rm exit.status
 		end_group
 		return $res
 	}
@@ -155,6 +161,12 @@ then
 	MAKEFLAGS="$MAKEFLAGS --jobs=10"
 	test windows_nt != "$CI_OS_NAME" ||
 	GIT_TEST_OPTS="--no-chain-lint --no-bin-wrappers $GIT_TEST_OPTS"
+	case "$CI_OS_NAME" in
+	linux) runs_on_pool=ubuntu-latest;;
+	macos|osx) runs_on_pool=macos-latest;;
+	windows_nt) runs_on_pool=windows-latest;;
+	*) echo "Unhandled OS: $CI_OS_NAME" >&2; exit 1;;
+	esac
 elif test true = "$GITHUB_ACTIONS"
 then
 	CI_TYPE=github-actions
@@ -177,7 +189,8 @@ then
 			test_name="${test_exit%.exit}"
 			test_name="${test_name##*/}"
 			printf "\\e[33m\\e[1m=== Failed test: ${test_name} ===\\e[m\\n"
-			echo "The full logs are in the artifacts attached to this run."
+			echo "The full logs are in the 'print test failures' step below."
+			echo "See also the 'failed-tests-*' artifacts attached to this run."
 			cat "t/test-results/$test_name.markup"
 
 			trash_dir="t/trash directory.$test_name"

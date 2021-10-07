@@ -715,6 +715,7 @@ TEST_BUILTINS_OBJS += test-advise.o
 TEST_BUILTINS_OBJS += test-bitmap.o
 TEST_BUILTINS_OBJS += test-bloom.o
 TEST_BUILTINS_OBJS += test-chmtime.o
+TEST_BUILTINS_OBJS += test-cmp.o
 TEST_BUILTINS_OBJS += test-config.o
 TEST_BUILTINS_OBJS += test-crontab.o
 TEST_BUILTINS_OBJS += test-csprng.o
@@ -737,6 +738,7 @@ TEST_BUILTINS_OBJS += test-hash-speed.o
 TEST_BUILTINS_OBJS += test-hash.o
 TEST_BUILTINS_OBJS += test-hashmap.o
 TEST_BUILTINS_OBJS += test-hexdump.o
+TEST_BUILTINS_OBJS += test-iconv.o
 TEST_BUILTINS_OBJS += test-index-version.o
 TEST_BUILTINS_OBJS += test-json-writer.o
 TEST_BUILTINS_OBJS += test-lazy-init-name-hash.o
@@ -956,6 +958,8 @@ LIB_OBJS += gettext.o
 LIB_OBJS += gpg-interface.o
 LIB_OBJS += graph.o
 LIB_OBJS += grep.o
+LIB_OBJS += gvfs.o
+LIB_OBJS += gvfs-helper-client.o
 LIB_OBJS += hash-lookup.o
 LIB_OBJS += hashmap.o
 LIB_OBJS += help.o
@@ -1104,6 +1108,7 @@ LIB_OBJS += utf8.o
 LIB_OBJS += varint.o
 LIB_OBJS += version.o
 LIB_OBJS += versioncmp.o
+LIB_OBJS += virtualfilesystem.o
 LIB_OBJS += walker.o
 LIB_OBJS += wildmatch.o
 LIB_OBJS += worktree.o
@@ -1111,6 +1116,8 @@ LIB_OBJS += wrapper.o
 LIB_OBJS += write-or-die.o
 LIB_OBJS += ws.o
 LIB_OBJS += wt-status.o
+LIB_OBJS += wt-status-deserialize.o
+LIB_OBJS += wt-status-serialize.o
 LIB_OBJS += xdiff-interface.o
 LIB_OBJS += zlib.o
 
@@ -1226,6 +1233,7 @@ BUILTIN_OBJS += builtin/tag.o
 BUILTIN_OBJS += builtin/unpack-file.o
 BUILTIN_OBJS += builtin/unpack-objects.o
 BUILTIN_OBJS += builtin/update-index.o
+BUILTIN_OBJS += builtin/update-microsoft-git.o
 BUILTIN_OBJS += builtin/update-ref.o
 BUILTIN_OBJS += builtin/update-server-info.o
 BUILTIN_OBJS += builtin/upload-archive.o
@@ -1484,6 +1492,9 @@ else
 		CURL_CFLAGS = $(eval CURL_CFLAGS := $$(shell $$(CURL_CONFIG) --cflags))$(CURL_CFLAGS)
 	endif
 	BASIC_CFLAGS += $(CURL_CFLAGS)
+
+	PROGRAM_OBJS += gvfs-helper.o
+	TEST_PROGRAMS_NEED_X += test-gvfs-protocol
 
 	REMOTE_CURL_PRIMARY = git-remote-http$X
 	REMOTE_CURL_ALIASES = git-remote-https$X git-remote-ftp$X git-remote-ftps$X
@@ -2634,7 +2645,7 @@ gettext.sp gettext.s gettext.o: GIT-PREFIX
 gettext.sp gettext.s gettext.o: EXTRA_CPPFLAGS = \
 	-DGIT_LOCALE_PATH='"$(localedir_relative_SQ)"'
 
-http-push.sp http.sp http-walker.sp remote-curl.sp imap-send.sp: SP_EXTRA_FLAGS += \
+http-push.sp http.sp http-walker.sp remote-curl.sp imap-send.sp gvfs-helper.sp: SP_EXTRA_FLAGS += \
 	-DCURL_DISABLE_TYPECHECK
 
 pack-revindex.sp: SP_EXTRA_FLAGS += -Wno-memcpy-max-count
@@ -2653,6 +2664,13 @@ compat/nedmalloc/nedmalloc.sp compat/nedmalloc/nedmalloc.o: EXTRA_CPPFLAGS = \
 	-DNDEBUG -DREPLACE_SYSTEM_ALLOCATOR
 compat/nedmalloc/nedmalloc.sp: SP_EXTRA_FLAGS += -Wno-non-pointer-null
 endif
+
+headless-git.o: compat/win32/headless.c GIT-CFLAGS
+	$(QUIET_CC)$(CC) $(ALL_CFLAGS) $(COMPAT_CFLAGS) \
+		-fno-stack-protector -o $@ -c -Wall -Wwrite-strings $<
+
+headless-git$X: headless-git.o git.res GIT-LDFLAGS
+	$(QUIET_LINK)$(CC) $(ALL_CFLAGS) $(ALL_LDFLAGS) -mwindows -o $@ $< git.res
 
 git-%$X: %.o GIT-LDFLAGS $(GITLIBS)
 	$(QUIET_LINK)$(CC) $(ALL_CFLAGS) -o $@ $(ALL_LDFLAGS) $(filter %.o,$^) $(LIBS)
@@ -2681,6 +2699,10 @@ $(REMOTE_CURL_PRIMARY): remote-curl.o http.o http-walker.o GIT-LDFLAGS $(GITLIBS
 contrib/scalar/scalar$X: $(SCALAR_OBJECTS) GIT-LDFLAGS $(GITLIBS)
 	$(QUIET_LINK)$(CC) $(ALL_CFLAGS) -o $@ $(ALL_LDFLAGS) \
 		$(filter %.o,$^) $(LIBS)
+
+git-gvfs-helper$X: gvfs-helper.o http.o GIT-LDFLAGS $(GITLIBS)
+	$(QUIET_LINK)$(CC) $(ALL_CFLAGS) -o $@ $(ALL_LDFLAGS) $(filter %.o,$^) \
+		$(CURL_LIBCURL) $(EXPAT_LIBEXPAT) $(LIBS)
 
 $(LIB_FILE): $(LIB_OBJS)
 	$(QUIET_AR)$(RM) $@ && $(AR) $(ARFLAGS) $@ $^
@@ -3410,6 +3432,7 @@ clean: profile-clean coverage-clean cocciclean
 	$(RM) po/git.pot po/git-core.pot
 	$(RM) *.res
 	$(RM) $(OBJECTS)
+	$(RM) headless-git.o
 	$(RM) $(LIB_FILE) $(XDIFF_LIB) $(REFTABLE_LIB) $(REFTABLE_TEST_LIB)
 	$(RM) $(ALL_PROGRAMS) $(SCRIPT_LIB) $(BUILT_INS) git$X
 	$(RM) $(TEST_PROGRAMS)
@@ -3439,13 +3462,17 @@ endif
 	$(RM) GIT-SCRIPT-DEFINES GIT-PERL-DEFINES GIT-PERL-HEADER GIT-PYTHON-VARS
 ifdef MSVC
 	$(RM) $(patsubst %.o,%.o.pdb,$(OBJECTS))
+	$(RM) headless-git.o.pdb
 	$(RM) $(patsubst %.exe,%.pdb,$(OTHER_PROGRAMS))
+	$(RM) $(patsubst %.exe,%.ilk,$(OTHER_PROGRAMS))
 	$(RM) $(patsubst %.exe,%.iobj,$(OTHER_PROGRAMS))
 	$(RM) $(patsubst %.exe,%.ipdb,$(OTHER_PROGRAMS))
 	$(RM) $(patsubst %.exe,%.pdb,$(PROGRAMS))
+	$(RM) $(patsubst %.exe,%.ilk,$(PROGRAMS))
 	$(RM) $(patsubst %.exe,%.iobj,$(PROGRAMS))
 	$(RM) $(patsubst %.exe,%.ipdb,$(PROGRAMS))
 	$(RM) $(patsubst %.exe,%.pdb,$(TEST_PROGRAMS))
+	$(RM) $(patsubst %.exe,%.ilk,$(TEST_PROGRAMS))
 	$(RM) $(patsubst %.exe,%.iobj,$(TEST_PROGRAMS))
 	$(RM) $(patsubst %.exe,%.ipdb,$(TEST_PROGRAMS))
 	$(RM) compat/vcbuild/MSVC-DEFS-GEN

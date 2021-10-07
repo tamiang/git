@@ -2208,6 +2208,7 @@ static int fetch_in_submodule(const char *module_path, int depth, int quiet, str
 		char *hex = oid_to_hex(oid);
 		char *remote = get_default_remote();
 		strvec_pushl(&cp.args, remote, hex, NULL);
+		free(remote);
 	}
 
 	return run_command(&cp);
@@ -3398,6 +3399,7 @@ static struct cmd_struct commands[] = {
 int cmd_submodule__helper(int argc, const char **argv, const char *prefix)
 {
 	int i;
+	git_config(git_default_config, NULL);
 	if (argc < 2 || !strcmp(argv[1], "-h"))
 		usage("git submodule--helper <command>");
 
