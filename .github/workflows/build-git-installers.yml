@@ -207,14 +207,15 @@ jobs:
           set -x
 
           b=/usr/src/build-extra &&
-          str="recently_seen=.*\$" &&
 
           echo $b/git-extra/git-update-git-for-windows &&
           cat $b/git-extra/git-update-git-for-windows &&
 
-          sed -i -e '/^# when confirmation to do so is given./a\
-            use_recently_seen=no' \
-            $b/git-extra/git-update-git-for-windows
+          sed -i -e '6 a use_recently_seen=no' \
+            $b/git-extra/git-update-git-for-windows &&
+
+          echo $b/git-extra/git-update-git-for-windows &&
+          cat $b/git-extra/git-update-git-for-windows
       - name: Set the installer Publisher to the Git Fundamentals team
         shell: bash
         run: |
