@@ -127,6 +127,7 @@
 /git-rebase
 /git-receive-pack
 /git-reflog
+/git-ref-snapshot
 /git-remote
 /git-remote-http
 /git-remote-https
