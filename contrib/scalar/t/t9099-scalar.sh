@@ -5,6 +5,9 @@ test_description='test the `scalar` command'
 TEST_DIRECTORY=$(pwd)/../../../t
 export TEST_DIRECTORY
 
+GIT_TEST_MAINT_SCHEDULER="launchctl:true,schtasks:true,crontab:true"
+export GIT_TEST_MAINT_SCHEDULER
+
 # Make it work with --no-bin-wrappers
 PATH=$(pwd)/..:$PATH
 
