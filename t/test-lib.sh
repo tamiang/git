@@ -1582,11 +1582,19 @@ embedded" 2>/dev/null
 '
 
 test_lazy_prereq UTF8_NFD_TO_NFC '
-	# check whether FS converts nfd unicode to nfc
-	auml=$(printf "\303\244")
-	aumlcdiar=$(printf "\141\314\210")
-	>"$auml" &&
-	test -f "$aumlcdiar"
+	mkdir nfc &&
+	(
+		cd nfc &&
+		test-tool create-and-read --nfc >../nfc.txt
+	) &&
+
+	mkdir nfd &&
+	(
+		cd nfd &&
+		test-tool create-and-read --nfd >../nfd.txt
+	) &&
+
+	test_cmp nfc.txt nfd.txt
 '
 
 test_lazy_prereq AUTOIDENT '

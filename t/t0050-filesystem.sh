@@ -124,14 +124,25 @@ test_expect_success "setup unicode normalization tests" '
 	git checkout -f main
 '
 
-$test_unicode 'rename (silent unicode normalization)' '
-	git mv "$aumlcdiar" "$auml" &&
-	git commit -m rename
+test_expect_success 'unicode stuff' '
+	mkdir nfc &&
+	(
+		cd nfc &&
+		test-tool create-and-read --nfc >../nfc.txt
+	) &&
+
+	mkdir nfd &&
+	(
+		cd nfd &&
+		test-tool create-and-read --nfd >../nfd.txt
+	) &&
+
+	test_cmp nfc.txt nfd.txt
 '
 
-$test_unicode 'merge (silent unicode normalization)' '
-	git reset --hard initial &&
-	git merge topic
+test_expect_success 'rename (silent unicode normalization)' '
+	git mv "$aumlcdiar" "$auml" &&
+	git commit -m rename
 '
 
 test_expect_success CASE_INSENSITIVE_FS 'checkout with no pathspec and a case insensitive fs' '

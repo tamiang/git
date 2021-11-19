@@ -19,6 +19,7 @@ static struct test_cmd cmds[] = {
 	{ "bloom", cmd__bloom },
 	{ "chmtime", cmd__chmtime },
 	{ "config", cmd__config },
+	{ "create-and-read", cmd__create_and_read },
 	{ "crontab", cmd__crontab },
 	{ "ctype", cmd__ctype },
 	{ "date", cmd__date },
