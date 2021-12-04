@@ -51,12 +51,11 @@ const char *git_sequence_editor(void)
 static int launch_specified_editor(const char *editor, const char *path,
 				   struct strbuf *buffer, const char *const *env)
 {
-	int term_fail;
-
 	if (!editor)
 		return error("Terminal is dumb, but EDITOR unset");
 
 	if (strcmp(editor, ":")) {
+		int save_and_restore_term = !strcmp(editor, "vi") || !strcmp(editor, "vim");
 		struct strbuf realpath = STRBUF_INIT;
 		const char *args[] = { editor, NULL, NULL };
 		struct child_process p = CHILD_PROCESS_INIT;
@@ -86,9 +85,10 @@ static int launch_specified_editor(const char *editor, const char *path,
 		p.env = env;
 		p.use_shell = 1;
 		p.trace2_child_class = "editor";
-		term_fail = save_term(1);
+		if (save_and_restore_term)
+			save_and_restore_term = !save_term(1);
 		if (start_command(&p) < 0) {
-			if (!term_fail)
+			if (save_and_restore_term)
 				restore_term();
 			strbuf_release(&realpath);
 			return error("unable to start editor '%s'", editor);
@@ -97,7 +97,7 @@ static int launch_specified_editor(const char *editor, const char *path,
 		sigchain_push(SIGINT, SIG_IGN);
 		sigchain_push(SIGQUIT, SIG_IGN);
 		ret = finish_command(&p);
-		if (!term_fail)
+		if (save_and_restore_term)
 			restore_term();
 		strbuf_release(&realpath);
 		sig = ret - 128;
