@@ -34,7 +34,18 @@ void tr2tls_start_process_clock(void)
 struct tr2tls_thread_ctx *tr2tls_create_self(const char *thread_name,
 					     uint64_t us_thread_start)
 {
-	struct tr2tls_thread_ctx *ctx = xcalloc(1, sizeof(*ctx));
+	struct tr2tls_thread_ctx *ctx;
+	struct strbuf buf_name = STRBUF_INIT;
+	int thread_id = tr2tls_locked_increment(&tr2_next_thread_id);
+
+	if (thread_id)
+		strbuf_addf(&buf_name, "th%02d:", thread_id);
+	strbuf_addstr(&buf_name, thread_name);
+
+	FLEX_ALLOC_MEM(ctx, thread_name, buf_name.buf, buf_name.len);
+	strbuf_release(&buf_name);
+
+	ctx->thread_id = thread_id;
 
 	/*
 	 * Implicitly "tr2tls_push_self()" to capture the thread's start
@@ -44,15 +55,6 @@ struct tr2tls_thread_ctx *tr2tls_create_self(const char *thread_name,
 	ctx->alloc = TR2_REGION_NESTING_INITIAL_SIZE;
 	ctx->array_us_start = (uint64_t *)xcalloc(ctx->alloc, sizeof(uint64_t));
 	ctx->array_us_start[ctx->nr_open_regions++] = us_thread_start;
-
-	ctx->thread_id = tr2tls_locked_increment(&tr2_next_thread_id);
-
-	strbuf_init(&ctx->thread_name, 0);
-	if (ctx->thread_id)
-		strbuf_addf(&ctx->thread_name, "th%02d:", ctx->thread_id);
-	strbuf_addstr(&ctx->thread_name, thread_name);
-	if (ctx->thread_name.len > TR2_MAX_THREAD_NAME)
-		strbuf_setlen(&ctx->thread_name, TR2_MAX_THREAD_NAME);
 
 	pthread_setspecific(tr2tls_key, ctx);
 
@@ -95,7 +97,6 @@ void tr2tls_unset_self(void)
 
 	pthread_setspecific(tr2tls_key, NULL);
 
-	strbuf_release(&ctx->thread_name);
 	free(ctx->array_us_start);
 	free(ctx);
 }
@@ -113,7 +114,7 @@ void tr2tls_pop_self(void)
 	struct tr2tls_thread_ctx *ctx = tr2tls_get_self();
 
 	if (!ctx->nr_open_regions)
-		BUG("no open regions in thread '%s'", ctx->thread_name.buf);
+		BUG("no open regions in thread '%s'", ctx->thread_name);
 
 	ctx->nr_open_regions--;
 }

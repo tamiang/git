@@ -25,6 +25,7 @@ static int tr2env_perf_be_brief;
 
 #define TR2FMT_PERF_FL_WIDTH (28)
 #define TR2FMT_PERF_MAX_EVENT_NAME (12)
+#define TR2FMT_PERF_MAX_THREAD_NAME (24)
 #define TR2FMT_PERF_REPO_WIDTH (3)
 #define TR2FMT_PERF_CATEGORY_WIDTH (12)
 
@@ -107,9 +108,9 @@ static void perf_fmt_prepare(const char *event_name,
 	}
 
 	strbuf_addf(buf, "d%d | ", tr2_sid_depth());
-	strbuf_addf(buf, "%-*s | %-*s | ", TR2_MAX_THREAD_NAME,
-		    ctx->thread_name.buf, TR2FMT_PERF_MAX_EVENT_NAME,
-		    event_name);
+	strbuf_addf(buf, "%-*.*s | %-*s | ", TR2FMT_PERF_MAX_THREAD_NAME,
+		    TR2FMT_PERF_MAX_THREAD_NAME, ctx->thread_name,
+		    TR2FMT_PERF_MAX_EVENT_NAME, event_name);
 
 	len = buf->len + TR2FMT_PERF_REPO_WIDTH;
 	if (repo)

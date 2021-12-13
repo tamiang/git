@@ -3,17 +3,12 @@
 
 #include "strbuf.h"
 
-/*
- * Arbitry limit for thread names for column alignment.
- */
-#define TR2_MAX_THREAD_NAME (24)
-
 struct tr2tls_thread_ctx {
-	struct strbuf thread_name;
 	uint64_t *array_us_start;
 	size_t alloc;
 	size_t nr_open_regions; /* plays role of "nr" in ALLOC_GROW */
 	int thread_id;
+	char thread_name[FLEX_ARRAY];
 };
 
 /*
@@ -24,9 +19,6 @@ struct tr2tls_thread_ctx {
  * We assume the first thread is "main".  Other threads are given
  * non-zero thread-ids to help distinguish messages from concurrent
  * threads.
- *
- * Truncate the thread name if necessary to help with column alignment
- * in printf-style messages.
  *
  * In this and all following functions the term "self" refers to the
  * current thread.
