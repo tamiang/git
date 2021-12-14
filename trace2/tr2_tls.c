@@ -15,6 +15,18 @@ static uint64_t tr2tls_us_start_process;
 static pthread_mutex_t tr2tls_mutex;
 static pthread_key_t tr2tls_key;
 
+/*
+ * This list owns all of the thread-specific CTX data.
+ *
+ * While a thread is alive it is associated with a CTX (owned by this
+ * list) and that CTX is installed in the thread's TLS data area.
+ * When a thread exits, it is disassociated from its CTX, but the (now
+ * dormant) CTX is held in this list until program exit.
+ *
+ * Similarly, `tr2tls_thread_main` points to a CTX contained within
+ * this list.
+ */
+static struct tr2tls_thread_ctx *tr2tls_ctx_list; /* modify under lock */
 static int tr2_next_thread_id; /* modify under lock */
 
 void tr2tls_start_process_clock(void)
@@ -56,6 +68,14 @@ struct tr2tls_thread_ctx *tr2tls_create_self(const char *thread_name,
 	ctx->array_us_start = (uint64_t *)xcalloc(ctx->alloc, sizeof(uint64_t));
 	ctx->array_us_start[ctx->nr_open_regions++] = us_thread_start;
 
+	/*
+	 * Link this CTX into the CTX list and make it the head.
+	 */
+	pthread_mutex_lock(&tr2tls_mutex);
+	ctx->next_ctx = tr2tls_ctx_list;
+	tr2tls_ctx_list = ctx;
+	pthread_mutex_unlock(&tr2tls_mutex);
+
 	pthread_setspecific(tr2tls_key, ctx);
 
 	return ctx;
@@ -91,14 +111,7 @@ int tr2tls_is_main_thread(void)
 
 void tr2tls_unset_self(void)
 {
-	struct tr2tls_thread_ctx *ctx;
-
-	ctx = tr2tls_get_self();
-
 	pthread_setspecific(tr2tls_key, NULL);
-
-	free(ctx->array_us_start);
-	free(ctx);
 }
 
 void tr2tls_push_self(uint64_t us_now)
@@ -162,11 +175,22 @@ void tr2tls_init(void)
 
 void tr2tls_release(void)
 {
+	struct tr2tls_thread_ctx *ctx = tr2tls_ctx_list;
+
 	tr2tls_unset_self();
 	tr2tls_thread_main = NULL;
 
 	pthread_mutex_destroy(&tr2tls_mutex);
 	pthread_key_delete(tr2tls_key);
+
+	while (ctx) {
+		struct tr2tls_thread_ctx *next = ctx->next_ctx;
+
+		free(ctx->array_us_start);
+		free(ctx);
+
+		ctx = next;
+	}
 }
 
 int tr2tls_locked_increment(int *p)

@@ -4,6 +4,7 @@
 #include "strbuf.h"
 
 struct tr2tls_thread_ctx {
+	struct tr2tls_thread_ctx *next_ctx;
 	uint64_t *array_us_start;
 	size_t alloc;
 	size_t nr_open_regions; /* plays role of "nr" in ALLOC_GROW */
@@ -37,7 +38,7 @@ struct tr2tls_thread_ctx *tr2tls_get_self(void);
 int tr2tls_is_main_thread(void);
 
 /*
- * Free our TLS data.
+ * Disassociate thread's TLS CTX data from the thread.
  */
 void tr2tls_unset_self(void);
 
