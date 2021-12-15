@@ -816,6 +816,29 @@ The "value" field may be an integer or a string.
 }
 ------------
 
+`"timer"`::
+	This event is generated at the end of the program and contains
+	statistics for a global stopwatch timer.
++
+------------
+{
+	"event":"timer",
+	...
+	"name":"test",      # timer name
+	"count":42,         # number of start+stop intervals
+	"ns_total":1234,    # sum of all intervals in nanoseconds
+	"ns_min":11,        # shortest interval in nanoseconds
+	"ns_max":789,       # longest interval in nanoseconds
+}
+------------
++
+Stopwatch timer data is independently collected by each thread and then
+aggregated for the whole program, so the total time reported here
+may exceed the "atexit" elapsed time of the program.
++
+Timer events may represent an individual thread or a summation across
+the entire program.  Summation events will have a unique thread name.
+
 == Example Trace2 API Usage
 
 Here is a hypothetical usage of the Trace2 API showing the intended

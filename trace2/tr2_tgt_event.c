@@ -620,6 +620,34 @@ static void fn_data_json_fl(const char *file, int line,
 	}
 }
 
+static void fn_timer(uint64_t us_elapsed_absolute,
+		     const char *thread_name,
+		     const char *category,
+		     const char *timer_name,
+		     uint64_t interval_count,
+		     uint64_t ns_total_time,
+		     uint64_t ns_min_time,
+		     uint64_t ns_max_time)
+{
+	const char *event_name = "timer";
+	struct json_writer jw = JSON_WRITER_INIT;
+	double t_abs = (double)us_elapsed_absolute / 1000000.0;
+
+	jw_object_begin(&jw, 0);
+	event_fmt_prepare(event_name, __FILE__, __LINE__, NULL, &jw, thread_name);
+	jw_object_double(&jw, "t_abs", 6, t_abs);
+	jw_object_string(&jw, "name", timer_name);
+	jw_object_intmax(&jw, "count", interval_count);
+	jw_object_intmax(&jw, "ns_total", ns_total_time);
+	jw_object_intmax(&jw, "ns_min", ns_min_time);
+	jw_object_intmax(&jw, "ns_max", ns_max_time);
+
+	jw_end(&jw);
+
+	tr2_dst_write_line(&tr2dst_event, &jw.json);
+	jw_release(&jw);
+}
+
 struct tr2_tgt tr2_tgt_event = {
 	.pdst = &tr2dst_event,
 
@@ -651,4 +679,5 @@ struct tr2_tgt tr2_tgt_event = {
 	.pfn_data_fl = fn_data_fl,
 	.pfn_data_json_fl = fn_data_json_fl,
 	.pfn_printf_va_fl = NULL,
+	.pfn_timer = fn_timer,
 };

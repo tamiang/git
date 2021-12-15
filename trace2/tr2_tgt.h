@@ -97,6 +97,30 @@ typedef void(tr2_tgt_evt_printf_va_fl_t)(const char *file, int line,
 					 const char *fmt, va_list ap);
 
 /*
+ * Stopwatch timer event.  This function writes the previously accumulated
+ * stopwatch timer values to the event streams.  Unlike other Trace2 API
+ * events, this is decoupled from the data collection.
+ *
+ * This does not take a (file,line) pair because a timer event reports
+ * the cumulative time spend in the timer over a series of intervals
+ * -- it does not represent a single usage (like region or data events
+ * do).
+ *
+ * The thread name is optional.  If non-null it will override the
+ * value inherited from the caller's thread local storage.  This
+ * allows timer data to be aggregated and reported without associating
+ * it to a specific thread.
+ */
+typedef void(tr2_tgt_evt_timer_t)(uint64_t us_elapsed_absolute,
+				  const char *thread_name,
+				  const char *category,
+				  const char *timer_name,
+				  uint64_t interval_count,
+				  uint64_t ns_total_time,
+				  uint64_t ns_min_time,
+				  uint64_t ns_max_time);
+
+/*
  * "vtable" for a TRACE2 target.  Use NULL if a target does not want
  * to emit that message.
  */
@@ -132,6 +156,7 @@ struct tr2_tgt {
 	tr2_tgt_evt_data_fl_t                   *pfn_data_fl;
 	tr2_tgt_evt_data_json_fl_t              *pfn_data_json_fl;
 	tr2_tgt_evt_printf_va_fl_t              *pfn_printf_va_fl;
+	tr2_tgt_evt_timer_t                     *pfn_timer;
 };
 /* clang-format on */
 
