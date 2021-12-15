@@ -1270,6 +1270,55 @@ d0 | main                     | data         | r0  |  0.002126 |  0.002126 | fsy
 d0 | main                     | exit         |     |  0.000470 |           |              | code:0
 d0 | main                     | atexit       |     |  0.000477 |           |              | code:0
 ----------------
+
+Timer Events::
+
+	Trace2 also provides global stopwatch timers as an alternative
+	to regions.  These make it possible to measure the time spent
+	in a span of code or a library routine called from many places
+	and not	associated with a single phase of the overall command.
++
+At the end of the program, a single summary timer event is emitted; this
+aggregates timer usage across all threads.  These events have "summary"
+as their thread name.
++
+For some timers, individual (per-thread) timer events are also generated.
+These may be helpful in understanding how work is balanced between threads
+in some circumstances.
++
+Timers are defined in `enum trace2_timer_id` in trace2.h and in
+`trace2/tr2_tmr.c:tr2_timer_def_block[]`.
++
+----------------
+static void *unpack_compressed_entry(struct packed_git *p,
+				    struct pack_window **w_curs,
+				    off_t curpos,
+				    unsigned long size)
+{
+	...
+	trace2_timer_start(TRACE2_TIMER_ID__TEST1);
+	git_inflate_init(&stream);
+	...
+	git_inflate_end(&stream);
+	trace2_timer_stop(TRACE2_TIMER_ID__TEST1);
+	...
+}
+----------------
++
+----------------
+$ export GIT_TRACE2_PERF_BRIEF=1
+$ export GIT_TRACE2_PERF=~/log.perf
+$ git status
+...
+$ cat ~/log.perf
+...
+d0 | summary                  | timer        |     |  0.111026 |           | test         | name:test1 count:4 ns_total:393000 ns_min:6000 ns_max:302000
+d0 | main                     | atexit       |     |  0.111026 |           |              | code:0
+----------------
++
+In this example, the "test1" timer was started 4 times and ran for
+0.000393 seconds.
+
 == Future Work
 
 === Relationship to the Existing Trace Api (api-trace.txt)

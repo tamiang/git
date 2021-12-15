@@ -2,6 +2,7 @@
 #define TR2_TLS_H
 
 #include "strbuf.h"
+#include "trace2/tr2_tmr.h"
 
 struct tr2tls_thread_ctx {
 	struct tr2tls_thread_ctx *next_ctx;
@@ -9,8 +10,25 @@ struct tr2tls_thread_ctx {
 	size_t alloc;
 	size_t nr_open_regions; /* plays role of "nr" in ALLOC_GROW */
 	int thread_id;
+
+	struct tr2_timer_block timers;
+
 	char thread_name[FLEX_ARRAY];
 };
+
+/*
+ * Iterate over the global list of threads and aggregate the timer
+ * data into the given timer block.  The resulting block will contain
+ * the global summary of timer usage.
+ */
+void tr2_summarize_timers(struct tr2_timer_block *merged);
+
+/*
+ * Iterate over the global list of threads and emit "per-thread"
+ * timer data.
+ */
+void tr2_emit_timers_by_thread(tr2_tgt_evt_timer_t *pfn,
+			       uint64_t us_elapsed_absolute);
 
 /*
  * Create TLS data for the current thread.  This gives us a place to

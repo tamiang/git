@@ -323,4 +323,49 @@ test_expect_success 'discard traces when there are too many files' '
 	head -n2 trace_target_dir/git-trace2-discard | tail -n1 | grep \"event\":\"too_many_files\"
 '
 
+# Exercise the stopwatch timer "test" in a loop and confirm that it was
+# we have as many start/stop intervals as expected.  We cannot really test
+# the (t_timer, t_min, t_max) timer values, so we assume they are good.
+#
+
+have_timer_event () {
+	thread=$1
+	name=$2
+	count=$3
+	file=$4
+
+	pattern="\"event\":\"timer\""
+	pattern="${pattern}.*\"thread\":\"${thread}\""
+	pattern="${pattern}.*\"name\":\"${name}\""
+	pattern="${pattern}.*\"count\":${count}"
+	pattern="${pattern}.*\"ns_total\":[0-9]*"
+	pattern="${pattern}.*\"ns_min\":[0-9]*"
+	pattern="${pattern}.*\"ns_max\":[0-9]*"
+
+	grep "${pattern}" ${file}
+
+	return $?
+}
+
+test_expect_success 'test stopwatch timers - global, single-thread' '
+	test_when_finished "rm trace.event" &&
+	test_config_global trace2.eventBrief 1 &&
+	test_config_global trace2.eventTarget "$(pwd)/trace.event" &&
+	test-tool trace2 011timer 5 10 &&
+
+	have_timer_event "summary" "test1" 5 trace.event
+'
+
+test_expect_success 'test stopwatch timers - global+threads' '
+	test_when_finished "rm trace.event" &&
+	test_config_global trace2.eventBrief 1 &&
+	test_config_global trace2.eventTarget "$(pwd)/trace.event" &&
+	test-tool trace2 012timer 5 10 3 &&
+
+	have_timer_event "th01:ut_009" "test2" 5 trace.event &&
+	have_timer_event "th02:ut_009" "test2" 5 trace.event &&
+	have_timer_event "th03:ut_009" "test2" 5 trace.event &&
+	have_timer_event "summary" "test2" 15 trace.event
+'
+
 test_done

@@ -173,4 +173,50 @@ test_expect_success 'using global config, perf stream, return code 0' '
 	test_cmp expect actual
 '
 
+# Exercise the stopwatch timer "test" in a loop and confirm that it was
+# we have as many start/stop intervals as expected.  We cannot really test
+# the actual (total, min, max) timer values, so we assume they are good,
+# but we can test the keys for them.
+
+have_timer_event () {
+	thread=$1
+	name=$2
+	count=$3
+	file=$4
+
+	pattern="d0|${thread}|timer||_T_ABS_||test"
+	pattern="${pattern}|name:${name}"
+	pattern="${pattern} count:${count}"
+	pattern="${pattern} ns_total:.*"
+	pattern="${pattern} ns_min:.*"
+	pattern="${pattern} ns_max:.*"
+
+	grep "${pattern}" ${file}
+
+	return $?
+}
+
+test_expect_success 'test stopwatch timers - summary only' '
+	test_when_finished "rm trace.perf actual" &&
+	test_config_global trace2.perfBrief 1 &&
+	test_config_global trace2.perfTarget "$(pwd)/trace.perf" &&
+	test-tool trace2 011timer 5 10 &&
+	perl "$TEST_DIRECTORY/t0211/scrub_perf.perl" <trace.perf >actual &&
+
+	have_timer_event "summary" "test1" 5 actual
+'
+
+test_expect_success 'test stopwatch timers - summary and threads' '
+	test_when_finished "rm trace.perf actual" &&
+	test_config_global trace2.perfBrief 1 &&
+	test_config_global trace2.perfTarget "$(pwd)/trace.perf" &&
+	test-tool trace2 012timer 5 10 3 &&
+	perl "$TEST_DIRECTORY/t0211/scrub_perf.perl" <trace.perf >actual &&
+
+	have_timer_event "th01:ut_009" "test2" 5 actual &&
+	have_timer_event "th02:ut_009" "test2" 5 actual &&
+	have_timer_event "th03:ut_009" "test2" 5 actual &&
+	have_timer_event "summary" "test2" 15 actual
+'
+
 test_done

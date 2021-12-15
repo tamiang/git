@@ -51,6 +51,7 @@ struct json_writer;
  * [] trace2_region*    -- emit region nesting messages.
  * [] trace2_data*      -- emit region/thread/repo data messages.
  * [] trace2_printf*    -- legacy trace[1] messages.
+ * [] trace2_timer*     -- start/stop stopwatch timer (messages are deferred).
  */
 
 /*
@@ -499,5 +500,46 @@ enum trace2_process_info_reason {
 void trace2_collect_process_info(enum trace2_process_info_reason reason);
 
 const char *trace2_session_id(void);
+
+/*
+ * Define the set of stopwatch timers.
+ *
+ * We can add more at any time, but they must be defined at compile
+ * time (to avoid the need to dynamically allocate and synchronize
+ * them between different threads).
+ *
+ * These must start at 0 and be contiguous (because we use them
+ * elsewhere as array indexes).
+ *
+ * Any values added to this enum must also be added to the timer definitions
+ * array.  See `trace2/tr2_tmr.c:tr2_timer_def_block[]`.
+ */
+enum trace2_timer_id {
+	/*
+	 * Define two timers for testing.  See `t/helper/test-trace2.c`.
+	 * These can be used for ad hoc testing, but should not be used
+	 * for permanent analysis code.
+	 */
+	TRACE2_TIMER_ID_TEST1 = 0, /* emits summary event only */
+	TRACE2_TIMER_ID_TEST2,     /* emits summary and thread events */
+
+
+	/* Add additional timer definitions before here. */
+	TRACE2_NUMBER_OF_TIMERS
+};
+
+/*
+ * Start/Stop a stopwatch timer in the current thread.
+ *
+ * The time spent in each start/stop interval will be accumulated and
+ * a "timer" event will be emitted when the program exits.
+ *
+ * Note: Since the stopwatch API routines do not generate individual
+ * events, they do not take (file, line) arguments.  Similarly, the
+ * category and timer name values are defined at compile-time in the
+ * timer definitions array, so they are not needed here in the API.
+ */
+void trace2_timer_start(enum trace2_timer_id tid);
+void trace2_timer_stop(enum trace2_timer_id tid);
 
 #endif /* TRACE2_H */
