@@ -368,4 +368,45 @@ test_expect_success 'test stopwatch timers - global+threads' '
 	have_timer_event "summary" "test2" 15 trace.event
 '
 
+# Exercise the global counter in a loop and confirm that we get the
+# expected sum in an event record.
+#
+
+have_counter_event () {
+	thread=$1
+	name=$2
+	value=$3
+	file=$4
+
+	pattern="\"event\":\"counter\""
+	pattern="${pattern}.*\"thread\":\"${thread}\""
+	pattern="${pattern}.*\"name\":\"${name}\""
+	pattern="${pattern}.*\"value\":${value}"
+
+	grep "${pattern}" ${file}
+
+	return $?
+}
+
+test_expect_success 'test global counter - global, single-thread' '
+	test_when_finished "rm trace.event" &&
+	test_config_global trace2.eventBrief 1 &&
+	test_config_global trace2.eventTarget "$(pwd)/trace.event" &&
+	test-tool trace2 013counter 2 3 5 7 11 13 &&
+
+	have_counter_event "summary" "test1" 41 trace.event
+'
+
+test_expect_success 'test global counter - global+threads' '
+	test_when_finished "rm trace.event" &&
+	test_config_global trace2.eventBrief 1 &&
+	test_config_global trace2.eventTarget "$(pwd)/trace.event" &&
+	test-tool trace2 014counter 5 10 3 &&
+
+	have_counter_event "th01:ut_011" "test2" 15 trace.event &&
+	have_counter_event "th02:ut_011" "test2" 15 trace.event &&
+	have_counter_event "th03:ut_011" "test2" 15 trace.event &&
+	have_counter_event "summary" "test2" 45 trace.event
+'
+
 test_done

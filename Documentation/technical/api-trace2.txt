@@ -1338,6 +1338,73 @@ d0 | main                     | atexit       |     |  0.111026 |           |    
 In this example, the "test1" timer was started 4 times and ran for
 0.000393 seconds.
 
+Counter Events::
+
+	Trace2 also provides global counters as an alternative to regions
+	and data events.  These make it possible to count an activity of
+	interest, such a call to a library routine, during the program
+	and get a single counter event at the end.
++
+At the end of the program, a single summary event is emitted; this
+value is aggregated across all threads.  These events have "summary"
+as their thread name.
++
+For some counters, individual (per-thread) counter events are also
+generated.  This may be helpful in understanding how work is balanced
+between threads in some circumstances.
++
+----------------
+static void *load_cache_entries_thread(void *_data)
+{
+	struct load_cache_entries_thread_data *p = _data;
+	int i;
+
+	trace2_thread_start("load_cache_entries");
+	...
+	trace2_thread_exit();
+}
+
+static unsigned long load_cache_entry_block(struct index_state *istate,
+			struct mem_pool *ce_mem_pool, int offset, int nr, const char *mmap,
+			unsigned long start_offset, const struct cache_entry *previous_ce)
+{
+	int i;
+	unsigned long src_offset = start_offset;
+
+	trace2_counter_increment(TRACE2_COUNTER_ID_TEST2, nr);
+
+	for (i = offset; i < offset + nr; i++) {
+		...
+	}
+}
+----------------
++
+----------------
+$ export GIT_TRACE2_PERF_BRIEF=1
+$ export GIT_TRACE2_PERF=~/log.perf
+$ git status
+...
+$ cat ~/log.perf
+...
+d0 | main                     | exit         |     | 53.977680 |           |              | code:0
+d0 | th12:load_cache_entries  | counter      |     | 53.977708 |           | test         | name:test2 value:193220
+d0 | th11:load_cache_entries  | counter      |     | 53.977708 |           | test         | name:test2 value:193221
+d0 | th10:load_cache_entries  | counter      |     | 53.977708 |           | test         | name:test2 value:193221
+d0 | th09:load_cache_entries  | counter      |     | 53.977708 |           | test         | name:test2 value:193221
+d0 | th08:load_cache_entries  | counter      |     | 53.977708 |           | test         | name:test2 value:193221
+d0 | th07:load_cache_entries  | counter      |     | 53.977708 |           | test         | name:test2 value:193221
+d0 | th06:load_cache_entries  | counter      |     | 53.977708 |           | test         | name:test2 value:193221
+d0 | th05:load_cache_entries  | counter      |     | 53.977708 |           | test         | name:test2 value:193221
+d0 | th04:load_cache_entries  | counter      |     | 53.977708 |           | test         | name:test2 value:193221
+d0 | th03:load_cache_entries  | counter      |     | 53.977708 |           | test         | name:test2 value:193221
+d0 | th02:load_cache_entries  | counter      |     | 53.977708 |           | test         | name:test2 value:193221
+d0 | summary                  | counter      |     | 53.977708 |           | test         | name:test2 value:2125430
+d0 | main                     | atexit       |     | 53.977708 |           |              | code:0
+----------------
++
+This example shows the value computed by each of the 11
+`load_cache_entries` threads and the total across all threads.
+
 == Future Work
 
 === Relationship to the Existing Trace Api (api-trace.txt)

@@ -2,6 +2,7 @@
 #define TR2_TLS_H
 
 #include "strbuf.h"
+#include "trace2/tr2_ctr.h"
 #include "trace2/tr2_tmr.h"
 
 struct tr2tls_thread_ctx {
@@ -12,9 +13,24 @@ struct tr2tls_thread_ctx {
 	int thread_id;
 
 	struct tr2_timer_block timers;
+	struct tr2_counter_block counters;
 
 	char thread_name[FLEX_ARRAY];
 };
+
+/*
+ * Iterate over the global list of threads and aggregate the
+ * counter data into the given counter block.  The resulting block
+ * will contain the global counter sums.
+ */
+void tr2tls_aggregate_counter_blocks(struct tr2_counter_block *merged);
+
+/*
+ * Iterate over the global list of threads and emit "per-thread"
+ * counter data for each.
+ */
+void tr2tls_emit_counter_blocks_by_thread(tr2_tgt_evt_counter_t *pfn,
+					  uint64_t us_elapsed_absolute);
 
 /*
  * Iterate over the global list of threads and aggregate the timer

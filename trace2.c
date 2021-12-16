@@ -8,6 +8,7 @@
 #include "version.h"
 #include "trace2/tr2_cfg.h"
 #include "trace2/tr2_cmd_name.h"
+#include "trace2/tr2_ctr.h"
 #include "trace2/tr2_dst.h"
 #include "trace2/tr2_sid.h"
 #include "trace2/tr2_sysenv.h"
@@ -114,6 +115,41 @@ static void tr2main_emit_thread_timers(uint64_t us_elapsed_absolute)
 						  us_elapsed_absolute);
 }
 
+static void tr2main_emit_summary_counters(uint64_t us_elapsed_absolute)
+{
+	struct tr2_tgt *tgt_j;
+	int j;
+	struct tr2_counter_block merged = { { { 0 } } };
+
+	/*
+	 * Sum across all of the per-thread counter data into
+	 * a single composite block of counter values.
+	 */
+	tr2tls_aggregate_counter_blocks(&merged);
+
+	/*
+	 * Emit "summary" counter events for each composite counter value
+	 * that had activity.
+	 */
+	for_each_wanted_builtin (j, tgt_j)
+		if (tgt_j->pfn_counter)
+			tr2_emit_counter_block(tgt_j->pfn_counter,
+					       us_elapsed_absolute,
+					       &merged, "summary");
+}
+
+static void tr2main_emit_thread_counters(uint64_t us_elapsed_absolute)
+{
+	struct tr2_tgt *tgt_j;
+	int j;
+
+	for_each_wanted_builtin (j, tgt_j)
+		if (tgt_j->pfn_counter)
+			tr2tls_emit_counter_blocks_by_thread(
+				tgt_j->pfn_counter,
+				us_elapsed_absolute);
+}
+
 static int tr2main_exit_code;
 
 /*
@@ -143,6 +179,9 @@ static void tr2main_atexit_handler(void)
 
 	tr2main_emit_thread_timers(us_elapsed_absolute);
 	tr2main_emit_summary_timers(us_elapsed_absolute);
+
+	tr2main_emit_thread_counters(us_elapsed_absolute);
+	tr2main_emit_summary_counters(us_elapsed_absolute);
 
 	for_each_wanted_builtin (j, tgt_j)
 		if (tgt_j->pfn_atexit)
@@ -854,4 +893,15 @@ void trace2_timer_stop(enum trace2_timer_id tid)
 		BUG("trace2_timer_stop: invalid timer id: %d", tid);
 
 	tr2_stop_timer(tid);
+}
+
+void trace2_counter_add(enum trace2_counter_id cid, uint64_t value)
+{
+	if (!trace2_enabled)
+		return;
+
+	if (cid < 0 || cid >= TRACE2_NUMBER_OF_COUNTERS)
+		BUG("invalid counter id: %d", cid);
+
+	tr2_counter_increment(cid, value);
 }

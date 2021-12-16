@@ -1,5 +1,6 @@
 #include "cache.h"
 #include "thread-utils.h"
+#include "trace2/tr2_ctr.h"
 #include "trace2/tr2_tls.h"
 #include "trace2/tr2_tmr.h"
 
@@ -229,6 +230,34 @@ void tr2_emit_timers_by_thread(tr2_tgt_evt_timer_t *pfn,
 
 		tr2_emit_timer_block(pfn, us_elapsed_absolute, &ctx->timers,
 				     ctx->thread_name);
+
+		ctx = next;
+	}
+}
+
+void tr2tls_aggregate_counter_blocks(struct tr2_counter_block *merged)
+{
+	struct tr2tls_thread_ctx *ctx = tr2tls_ctx_list;
+
+	while (ctx) {
+		struct tr2tls_thread_ctx *next = ctx->next_ctx;
+
+		tr2_merge_counter_block(merged, &ctx->counters);
+
+		ctx = next;
+	}
+}
+
+void tr2tls_emit_counter_blocks_by_thread(tr2_tgt_evt_counter_t *pfn,
+					  uint64_t us_elapsed_absolute)
+{
+	struct tr2tls_thread_ctx *ctx = tr2tls_ctx_list;
+
+	while (ctx) {
+		struct tr2tls_thread_ctx *next = ctx->next_ctx;
+
+		tr2_emit_counter_block(pfn, us_elapsed_absolute, &ctx->counters,
+				       ctx->thread_name);
 
 		ctx = next;
 	}

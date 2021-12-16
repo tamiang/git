@@ -292,7 +292,7 @@ static int ut_012timer(int argc, const char **argv)
 	const char *usage_error =
 		"expect <count> <ms_delay> <threads>";
 
-	struct ut_012_data data = { 0, 0 };
+	struct ut_012_data data = { 0 };
 	int nr_threads = 0;
 	int k;
 	pthread_t *pids = NULL;
@@ -310,6 +310,90 @@ static int ut_012timer(int argc, const char **argv)
 
 	for (k = 0; k < nr_threads; k++) {
 		if (pthread_create(&pids[k], NULL, ut_012timer_thread_proc, &data))
+			die("failed to create thread[%d]", k);
+	}
+
+	for (k = 0; k < nr_threads; k++) {
+		if (pthread_join(pids[k], NULL))
+			die("failed to join thread[%d]", k);
+	}
+
+	free(pids);
+
+	return 0;
+}
+
+/*
+ * Single-threaded counter test.  Add several values to the TEST1 counter.
+ * The test script can verify that an aggregate Trace2 "counter" event is
+ * emitted containing the sum of the values provided.
+ */
+static int ut_013counter(int argc, const char **argv)
+{
+	const char *usage_error =
+		"expect <v1> [<v2> [...]]";
+	int value;
+	int k;
+
+	if (argc < 1)
+		die("%s", usage_error);
+
+	for (k = 0; k < argc; k++) {
+		if (get_i(&value, argv[k]))
+			die("invalid value[%s] -- %s",
+			    argv[k], usage_error);
+		trace2_counter_add(TRACE2_COUNTER_ID_TEST1, value);
+	}
+
+	return 0;
+}
+
+struct ut_011_data {
+	int v1, v2;
+};
+
+static void *ut_014counter_thread_proc(void *_ut_011_data)
+{
+	struct ut_011_data *data = _ut_011_data;
+
+	trace2_thread_start("ut_011");
+
+	trace2_counter_add(TRACE2_COUNTER_ID_TEST2, data->v1);
+	trace2_counter_add(TRACE2_COUNTER_ID_TEST2, data->v2);
+
+	trace2_thread_exit();
+	return NULL;
+}
+
+/*
+ * Multi-threaded counter test.  Create several threads that each
+ * increment the TEST2 global counter.  The test script can verify
+ * that an individual Trace2 "counter" event for each thread and an
+ * aggregate "counter" event are generated.
+ */
+static int ut_014counter(int argc, const char **argv)
+{
+	const char *usage_error =
+		"expect <v1> <v2> <threads>";
+
+	struct ut_011_data data = { 0, 0 };
+	int nr_threads = 0;
+	int k;
+	pthread_t *pids = NULL;
+
+	if (argc != 3)
+		die("%s", usage_error);
+	if (get_i(&data.v1, argv[0]))
+		die("%s", usage_error);
+	if (get_i(&data.v2, argv[1]))
+		die("%s", usage_error);
+	if (get_i(&nr_threads, argv[2]))
+		die("%s", usage_error);
+
+	CALLOC_ARRAY(pids, nr_threads);
+
+	for (k = 0; k < nr_threads; k++) {
+		if (pthread_create(&pids[k], NULL, ut_014counter_thread_proc, &data))
 			die("failed to create thread[%d]", k);
 	}
 
@@ -344,7 +428,9 @@ static struct unit_test ut_table[] = {
 	{ ut_009bug_BUG,  "009bug_BUG","" },
 	{ ut_010bug_BUG,  "010bug_BUG","" },
 	{ ut_011timer,    "011timer",  "<count> <ms_delay>" },
-	{ ut_011timer,    "011timer",  "<count> <ms_delay> <threads>" },
+	{ ut_012timer,    "012timer",  "<count> <ms_delay> <threads>" },
+	{ ut_013counter,  "013counter","<v1> [<v2> [<v3> [...]]]" },
+	{ ut_014counter,  "014counter","<v1> <v2> <threads>" },
 };
 /* clang-format on */
 

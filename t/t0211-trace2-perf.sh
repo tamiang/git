@@ -219,4 +219,46 @@ test_expect_success 'test stopwatch timers - summary and threads' '
 	have_timer_event "summary" "test2" 15 actual
 '
 
+# Exercise the global counter "test" in a loop and confirm that we get an
+# event with the sum.
+#
+
+have_counter_event () {
+	thread=$1
+	name=$2
+	value=$3
+	file=$4
+
+	pattern="d0|${thread}|counter||_T_ABS_||test"
+	pattern="${pattern}|name:${name}"
+	pattern="${pattern} value:${value}"
+
+	grep "${pattern}" ${file}
+
+	return $?
+}
+
+test_expect_success 'test global counters - global, single-thead' '
+	test_when_finished "rm trace.perf actual" &&
+	test_config_global trace2.perfBrief 1 &&
+	test_config_global trace2.perfTarget "$(pwd)/trace.perf" &&
+	test-tool trace2 013counter 2 3 5 7 11 13  &&
+	perl "$TEST_DIRECTORY/t0211/scrub_perf.perl" <trace.perf >actual &&
+
+	have_counter_event "summary" "test1" 41 actual
+'
+
+test_expect_success 'test global counters - global+threads' '
+	test_when_finished "rm trace.perf actual" &&
+	test_config_global trace2.perfBrief 1 &&
+	test_config_global trace2.perfTarget "$(pwd)/trace.perf" &&
+	test-tool trace2 014counter 5 10 3 &&
+	perl "$TEST_DIRECTORY/t0211/scrub_perf.perl" <trace.perf >actual &&
+
+	have_counter_event "th01:ut_011" "test2" 15 actual &&
+	have_counter_event "th02:ut_011" "test2" 15 actual &&
+	have_counter_event "th03:ut_011" "test2" 15 actual &&
+	have_counter_event "summary" "test2" 45 actual
+'
+
 test_done
