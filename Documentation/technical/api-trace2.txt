@@ -839,6 +839,25 @@ may exceed the "atexit" elapsed time of the program.
 Timer events may represent an individual thread or a summation across
 the entire program.  Summation events will have a unique thread name.
 
+`"counter"`::
+	This event is generated at the end of the program and contains
+	the value of a global counter.
++
+------------
+{
+	"event":"counter",
+	...
+	"name":"test",      # counter name
+	"value":42,         # value of the counter
+}
+------------
++
+A global counter can be incremented throughout the execution of the
+program.  It will be reported in a "counter" event just prior to exit.
++
+Counter events may represent an individual thread or a summation across
+the entire program.  Summation events will have a unique thread name.
+
 == Example Trace2 API Usage
 
 Here is a hypothetical usage of the Trace2 API showing the intended

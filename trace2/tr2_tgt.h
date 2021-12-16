@@ -121,6 +121,19 @@ typedef void(tr2_tgt_evt_timer_t)(uint64_t us_elapsed_absolute,
 				  uint64_t ns_max_time);
 
 /*
+ * Item counter event.
+ *
+ * This also does not take a (file,line) pair.
+ *
+ * The thread name is optional.
+ */
+typedef void(tr2_tgt_evt_counter_t)(uint64_t us_elapsed_absolute,
+				    const char *thread_name,
+				    const char *category,
+				    const char *counter_name,
+				    uint64_t value);
+
+/*
  * "vtable" for a TRACE2 target.  Use NULL if a target does not want
  * to emit that message.
  */
@@ -157,6 +170,7 @@ struct tr2_tgt {
 	tr2_tgt_evt_data_json_fl_t              *pfn_data_json_fl;
 	tr2_tgt_evt_printf_va_fl_t              *pfn_printf_va_fl;
 	tr2_tgt_evt_timer_t                     *pfn_timer;
+	tr2_tgt_evt_counter_t                   *pfn_counter;
 };
 /* clang-format on */
 

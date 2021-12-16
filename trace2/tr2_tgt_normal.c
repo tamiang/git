@@ -361,4 +361,5 @@ struct tr2_tgt tr2_tgt_normal = {
 	.pfn_data_json_fl = NULL,
 	.pfn_printf_va_fl = fn_printf_va_fl,
 	.pfn_timer = NULL,
+	.pfn_counter = NULL,
 };
