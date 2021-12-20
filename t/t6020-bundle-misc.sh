@@ -506,7 +506,13 @@ do
 		The bundle uses this filter: $filter
 		The bundle records a complete history.
 		EOF
-		test_cmp expect actual
+		test_cmp expect actual &&
+
+		# This creates the first pack-file in the
+		# .git/objects/pack directory. Look for a .promisor.
+		git bundle unbundle partial.bdl &&
+		ls .git/objects/pack/pack-*.promisor >promisor &&
+		test_line_count = 1 promisor
 	'
 done
 
