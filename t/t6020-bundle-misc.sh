@@ -475,4 +475,9 @@ test_expect_success 'clone from bundle' '
 	test_cmp expect actual
 '
 
+test_expect_success 'unfiltered bundle with --objects' '
+	git bundle create partial.bdl \
+		--all --objects
+'
+
 test_done
