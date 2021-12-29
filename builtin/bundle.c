@@ -4,6 +4,7 @@
 #include "cache.h"
 #include "bundle.h"
 #include "config.h"
+#include "run-command.h"
 
 /*
  * Basic handler for bundle files to connect repositories via sneakernet.
@@ -14,9 +15,10 @@
 
 static const char * const builtin_bundle_usage[] = {
   N_("git bundle create [<options>] <file> <git-rev-list args>"),
-  N_("git bundle verify [<options>] <file>"),
+  N_("git bundle fetch [<options>] <uri>"),
   N_("git bundle list-heads <file> [<refname>...]"),
   N_("git bundle unbundle <file> [<refname>...]"),
+  N_("git bundle verify [<options>] <file>"),
   NULL
 };
 
@@ -133,6 +135,140 @@ cleanup:
 	return ret;
 }
 
+/**
+ * The remote_bundle_info struct contains the necessary data for
+ * the list of bundles advertised by a table of contents. If the
+ * bundle URI instead contains a single bundle, then this struct
+ * can represent a single bundle without a 'uri' but with a
+ * tempfile storing its current location on disk.
+ */
+struct remote_bundle_info {
+	/* TODO: add hash entry */
+
+	/**
+	 * The 'id' is a name given to the bundle for reference
+	 * by other bundle infos.
+	 */
+	char *id;
+
+	/**
+	 * The 'uri' is the location of the remote bundle so
+	 * it can be downloaded on-demand. This will be NULL
+	 * if there was no table of contents.
+	 */
+	char *uri;
+
+	/**
+	 * The 'next_id' string, if non-NULL, contains the 'id'
+	 * for a bundle that contains the prerequisites for this
+	 * bundle. Used by table of contents to allow fetching
+	 * a portion of a repository incrementally.
+	 */
+	char *next_id;
+
+	/**
+	 * A table of contents can include a timestamp for the
+	 * bundle as a heuristic for describing a list of bundles
+	 * in order of recency.
+	 */
+	timestamp_t timestamp;
+
+	/**
+	 * If the bundle has been downloaded, then 'file' is a
+	 * filename storing its contents. Otherwise, 'file' is
+	 * an empty string.
+	 */
+	struct strbuf file;
+
+	/**
+	 * The 'stack_next' pointer allows this struct to form
+	 * a stack.
+	 */
+	struct remote_bundle_info *stack_next;
+};
+
+static void download_uri_to_file(const char *uri, const char *file)
+{
+	struct child_process cp = CHILD_PROCESS_INIT;
+	FILE *child_in;
+
+	strvec_pushl(&cp.args, "git-remote-https", uri, NULL);
+	cp.in = -1;
+	cp.out = -1;
+
+	if (start_command(&cp))
+		die(_("failed to start remote helper"));
+
+	child_in = fdopen(cp.in, "w");
+	if (!child_in)
+		die(_("cannot write to child process"));
+
+	fprintf(child_in, "get %s %s\n\n", uri, file);
+	fclose(child_in);
+
+	if (finish_command(&cp))
+		die(_("remote helper failed"));
+}
+
+static int cmd_bundle_fetch(int argc, const char **argv, const char *prefix)
+{
+	int ret = 0;
+	int progress = isatty(2);
+	char *bundle_uri;
+	int fd;
+	struct strbuf first_file = STRBUF_INIT;
+	/* struct remote_bundle_info *stack = NULL; */
+
+	struct option options[] = {
+		OPT_BOOL(0, "progress", &progress,
+			 N_("show progress meter")),
+		OPT_END()
+	};
+
+	argc = parse_options_cmd_bundle(argc, argv, prefix,
+			builtin_bundle_unbundle_usage, options, &bundle_uri);
+
+	if (!startup_info->have_repository)
+		die(_("'fetch' requires a repository"));
+
+	/*
+	 * Step 1: determine protocol for uri, and download contents to
+	 * a temporary location.
+	 */
+
+	/*
+	 * Find a temporray filename that is available. This is briefly
+	 * racy, but unlikely to collide.
+	 */
+	fd = odb_mkstemp(&first_file, "bundles/tmp_uri_XXXXXX");
+	if (fd < 0)
+		die(_("failed to create temporary file"));
+	close(fd);
+	unlink(first_file.buf);
+
+	download_uri_to_file(bundle_uri, first_file.buf);
+
+	/*
+	 * Step 2: Check if the file is a bundle (if so, unbundle it in
+	 * step 4). If it is a table of contents, determine which of the
+	 * bundles are appropriate to download and add them to the stack.
+	 */
+
+	/*
+	 * Step 3: For each bundle in the stack:
+	 * 	i. If not downloaded to a temporary file, download it.
+	 * 	ii. Once downloaded, check that its prerequisites are in
+	 * 	    the object database. If not, then push its dependent
+	 * 	    bundle onto the stack. (Fail if no such bundle exists.)
+	 * 	iii. If all prerequisites are present, then unbundle the
+	 * 	     temporary file and pop the bundle from the stack.
+	 */
+
+	strbuf_release(&first_file);
+	free(bundle_uri);
+	return ret;
+}
+
 static int cmd_bundle_list_heads(int argc, const char **argv, const char *prefix) {
 	struct bundle_header header = BUNDLE_HEADER_INIT;
 	int bundle_fd = -1;
@@ -211,12 +347,14 @@ int cmd_bundle(int argc, const char **argv, const char *prefix)
 
 	else if (!strcmp(argv[0], "create"))
 		result = cmd_bundle_create(argc, argv, prefix);
-	else if (!strcmp(argv[0], "verify"))
-		result = cmd_bundle_verify(argc, argv, prefix);
+	else if (!strcmp(argv[0], "fetch"))
+		result = cmd_bundle_fetch(argc, argv, prefix);
 	else if (!strcmp(argv[0], "list-heads"))
 		result = cmd_bundle_list_heads(argc, argv, prefix);
 	else if (!strcmp(argv[0], "unbundle"))
 		result = cmd_bundle_unbundle(argc, argv, prefix);
+	else if (!strcmp(argv[0], "verify"))
+		result = cmd_bundle_verify(argc, argv, prefix);
 	else {
 		error(_("Unknown subcommand: %s"), argv[0]);
 		usage_with_options(builtin_bundle_usage, options);
