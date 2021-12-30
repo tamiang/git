@@ -73,6 +73,7 @@ static struct string_list option_recurse_submodules = STRING_LIST_INIT_NODUP;
 static struct list_objects_filter_options filter_options;
 static struct string_list server_options = STRING_LIST_INIT_NODUP;
 static int option_remote_submodules;
+static const char *bundle_uri;
 
 static int recurse_submodules_cb(const struct option *opt,
 				 const char *arg, int unset)
@@ -154,6 +155,8 @@ static struct option builtin_clone_options[] = {
 		    N_("any cloned submodules will use their remote-tracking branch")),
 	OPT_BOOL(0, "sparse", &option_sparse_checkout,
 		    N_("initialize sparse-checkout file to include only files at root")),
+	OPT_STRING(0, "bundle-uri", &bundle_uri,
+		   N_("uri"), N_("A URI for downloading bundles before fetching from origin remote")),
 	OPT_END()
 };
 
@@ -909,6 +912,11 @@ int cmd_clone(int argc, const char **argv, const char *prefix)
 		option_no_checkout = 1;
 	}
 
+	if (bundle_uri) {
+		if (deepen)
+			die(_("--bundle-uri is incompatible with --depth, --shallow-since, and --shallow-exclude"));
+	}
+
 	repo_name = argv[0];
 
 	path = get_repo_path(repo_name, &is_bundle);
@@ -1106,6 +1114,26 @@ int cmd_clone(int argc, const char **argv, const char *prefix)
 
 	if (option_sparse_checkout && git_sparse_checkout_init(dir))
 		return 1;
+
+	/*
+	 * Before fetching from the remote, download and install bundle
+	 * data from the --bundle-uri option.
+	 */
+	if (bundle_uri) {
+		struct strvec args = STRVEC_INIT;
+
+		strvec_pushl(&args, "bundle", "fetch", bundle_uri, NULL);
+
+		if (filter_options.choice) {
+			const char *filter = expand_list_objects_filter_spec(&filter_options);
+			strvec_pushf(&args, "--filter=%s", filter);
+		}
+
+		if (run_command_v_opt(args.v, RUN_GIT_CMD))
+			warning(_("failed to download bundle from uri '%s'"), bundle_uri);
+
+		strvec_clear(&args);
+	}
 
 	remote = remote_get(remote_name);
 
