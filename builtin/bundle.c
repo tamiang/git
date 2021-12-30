@@ -7,6 +7,8 @@
 #include "hashmap.h"
 #include "object-store.h"
 #include "refs.h"
+#include "config.h"
+#include "packfile.h"
 
 /*
  * Basic handler for bundle files to connect repositories via sneakernet.
@@ -165,12 +167,21 @@ struct remote_bundle_info {
 	char *uri;
 
 	/**
-	 * The 'next_id' string, if non-NULL, contains the 'id'
+	 * The 'requires_id' string, if non-NULL, contains the 'id'
 	 * for a bundle that contains the prerequisites for this
 	 * bundle. Used by table of contents to allow fetching
 	 * a portion of a repository incrementally.
 	 */
-	char *next_id;
+	char *requires_id;
+
+	/**
+	 * The 'filter_str' string, if non-NULL, specifies the
+	 * filter capability exists in this bundle with the given
+	 * specification. Allows selecting bundles that match the
+	 * client's desired filter. If NULL, then no filter exists
+	 * on the bundle.
+	 */
+	char *filter_str;
 
 	/**
 	 * A table of contents can include a timestamp for the
@@ -191,7 +202,105 @@ struct remote_bundle_info {
 	 * a stack.
 	 */
 	struct remote_bundle_info *stack_next;
+
+	/**
+	 * 'pushed' is set when first pushing the required bundle
+	 * onto the stack. Used to error out when verifying the
+	 * prerequisites and avoiding an infinite loop.
+	 */
+	unsigned pushed:1;
 };
+
+static int remote_bundle_cmp(const void *unused_cmp_data,
+			     const struct hashmap_entry *a,
+			     const struct hashmap_entry *b,
+			     const void *key)
+{
+	const struct remote_bundle_info *ee1 =
+			container_of(a, struct remote_bundle_info, ent);
+	const struct remote_bundle_info *ee2 =
+			container_of(b, struct remote_bundle_info, ent);
+
+	return strcmp(ee1->id, ee2->id);
+}
+
+static int parse_toc_config(const char *key, const char *value, void *data)
+{
+	struct hashmap *toc = data;
+	const char *key1, *key2, *id_end;
+	struct strbuf id = STRBUF_INIT;
+	struct remote_bundle_info info_lookup;
+	struct remote_bundle_info *info;
+
+	if (!skip_prefix(key, "bundle.", &key1))
+		return -1;
+
+	if (skip_prefix(key1, "tableofcontents.", &key2)) {
+		if (!strcmp(key2, "version")) {
+			int version = git_config_int(key, value);
+
+			if (version != 1) {
+				warning(_("table of contents version %d not understood"), version);
+				return -1;
+			}
+		}
+
+		return 0;
+	}
+
+	id_end = strchr(key1, '.');
+
+	/*
+	 * If this key is of the form "bundle.<x>" with no third item,
+	 * then we do not know about it. We should ignore it. Later versions
+	 * might start caring about this data on an optional basis. Increase
+	 * the version number to add keys that must be understood.
+	 */
+	if (!id_end)
+		return 0;
+
+	strbuf_add(&id, key1, id_end - key1);
+	key2 = id_end + 1;
+
+	info_lookup.id = id.buf;
+	hashmap_entry_init(&info_lookup.ent, strhash(info_lookup.id));
+	if (!(info = hashmap_get_entry(toc, &info_lookup, ent, NULL))) {
+		CALLOC_ARRAY(info, 1);
+		info->id = strbuf_detach(&id, NULL);
+		strbuf_init(&info->file, 0);
+		hashmap_entry_init(&info->ent, strhash(info->id));
+		hashmap_add(toc, &info->ent);
+	}
+
+	if (!strcmp(key2, "uri")) {
+		if (info->uri)
+			warning(_("duplicate 'uri' value for id '%s'"), info->id);
+		else
+			info->uri = xstrdup(value);
+		return 0;
+	} else if (!strcmp(key2, "timestamp")) {
+		if (info->timestamp)
+			warning(_("duplicate 'timestamp' value for id '%s'"), info->id);
+		else
+			info->timestamp = git_config_int64(key, value);
+		return 0;
+	} else if (!strcmp(key2, "requires")) {
+		if (info->requires_id)
+			warning(_("duplicate 'requires' value for id '%s'"), info->id);
+		else
+			info->requires_id = xstrdup(value);
+		return 0;
+	} else if (!strcmp(key2, "filter")) {
+		if (info->filter_str)
+			warning(_("duplicate 'filter' value for id '%s'"), info->id);
+		else
+			info->filter_str = xstrdup(value);
+		return 0;
+	}
+
+	/* Return 0 here to ignore unknown options. */
+	return 0;
+}
 
 static void download_uri_to_file(const char *uri, const char *file)
 {
@@ -291,13 +400,14 @@ static void unbundle_fetched_bundle(struct remote_bundle_info *info)
 
 static int cmd_bundle_fetch(int argc, const char **argv, const char *prefix)
 {
-	int ret = 0;
+	int ret = 0, used_hashmap = 0;
 	int progress = isatty(2);
 	char *bundle_uri;
 	struct remote_bundle_info first_file = {
 		.file = STRBUF_INIT,
 	};
 	struct remote_bundle_info *stack = NULL;
+	struct hashmap toc = { 0 };
 
 	struct option options[] = {
 		OPT_BOOL(0, "progress", &progress,
@@ -330,8 +440,22 @@ static int cmd_bundle_fetch(int argc, const char **argv, const char *prefix)
 		/* The simple case: only one file, no stack to worry about. */
 		stack = &first_file;
 	} else {
-		/* TODO: populate a hashtable with all relevant bundles. */
+		struct hashmap_iter iter;
+		struct remote_bundle_info *info;
+		timestamp_t max_time = 0;
 
+		/* populate a hashtable with all relevant bundles. */
+		used_hashmap = 1;
+		hashmap_init(&toc, remote_bundle_cmp, NULL, 0);
+		git_config_from_file(parse_toc_config, first_file.file.buf, &toc);
+
+		/* initialize stack using timestamp heuristic. */
+		hashmap_for_each_entry(&toc, &iter, info, ent) {
+			if (info->timestamp > max_time || !stack) {
+				stack = info;
+				max_time = info->timestamp;
+			}
+		}
 	}
 
 	/*
@@ -365,6 +489,7 @@ static int cmd_bundle_fetch(int argc, const char **argv, const char *prefix)
 		if (bundle_fd < 0)
 			die(_("failed to read bundle from '%s'"), stack->uri);
 
+		reprepare_packed_git(the_repository);
 		for_each_string_list_item(prereq, &header.prerequisites) {
 			struct object_info info = OBJECT_INFO_INIT;
 			struct object_id *oid = prereq->util;
@@ -381,11 +506,28 @@ static int cmd_bundle_fetch(int argc, const char **argv, const char *prefix)
 
 		if (valid) {
 			unbundle_fetched_bundle(stack);
-		} else if (stack->next_id) {
+		} else if (stack->pushed) {
+			die(_("bundle '%s' still invalid after downloading required bundle"), stack->id);
+		} else if (stack->requires_id) {
 			/*
 			 * Load the next bundle from the hashtable and
 			 * push it onto the stack.
 			 */
+			struct remote_bundle_info *info;
+			struct remote_bundle_info info_lookup = { 0 };
+			info_lookup.id = stack->requires_id;
+
+			hashmap_entry_init(&info_lookup.ent, strhash(info_lookup.id));
+			if ((info = hashmap_get_entry(&toc, &info_lookup, ent, NULL))) {
+				/* Push onto the stack */
+				stack->pushed = 1;
+				info->stack_next = stack;
+				stack = info;
+				continue;
+			} else {
+				die(_("unable to find bundle '%s' required by bundle '%s'"),
+				    stack->requires_id, stack->id);
+			}
 		} else {
 			die(_("bundle from '%s' has missing prerequisites and no dependent bundle"),
 			    stack->uri);
@@ -394,10 +536,17 @@ static int cmd_bundle_fetch(int argc, const char **argv, const char *prefix)
 		stack = stack->stack_next;
 	}
 
-	/*
-	 * TODO: free the entries from the hashtable.
-	 */
-
+	if (used_hashmap) {
+		struct hashmap_iter iter;
+		struct remote_bundle_info *info;
+		hashmap_for_each_entry(&toc, &iter, info, ent) {
+			free(info->id);
+			free(info->uri);
+			free(info->requires_id);
+			free(info->filter_str);
+		}
+		hashmap_clear_and_free(&toc, struct remote_bundle_info, ent);
+	}
 	free(bundle_uri);
 	return ret;
 }
