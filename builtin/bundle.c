@@ -5,6 +5,8 @@
 #include "bundle.h"
 #include "config.h"
 #include "run-command.h"
+#include "hashmap.h"
+#include "object-store.h"
 
 /*
  * Basic handler for bundle files to connect repositories via sneakernet.
@@ -143,7 +145,7 @@ cleanup:
  * tempfile storing its current location on disk.
  */
 struct remote_bundle_info {
-	/* TODO: add hash entry */
+	struct hashmap_entry ent;
 
 	/**
 	 * The 'id' is a name given to the bundle for reference
@@ -210,14 +212,29 @@ static void download_uri_to_file(const char *uri, const char *file)
 		die(_("remote helper failed"));
 }
 
+static void find_temp_filename(struct strbuf *name)
+{
+	int fd;
+	/*
+	 * Find a temporray filename that is available. This is briefly
+	 * racy, but unlikely to collide.
+	 */
+	fd = odb_mkstemp(name, "bundles/tmp_uri_XXXXXX");
+	if (fd < 0)
+		die(_("failed to create temporary file"));
+	close(fd);
+	unlink(name->buf);
+}
+
 static int cmd_bundle_fetch(int argc, const char **argv, const char *prefix)
 {
 	int ret = 0;
 	int progress = isatty(2);
 	char *bundle_uri;
-	int fd;
-	struct strbuf first_file = STRBUF_INIT;
-	/* struct remote_bundle_info *stack = NULL; */
+	struct remote_bundle_info first_file = {
+		.file = STRBUF_INIT,
+	};
+	struct remote_bundle_info *stack = NULL;
 
 	struct option options[] = {
 		OPT_BOOL(0, "progress", &progress,
@@ -235,24 +252,24 @@ static int cmd_bundle_fetch(int argc, const char **argv, const char *prefix)
 	 * Step 1: determine protocol for uri, and download contents to
 	 * a temporary location.
 	 */
+	first_file.uri = bundle_uri;
+	find_temp_filename(&first_file.file);
+	download_uri_to_file(bundle_uri, first_file.file.buf);
 
 	/*
-	 * Find a temporray filename that is available. This is briefly
-	 * racy, but unlikely to collide.
+	 * Step 2: Check if the file is a bundle (if so, add it to the
+	 * stack and move to step 3). If it is a table of contents,
+	 * determine which of the bundles are appropriate to download and
+	 * add them to the stack.
 	 */
-	fd = odb_mkstemp(&first_file, "bundles/tmp_uri_XXXXXX");
-	if (fd < 0)
-		die(_("failed to create temporary file"));
-	close(fd);
-	unlink(first_file.buf);
 
-	download_uri_to_file(bundle_uri, first_file.buf);
+	if (is_bundle(first_file.file.buf, 1)) {
+		/* The simple case: only one file, no stack to worry about. */
+		stack = &first_file;
+	} else {
+		/* TODO: populate a hashtable with all relevant bundles. */
 
-	/*
-	 * Step 2: Check if the file is a bundle (if so, unbundle it in
-	 * step 4). If it is a table of contents, determine which of the
-	 * bundles are appropriate to download and add them to the stack.
-	 */
+	}
 
 	/*
 	 * Step 3: For each bundle in the stack:
@@ -263,8 +280,66 @@ static int cmd_bundle_fetch(int argc, const char **argv, const char *prefix)
 	 * 	iii. If all prerequisites are present, then unbundle the
 	 * 	     temporary file and pop the bundle from the stack.
 	 */
+	while (stack) {
+		int valid = 1;
+		int bundle_fd;
+		struct string_list_item *prereq;
+		struct bundle_header header = BUNDLE_HEADER_INIT;
 
-	strbuf_release(&first_file);
+		if (!stack->file.len) {
+			find_temp_filename(&stack->file);
+			download_uri_to_file(stack->uri, stack->file.buf);
+			if (!is_bundle(stack->file.buf, 1))
+				die(_("file downloaded from '%s' is not a bundle"), stack->uri);
+		}
+
+		/*
+		 * TODO: check prerequisites and possibly push
+		 * onto the stack from the hashtable.
+		 */
+		bundle_header_init(&header);
+		bundle_fd = read_bundle_header(stack->file.buf, &header);
+		if (bundle_fd < 0)
+			die(_("failed to read bundle from '%s'"), stack->uri);
+
+		for_each_string_list_item(prereq, &header.prerequisites) {
+			struct object_info info = OBJECT_INFO_INIT;
+			struct object_id *oid = prereq->util;
+
+			if (oid_object_info_extended(the_repository, oid, &info,
+						     OBJECT_INFO_QUICK)) {
+				valid = 0;
+				break;
+			}
+		}
+
+		close(bundle_fd);
+		bundle_header_release(&header);
+
+		if (valid) {
+			struct strvec args = STRVEC_INIT;
+			strvec_pushl(&args, "bundle", "unbundle",
+					    stack->file.buf, NULL);
+			if (run_command_v_opt(args.v, RUN_GIT_CMD))
+				die(_("failed to unbundle bundle from '%s'"), stack->uri);
+			unlink_or_warn(stack->file.buf);
+		} else if (stack->next_id) {
+			/*
+			 * Load the next bundle from the hashtable and
+			 * push it onto the stack.
+			 */
+		} else {
+			die(_("bundle from '%s' has missing prerequisites and no dependent bundle"),
+			    stack->uri);
+		}
+
+		stack = stack->stack_next;
+	}
+
+	/*
+	 * TODO: free the entries from the hashtable.
+	 */
+
 	free(bundle_uri);
 	return ret;
 }
