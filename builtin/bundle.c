@@ -31,8 +31,8 @@ static const char * const builtin_bundle_create_usage[] = {
   NULL
 };
 
-static const char * const builtin_bundle_verify_usage[] = {
-  N_("git bundle verify [<options>] <file>"),
+static const char * const builtin_bundle_fetch_usage[] = {
+  N_("git bundle fetch [--filter=<spec>] <uri>"),
   NULL
 };
 
@@ -43,6 +43,11 @@ static const char * const builtin_bundle_list_heads_usage[] = {
 
 static const char * const builtin_bundle_unbundle_usage[] = {
   N_("git bundle unbundle <file> [<refname>...]"),
+  NULL
+};
+
+static const char * const builtin_bundle_verify_usage[] = {
+  N_("git bundle verify [<options>] <file>"),
   NULL
 };
 
@@ -352,7 +357,7 @@ static int cmd_bundle_fetch(int argc, const char **argv, const char *prefix)
 	};
 
 	argc = parse_options_cmd_bundle(argc, argv, prefix,
-			builtin_bundle_unbundle_usage, options, &bundle_uri);
+			builtin_bundle_fetch_usage, options, &bundle_uri);
 
 	if (!startup_info->have_repository)
 		die(_("'fetch' requires a repository"));
