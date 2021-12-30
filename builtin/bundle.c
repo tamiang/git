@@ -9,6 +9,7 @@
 #include "object-store.h"
 #include "config.h"
 #include "packfile.h"
+#include "list-objects-filter-options.h"
 
 /*
  * Basic handler for bundle files to connect repositories via sneakernet.
@@ -349,10 +350,13 @@ static int cmd_bundle_fetch(int argc, const char **argv, const char *prefix)
 	};
 	struct remote_bundle_info *stack = NULL;
 	struct hashmap toc = { 0 };
+	const char *filter = NULL;
 
 	struct option options[] = {
 		OPT_BOOL(0, "progress", &progress,
 			 N_("show progress meter")),
+		OPT_STRING(0, "filter", &filter,
+			   N_("filter spec"), N_("only install bundles matching this filter")),
 		OPT_END()
 	};
 
@@ -392,6 +396,17 @@ static int cmd_bundle_fetch(int argc, const char **argv, const char *prefix)
 
 		/* initialize stack using timestamp heuristic. */
 		hashmap_for_each_entry(&toc, &iter, info, ent) {
+			/* Skip if filter does not match. */
+			if (!filter && info->filter_str)
+				continue;
+			if (filter &&
+			    (!info->filter_str || strcasecmp(filter, info->filter_str)))
+				continue;
+
+			/*
+			 * Now that the filter matches, start with the
+			 * bundle with largest timestamp.
+			 */
 			if (info->timestamp > max_time || !stack) {
 				stack = info;
 				max_time = info->timestamp;
@@ -411,6 +426,7 @@ static int cmd_bundle_fetch(int argc, const char **argv, const char *prefix)
 	while (stack) {
 		int valid = 1;
 		int bundle_fd;
+		const char *filter_str = NULL;
 		struct string_list_item *prereq;
 		struct bundle_header header = BUNDLE_HEADER_INIT;
 
@@ -429,6 +445,16 @@ static int cmd_bundle_fetch(int argc, const char **argv, const char *prefix)
 		bundle_fd = read_bundle_header(stack->file.buf, &header);
 		if (bundle_fd < 0)
 			die(_("failed to read bundle from '%s'"), stack->uri);
+
+		if (header.filter)
+			filter_str = list_objects_filter_spec(header.filter);
+
+		if (filter && (!filter_str || strcasecmp(filter, filter_str)))
+			die(_("bundle from '%s' does not match expected filter"),
+			    stack->uri);
+		if (!filter && filter_str)
+			die(_("bundle from '%s' has an unexpected filter"),
+			    stack->uri);
 
 		reprepare_packed_git(the_repository);
 		for_each_string_list_item(prereq, &header.prerequisites) {
