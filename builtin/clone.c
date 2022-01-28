@@ -1122,12 +1122,13 @@ int cmd_clone(int argc, const char **argv, const char *prefix)
 	if (bundle_uri) {
 		struct strvec args = STRVEC_INIT;
 
-		strvec_pushl(&args, "bundle", "fetch", bundle_uri, NULL);
+		strvec_pushl(&args, "bundle", "fetch", NULL);
 
 		if (filter_options.choice) {
 			const char *filter = expand_list_objects_filter_spec(&filter_options);
 			strvec_pushf(&args, "--filter=%s", filter);
 		}
+		strvec_push(&args, bundle_uri);
 
 		if (run_command_v_opt(args.v, RUN_GIT_CMD))
 			warning(_("failed to download bundle from uri '%s'"), bundle_uri);

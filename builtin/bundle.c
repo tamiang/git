@@ -10,6 +10,7 @@
 #include "config.h"
 #include "packfile.h"
 #include "list-objects-filter-options.h"
+#include "refs.h"
 
 /*
  * Basic handler for bundle files to connect repositories via sneakernet.
@@ -300,7 +301,8 @@ static int parse_toc_config(const char *key, const char *value, void *data)
 		return 0;
 	}
 
-	return -1;
+	/* Return 0 here to ignore unknown options. */
+	return 0;
 }
 
 static void download_uri_to_file(const char *uri, const char *file)
@@ -308,7 +310,7 @@ static void download_uri_to_file(const char *uri, const char *file)
 	struct child_process cp = CHILD_PROCESS_INIT;
 	FILE *child_in;
 
-	strvec_pushl(&cp.args, "git-remote-https", uri, NULL);
+	strvec_pushl(&cp.args, "git-remote-https", "origin", uri, NULL);
 	cp.in = -1;
 	cp.out = -1;
 
@@ -340,6 +342,70 @@ static void find_temp_filename(struct strbuf *name)
 	unlink(name->buf);
 }
 
+static void unbundle_fetched_bundle(struct remote_bundle_info *info)
+{
+	struct child_process cp = CHILD_PROCESS_INIT;
+	FILE *f;
+	struct strbuf line = STRBUF_INIT;
+	struct strbuf bundle_ref = STRBUF_INIT;
+	size_t bundle_prefix_len;
+
+	strvec_pushl(&cp.args, "bundle", "unbundle",
+				info->file.buf, NULL);
+	cp.git_cmd = 1;
+	cp.out = -1;
+
+	if (start_command(&cp))
+		die(_("failed to start 'unbundle' process"));
+
+	strbuf_addstr(&bundle_ref, "refs/bundles/");
+	bundle_prefix_len = bundle_ref.len;
+
+	f = fdopen(cp.out, "r");
+	while (strbuf_getline(&line, f) != EOF) {
+		struct object_id oid, old_oid;
+		const char *refname, *branch_name, *end;
+		char *space;
+		int has_old;
+
+	trace2_printf("line:%s", line.buf);
+
+		strbuf_trim_trailing_newline(&line);
+
+		space = strchr(line.buf, ' ');
+
+		if (!space)
+			continue;
+
+		refname = space + 1;
+		*space = '\0';
+		parse_oid_hex(line.buf, &oid, &end);
+
+
+		/* TODO: write refs into refs/bundles */
+		if (!skip_prefix(refname, "refs/heads/", &branch_name))
+			continue;
+
+		strbuf_setlen(&bundle_ref, bundle_prefix_len);
+		strbuf_addstr(&bundle_ref, branch_name);
+	trace2_printf("new ref: %s", bundle_ref.buf);
+
+		/* TODO: consider replacing with a ref transaction */
+		has_old = !read_ref(bundle_ref.buf, &old_oid);
+		trace2_printf("has_old: %d", has_old);
+
+		update_ref("bundle fetch", bundle_ref.buf, &oid,
+				has_old ? &old_oid : NULL,
+				REF_SKIP_OID_VERIFICATION,
+				UPDATE_REFS_MSG_ON_ERR);
+	}
+
+	if (finish_command(&cp))
+		die(_("failed to unbundle bundle from '%s'"), info->uri);
+
+	unlink_or_warn(info->file.buf);
+}
+
 static int cmd_bundle_fetch(int argc, const char **argv, const char *prefix)
 {
 	int ret = 0, used_hashmap = 0;
@@ -356,7 +422,7 @@ static int cmd_bundle_fetch(int argc, const char **argv, const char *prefix)
 		OPT_BOOL(0, "progress", &progress,
 			 N_("show progress meter")),
 		OPT_STRING(0, "filter", &filter,
-			   N_("filter spec"), N_("only install bundles matching this filter")),
+			   N_("filter-spec"), N_("only install bundles matching this filter")),
 		OPT_END()
 	};
 
@@ -472,12 +538,7 @@ static int cmd_bundle_fetch(int argc, const char **argv, const char *prefix)
 		bundle_header_release(&header);
 
 		if (valid) {
-			struct strvec args = STRVEC_INIT;
-			strvec_pushl(&args, "bundle", "unbundle",
-					    stack->file.buf, NULL);
-			if (run_command_v_opt(args.v, RUN_GIT_CMD))
-				die(_("failed to unbundle bundle from '%s'"), stack->uri);
-			unlink_or_warn(stack->file.buf);
+			unbundle_fetched_bundle(stack);
 		} else if (stack->pushed) {
 			die(_("bundle '%s' still invalid after downloading required bundle"), stack->id);
 		} else if (stack->requires_id) {
