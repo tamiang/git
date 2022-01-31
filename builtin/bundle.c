@@ -13,19 +13,14 @@
 
 static const char * const builtin_bundle_usage[] = {
   N_("git bundle create [<options>] <file> <git-rev-list args>"),
-  N_("git bundle verify [<options>] <file>"),
   N_("git bundle list-heads <file> [<refname>...]"),
   N_("git bundle unbundle <file> [<refname>...]"),
+  N_("git bundle verify [<options>] <file>"),
   NULL
 };
 
 static const char * const builtin_bundle_create_usage[] = {
   N_("git bundle create [<options>] <file> <git-rev-list args>"),
-  NULL
-};
-
-static const char * const builtin_bundle_verify_usage[] = {
-  N_("git bundle verify [<options>] <file>"),
   NULL
 };
 
@@ -36,6 +31,11 @@ static const char * const builtin_bundle_list_heads_usage[] = {
 
 static const char * const builtin_bundle_unbundle_usage[] = {
   N_("git bundle unbundle <file> [<refname>...]"),
+  NULL
+};
+
+static const char * const builtin_bundle_verify_usage[] = {
+  N_("git bundle verify [<options>] <file>"),
   NULL
 };
 
@@ -209,12 +209,12 @@ int cmd_bundle(int argc, const char **argv, const char *prefix)
 
 	else if (!strcmp(argv[0], "create"))
 		result = cmd_bundle_create(argc, argv, prefix);
-	else if (!strcmp(argv[0], "verify"))
-		result = cmd_bundle_verify(argc, argv, prefix);
 	else if (!strcmp(argv[0], "list-heads"))
 		result = cmd_bundle_list_heads(argc, argv, prefix);
 	else if (!strcmp(argv[0], "unbundle"))
 		result = cmd_bundle_unbundle(argc, argv, prefix);
+	else if (!strcmp(argv[0], "verify"))
+		result = cmd_bundle_verify(argc, argv, prefix);
 	else {
 		error(_("Unknown subcommand: %s"), argv[0]);
 		usage_with_options(builtin_bundle_usage, options);
