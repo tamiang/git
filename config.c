@@ -1120,6 +1120,15 @@ int git_parse_ulong(const char *value, unsigned long *ret)
 	return 1;
 }
 
+int git_parse_timestamp(const char *value, timestamp_t *ret)
+{
+	uintmax_t tmp;
+	if (!git_parse_unsigned(value, &tmp, maximum_unsigned_value_of_type(timestamp_t)))
+		return 0;
+	*ret = tmp;
+	return 1;
+}
+
 int git_parse_ssize_t(const char *value, ssize_t *ret)
 {
 	intmax_t tmp;
@@ -1184,6 +1193,14 @@ unsigned long git_config_ulong(const char *name, const char *value)
 {
 	unsigned long ret;
 	if (!git_parse_ulong(value, &ret))
+		die_bad_number(name, value);
+	return ret;
+}
+
+timestamp_t git_config_timestamp(const char *name, const char *value)
+{
+	timestamp_t ret;
+	if (!git_parse_timestamp(value, &ret))
 		die_bad_number(name, value);
 	return ret;
 }
@@ -2212,6 +2229,16 @@ int git_configset_get_ulong(struct config_set *cs, const char *key, unsigned lon
 		return 1;
 }
 
+int git_configset_get_timestamp(struct config_set *cs, const char *key, timestamp_t *dest)
+{
+	const char *value;
+	if (!git_configset_get_value(cs, key, &value)) {
+		*dest = git_config_timestamp(key, value);
+		return 0;
+	} else
+		return 1;
+}
+
 int git_configset_get_bool(struct config_set *cs, const char *key, int *dest)
 {
 	const char *value;
@@ -2355,6 +2382,13 @@ int repo_config_get_ulong(struct repository *repo,
 	return git_configset_get_ulong(repo->config, key, dest);
 }
 
+int repo_config_get_timestamp(struct repository *repo,
+			      const char *key, timestamp_t *dest)
+{
+	git_config_check_init(repo);
+	return git_configset_get_timestamp(repo->config, key, dest);
+}
+
 int repo_config_get_bool(struct repository *repo,
 			 const char *key, int *dest)
 {
@@ -2426,6 +2460,11 @@ int git_config_get_int(const char *key, int *dest)
 int git_config_get_ulong(const char *key, unsigned long *dest)
 {
 	return repo_config_get_ulong(the_repository, key, dest);
+}
+
+int git_config_get_timestamp(const char *key, timestamp_t *dest)
+{
+	return repo_config_get_timestamp(the_repository, key, dest);
 }
 
 int git_config_get_bool(const char *key, int *dest)

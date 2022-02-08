@@ -193,6 +193,7 @@ int config_with_options(config_fn_t fn, void *,
 
 int git_parse_ssize_t(const char *, ssize_t *);
 int git_parse_ulong(const char *, unsigned long *);
+int git_parse_timestamp(const char *, timestamp_t *);
 
 /**
  * Same as `git_config_bool`, except that it returns -1 on error rather
@@ -212,6 +213,11 @@ int64_t git_config_int64(const char *, const char *);
  * Identical to `git_config_int`, but for unsigned longs.
  */
 unsigned long git_config_ulong(const char *, const char *);
+
+/**
+ * Identical to `git_config_int`, but for (unsigned) timestamps.
+ */
+timestamp_t git_config_timestamp(const char *name, const char *value);
 
 ssize_t git_config_ssize_t(const char *, const char *);
 
@@ -489,6 +495,7 @@ int git_configset_get_string(struct config_set *cs, const char *key, char **dest
 int git_configset_get_string_tmp(struct config_set *cs, const char *key, const char **dest);
 int git_configset_get_int(struct config_set *cs, const char *key, int *dest);
 int git_configset_get_ulong(struct config_set *cs, const char *key, unsigned long *dest);
+int git_configset_get_timestamp(struct config_set *cs, const char *key, timestamp_t *dest);
 int git_configset_get_bool(struct config_set *cs, const char *key, int *dest);
 int git_configset_get_bool_or_int(struct config_set *cs, const char *key, int *is_bool, int *dest);
 int git_configset_get_maybe_bool(struct config_set *cs, const char *key, int *dest);
@@ -509,6 +516,8 @@ int repo_config_get_int(struct repository *repo,
 			const char *key, int *dest);
 int repo_config_get_ulong(struct repository *repo,
 			  const char *key, unsigned long *dest);
+int repo_config_get_timestamp(struct repository *repo,
+			      const char *key, timestamp_t *dest);
 int repo_config_get_bool(struct repository *repo,
 			 const char *key, int *dest);
 int repo_config_get_bool_or_int(struct repository *repo,
@@ -577,6 +586,11 @@ int git_config_get_int(const char *key, int *dest);
  * Similar to `git_config_get_int` but for unsigned longs.
  */
 int git_config_get_ulong(const char *key, unsigned long *dest);
+
+/**
+ * Similar to `git_config_get_int` but for (unsigned) timestamps.
+ */
+int git_config_get_timestamp(const char *key, timestamp_t *dest);
 
 /**
  * Finds and parses the value into a boolean value, for the configuration
