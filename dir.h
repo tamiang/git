@@ -578,4 +578,15 @@ void connect_work_tree_and_git_dir(const char *work_tree,
 void relocate_gitdir(const char *path,
 		     const char *old_git_dir,
 		     const char *new_git_dir);
+
+static inline int starts_with_dot_slash(const char *str)
+{
+	return str[0] == '.' && is_dir_sep(str[1]);
+}
+
+static inline int starts_with_dot_dot_slash(const char *str)
+{
+	return str[0] == '.' && str[1] == '.' && is_dir_sep(str[2]);
+}
+
 #endif

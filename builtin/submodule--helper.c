@@ -70,16 +70,6 @@ static int print_default_remote(int argc, const char **argv, const char *prefix)
 	return 0;
 }
 
-static int starts_with_dot_slash(const char *str)
-{
-	return str[0] == '.' && is_dir_sep(str[1]);
-}
-
-static int starts_with_dot_dot_slash(const char *str)
-{
-	return str[0] == '.' && str[1] == '.' && is_dir_sep(str[2]);
-}
-
 /*
  * Returns 1 if it was the last chop before ':'.
  */
