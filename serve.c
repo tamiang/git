@@ -18,6 +18,12 @@ static int always_advertise(struct repository *r,
 	return 1;
 }
 
+static int never_advertise(struct repository *r,
+			   struct strbuf *value)
+{
+	return 0;
+}
+
 static int agent_advertise(struct repository *r,
 			   struct strbuf *value)
 {
@@ -135,6 +141,11 @@ static struct protocol_capability capabilities[] = {
 		.name = "object-info",
 		.advertise = always_advertise,
 		.command = cap_object_info,
+	},
+	{
+		.name = "config",
+		.advertise = never_advertise,
+		.command = cap_config,
 	},
 };
 
