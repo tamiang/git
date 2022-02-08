@@ -18,10 +18,22 @@ static int always_advertise(struct repository *r,
 	return 1;
 }
 
-static int never_advertise(struct repository *r,
-			   struct strbuf *value)
+static int key_serve_prefix(const char *key, const char *value, void *data)
 {
+	int *signal = data;
+	if (!strncmp(key, "serve.", 6)) {
+		*signal = 1;
+		return 1;
+	}
 	return 0;
+}
+
+static int has_serve_config(struct repository *r,
+			    struct strbuf *value)
+{
+	int signal = 0;
+	repo_config(r, key_serve_prefix, &signal);
+	return signal;
 }
 
 static int agent_advertise(struct repository *r,
@@ -144,7 +156,7 @@ static struct protocol_capability capabilities[] = {
 	},
 	{
 		.name = "config",
-		.advertise = never_advertise,
+		.advertise = has_serve_config,
 		.command = cap_config,
 	},
 };
