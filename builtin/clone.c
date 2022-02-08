@@ -875,6 +875,7 @@ int cmd_clone(int argc, const char **argv, const char *prefix)
 	struct remote *remote;
 	int err = 0, complete_refs_before_fetch = 1;
 	int submodule_progress;
+	struct string_list *config_list = NULL;
 
 	struct transport_ls_refs_options transport_ls_refs_options =
 		TRANSPORT_LS_REFS_OPTIONS_INIT;
@@ -1191,6 +1192,26 @@ int cmd_clone(int argc, const char **argv, const char *prefix)
 		strvec_push(&transport_ls_refs_options.ref_prefixes,
 			    "refs/tags/");
 
+	refs = transport_get_remote_refs(transport, &transport_ls_refs_options);
+
+	config_list = transport_remote_config(transport);
+
+	if (config_list) {
+		struct string_list_item *item;
+		for_each_string_list_item(item, config_list) {
+			char *value;
+			char *equals = strchr(item->string, '=');
+
+			if (!equals)
+				continue;
+			*equals = '\0';
+			value = equals + 1;
+
+			if (!strcmp(item->string, "bundle.fetchuri"))
+				bundle_uri = value;
+		}
+	}
+
 	/*
 	 * Before fetching from the remote, download and install bundle
 	 * data from the --bundle-uri option.
@@ -1209,12 +1230,10 @@ int cmd_clone(int argc, const char **argv, const char *prefix)
 		if (filter)
 			git_config_set("fetch.bundlefilter", filter);
 
-		if (!fetch_bundle_uri(bundle_uri, filter))
+		if (fetch_bundle_uri(bundle_uri, filter))
 			warning(_("failed to fetch objects from bundle URI '%s'"),
 				bundle_uri);
 	}
-
-	refs = transport_get_remote_refs(transport, &transport_ls_refs_options);
 
 	if (refs) {
 		int hash_algo = hash_algo_by_ptr(transport_get_hash_algo(transport));
