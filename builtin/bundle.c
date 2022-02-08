@@ -411,6 +411,9 @@ static int cmd_bundle_fetch(int argc, const char **argv, const char *prefix)
 	struct remote_bundle_info *stack = NULL;
 	struct hashmap toc = { 0 };
 	const char *filter = NULL;
+	const char *timestamp_key = "fetch.bundletimestamp";
+	timestamp_t stored_time = 0;
+	timestamp_t max_time = 0;
 
 	struct option options[] = {
 		OPT_BOOL(0, "progress", &progress,
@@ -425,6 +428,8 @@ static int cmd_bundle_fetch(int argc, const char **argv, const char *prefix)
 
 	if (!startup_info->have_repository)
 		die(_("'fetch' requires a repository"));
+
+	git_config_get_timestamp(timestamp_key, &stored_time);
 
 	/*
 	 * Step 1: determine protocol for uri, and download contents to
@@ -447,7 +452,6 @@ static int cmd_bundle_fetch(int argc, const char **argv, const char *prefix)
 	} else {
 		struct hashmap_iter iter;
 		struct remote_bundle_info *info;
-		timestamp_t max_time = 0;
 
 		/* populate a hashtable with all relevant bundles. */
 		used_hashmap = 1;
@@ -478,6 +482,13 @@ static int cmd_bundle_fetch(int argc, const char **argv, const char *prefix)
 				max_time = info->timestamp;
 			}
 		}
+
+		trace2_data_intmax("bundle", the_repository, "max_time", max_time);
+		trace2_data_intmax("bundle", the_repository, "stored_time", stored_time);
+
+		/* Skip fetching bundles if data isn't new enough. */
+		if (max_time <= stored_time)
+			goto cleanup;
 	}
 
 	/*
@@ -569,6 +580,14 @@ static int cmd_bundle_fetch(int argc, const char **argv, const char *prefix)
 		stack = stack->stack_next;
 	}
 
+	if (max_time) {
+		struct strbuf tstr = STRBUF_INIT;
+		strbuf_addf(&tstr, "%"PRIuMAX"", max_time);
+		git_config_set_gently(timestamp_key, tstr.buf);
+		strbuf_release(&tstr);
+	}
+
+cleanup:
 	if (used_hashmap) {
 		struct hashmap_iter iter;
 		struct remote_bundle_info *info;
