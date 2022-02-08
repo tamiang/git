@@ -29,6 +29,7 @@
 #include "commit-graph.h"
 #include "shallow.h"
 #include "worktree.h"
+#include "bundle.h"
 
 #define FORCED_UPDATES_DELAY_WARNING_IN_MS (10 * 1000)
 
@@ -2056,6 +2057,22 @@ int cmd_fetch(int argc, const char **argv, const char *prefix)
 	/* FETCH_HEAD never gets updated in --dry-run mode */
 	if (dry_run)
 		write_fetch_head = 0;
+	else {
+		/*
+		 * --dry-run mode skips bundle downloads, which might
+		 * update some refs.
+		 */
+		char *bundle_uri = NULL;
+		git_config_get_string("fetch.bundleuri", &bundle_uri);
+
+		if (bundle_uri) {
+			char *filter = NULL;
+			git_config_get_string("fetch.bundlefilter", &filter);
+			fetch_bundle_uri(bundle_uri, filter);
+			free(bundle_uri);
+			free(filter);
+		}
+	}
 
 	if (all) {
 		if (argc == 1)
