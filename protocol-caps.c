@@ -8,6 +8,7 @@
 #include "object-store.h"
 #include "string-list.h"
 #include "strbuf.h"
+#include "config.h"
 
 struct requested_info {
 	unsigned size : 1;
@@ -106,6 +107,73 @@ int cap_object_info(struct repository *r, struct packet_reader *request)
 	send_info(r, &writer, &oid_str_list, &info);
 
 	string_list_clear(&oid_str_list, 1);
+
+	packet_flush(1);
+
+	return 0;
+}
+
+static void send_lines(struct repository *r, struct packet_writer *writer,
+		       struct string_list *str_list)
+{
+	struct string_list_item *item;
+
+	if (!str_list->nr)
+		return;
+
+	for_each_string_list_item (item, str_list) {
+		packet_writer_write(writer, "%s", item->string);
+	}
+}
+
+int cap_config(struct repository *r, struct packet_reader *request)
+{
+	struct packet_writer writer;
+	struct string_list config_str_list = STRING_LIST_INIT_DUP;
+	int i = 0;
+	const char *keys[] = {
+		"bundle.fetchuri",
+		"remote.self.promisor",
+		"remote.self.partialclonefilter",
+		"core.sparsecheckout",
+		"core.sparsecheckoutcone",
+		NULL
+	};
+	struct strbuf serve_config = STRBUF_INIT;
+	struct strbuf key_equals_value = STRBUF_INIT;
+	size_t len;
+	strbuf_add(&serve_config, "serve.", 6);
+	len = serve_config.len;
+
+	packet_writer_init(&writer, 1);
+
+	while (keys[i]) {
+		struct string_list_item *item;
+		const struct string_list *values = NULL;
+		strbuf_setlen(&serve_config, len);
+		strbuf_addstr(&serve_config, keys[i]);
+
+		values = repo_config_get_value_multi(r, serve_config.buf);
+
+		if (values) {
+			for_each_string_list_item(item, values) {
+				strbuf_reset(&key_equals_value);
+				strbuf_addstr(&key_equals_value, keys[i]);
+				strbuf_addch(&key_equals_value, '=');
+				strbuf_addstr(&key_equals_value, item->string);
+
+				string_list_append(&config_str_list, key_equals_value.buf);
+			}
+		}
+
+		i++;
+	}
+	strbuf_release(&serve_config);
+	strbuf_release(&key_equals_value);
+
+	send_lines(r, &writer, &config_str_list);
+
+	string_list_clear(&config_str_list, 1);
 
 	packet_flush(1);
 
