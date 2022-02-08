@@ -1264,11 +1264,25 @@ static struct ref *get_refs_list_using_list(struct transport *transport,
 	return ret;
 }
 
+static int get_config(struct transport *transport,
+		      struct string_list *list)
+{
+	get_helper(transport);
+
+	if (process_connect(transport, 0)) {
+		do_take_over(transport);
+		return transport->vtable->get_config(transport, list);
+	}
+
+	return -1;
+}
+
 static struct transport_vtable vtable = {
 	.set_option	= set_helper_option,
 	.get_refs_list	= get_refs_list,
 	.fetch_refs	= fetch_refs,
 	.push_refs	= push_refs,
+	.get_config	= get_config,
 	.connect	= connect_helper,
 	.disconnect	= release_helper
 };

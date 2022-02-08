@@ -349,6 +349,20 @@ static struct ref *get_refs_via_connect(struct transport *transport, int for_pus
 	return handshake(transport, for_push, options, 1);
 }
 
+static int get_config(struct transport *transport,
+		      struct string_list *list)
+{
+	struct git_transport_data *data = transport->data;
+	struct packet_reader reader;
+
+	packet_reader_init(&reader, data->fd[0], NULL, 0,
+			   PACKET_READ_CHOMP_NEWLINE |
+			   PACKET_READ_GENTLE_ON_EOF);
+
+	return get_remote_config(data->fd[1], &reader, list,
+				 transport->stateless_rpc);
+}
+
 static int fetch_refs_via_pack(struct transport *transport,
 			       int nr_heads, struct ref **to_fetch)
 {
@@ -890,6 +904,7 @@ static struct transport_vtable taken_over_vtable = {
 	.get_refs_list	= get_refs_via_connect,
 	.fetch_refs	= fetch_refs_via_pack,
 	.push_refs	= git_transport_push,
+	.get_config	= get_config,
 	.disconnect	= disconnect_git
 };
 
@@ -1043,6 +1058,7 @@ static struct transport_vtable builtin_smart_vtable = {
 	.get_refs_list	= get_refs_via_connect,
 	.fetch_refs	= fetch_refs_via_pack,
 	.push_refs	= git_transport_push,
+	.get_config	= get_config,
 	.connect	= connect_git,
 	.disconnect	= disconnect_git
 };
@@ -1454,6 +1470,28 @@ int transport_fetch_refs(struct transport *transport, struct ref *refs)
 
 	free(heads);
 	return rc;
+}
+
+struct string_list *transport_remote_config(struct transport *transport)
+{
+	const struct transport_vtable *vtable = transport->vtable;
+	struct string_list *list = NULL;
+
+	if (!server_supports_v2("config", 0))
+		return NULL;
+
+	if (!vtable->get_config) {
+		warning(_("'config' not supported by this remote"));
+		return NULL;
+	}
+
+	CALLOC_ARRAY(list, 1);
+	string_list_init_dup(list);
+
+	if (vtable->get_config(transport, list))
+		warning(_("failed to get recommended config from remote"));
+
+	return list;
 }
 
 void transport_unlock_pack(struct transport *transport, unsigned int flags)

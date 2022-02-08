@@ -272,6 +272,11 @@ struct transport_ls_refs_options {
 const struct ref *transport_get_remote_refs(struct transport *transport,
 					    struct transport_ls_refs_options *transport_options);
 
+/**
+ * Get recommended config from remote.
+ */
+struct string_list *transport_remote_config(struct transport *transport);
+
 /*
  * Fetch the hash algorithm used by a remote.
  *

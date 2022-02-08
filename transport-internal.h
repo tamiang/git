@@ -51,6 +51,14 @@ struct transport_vtable {
 	 * process involved generating new commits.
 	 **/
 	int (*push_refs)(struct transport *transport, struct ref *refs, int flags);
+
+	/**
+	 * get_config() requests a list of recommended config and populates
+	 * the given string_list with those 'key=value' pairs.
+	 */
+	int (*get_config)(struct transport *transport,
+			  struct string_list *list);
+
 	int (*connect)(struct transport *connection, const char *name,
 		       const char *executable, int fd[2]);
 
