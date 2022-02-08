@@ -45,4 +45,13 @@ int unbundle(struct repository *r, struct bundle_header *header,
 int list_bundle_refs(struct bundle_header *header,
 		int argc, const char **argv);
 
+struct list_objects_filter_options;
+/**
+ * Fetch bundles from the given URI with the given filter.
+ *
+ * Uses 'git bundle fetch' as a subprocess.
+ */
+int fetch_bundle_uri(const char *bundle_uri,
+		     const char *filter);
+
 #endif

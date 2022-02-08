@@ -649,3 +649,24 @@ int unbundle(struct repository *r, struct bundle_header *header,
 		return error(_("index-pack died"));
 	return 0;
 }
+
+int fetch_bundle_uri(const char *bundle_uri,
+		     const char *filter)
+{
+	int res = 0;
+	struct strvec args = STRVEC_INIT;
+
+	strvec_pushl(&args, "bundle", "fetch", NULL);
+
+	if (filter)
+		strvec_pushf(&args, "--filter=%s", filter);
+	strvec_push(&args, bundle_uri);
+
+	if (run_command_v_opt(args.v, RUN_GIT_CMD)) {
+		warning(_("failed to download bundle from uri '%s'"), bundle_uri);
+		res = 1;
+	}
+
+	strvec_clear(&args);
+	return res;
+}
