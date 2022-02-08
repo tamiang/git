@@ -10,6 +10,7 @@
 #include "config.h"
 #include "packfile.h"
 #include "list-objects-filter-options.h"
+#include "remote.h"
 
 /*
  * Basic handler for bundle files to connect repositories via sneakernet.
@@ -455,12 +456,18 @@ static int cmd_bundle_fetch(int argc, const char **argv, const char *prefix)
 
 		/* initialize stack using timestamp heuristic. */
 		hashmap_for_each_entry(&toc, &iter, info, ent) {
+			char *old_uri;
+
 			/* Skip if filter does not match. */
 			if (!filter && info->filter_str)
 				continue;
 			if (filter &&
 			    (!info->filter_str || strcasecmp(filter, info->filter_str)))
 				continue;
+
+			old_uri = info->uri;
+			info->uri = relative_url(bundle_uri, info->uri, NULL);
+			free(old_uri);
 
 			/*
 			 * Now that the filter matches, start with the
