@@ -761,12 +761,24 @@ test_expect_success 'partial clone using HTTP' '
 '
 
 test_expect_success 'reject cloning shallow repository using HTTP' '
-	test_when_finished "rm -rf repo" &&
+	test_when_finished rm -rf repo "$HTTPD_DOCUMENT_ROOT_PATH/repo.git" &&
 	git clone --bare --no-local --depth=1 src "$HTTPD_DOCUMENT_ROOT_PATH/repo.git" &&
 	test_must_fail git -c protocol.version=2 clone --reject-shallow $HTTPD_URL/smart/repo.git repo 2>err &&
 	test_i18ngrep -e "source repository is shallow, reject to clone." err &&
 
 	git clone --no-reject-shallow $HTTPD_URL/smart/repo.git repo
+'
+
+test_expect_success 'auto-discover bundle URI from HTTP clone' '
+	test_when_finished rm -rf repo "$HTTPD_DOCUMENT_ROOT_PATH/repo.git" &&
+	git -C src bundle create "$HTTPD_DOCUMENT_ROOT_PATH/everything.bundle" --all &&
+	git clone --bare --no-local src "$HTTPD_DOCUMENT_ROOT_PATH/repo2.git" &&
+	git -C "$HTTPD_DOCUMENT_ROOT_PATH/repo2.git" config \
+		serve.bundle.fetchuri $HTTPD_URL/everything.bundle &&
+	GIT_TRACE2_EVENT="$(pwd)/trace.txt" \
+		git -c protocol.version=2 clone \
+		$HTTPD_URL/smart/repo2.git repo &&
+	test_subcommand_inexact git bundle unbundle <trace.txt
 '
 
 # DO NOT add non-httpd-specific tests here, because the last part of this
