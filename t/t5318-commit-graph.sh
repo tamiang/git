@@ -68,6 +68,71 @@ test_expect_success 'create commits and repack' '
 
 graph_git_behavior 'no graph' full commits/3 commits/1
 
+<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< HEAD
+|||||||||||||||||||||||||||||||| parent of 819e565940a (commit-graph: write file format v2)
+graph_read_expect() {
+	OPTIONAL=""
+	NUM_CHUNKS=3
+	if test ! -z "$2"
+	then
+		OPTIONAL=" $2"
+		NUM_CHUNKS=$((3 + $(echo "$2" | wc -w)))
+	fi
+	GENERATION_VERSION=2
+	if test ! -z "$3"
+	then
+		GENERATION_VERSION=$3
+	fi
+	OPTIONS=
+	if test $GENERATION_VERSION -gt 1
+	then
+		OPTIONS=" read_generation_data"
+	fi
+	cat >expect <<- EOF
+	header: 43475048 1 $(test_oid oid_version) $NUM_CHUNKS 0
+	num_commits: $1
+	chunks: oid_fanout oid_lookup commit_metadata$OPTIONAL
+	options:$OPTIONS
+	EOF
+	test-tool read-graph >output &&
+	test_cmp expect output
+}
+
+================================
+graph_read_expect() {
+	OPTIONAL=""
+	NUM_CHUNKS=3
+	if test ! -z "$2"
+	then
+		OPTIONAL=" $2"
+		NUM_CHUNKS=$((3 + $(echo "$2" | wc -w)))
+	fi
+	GENERATION_VERSION=2
+	if test ! -z "$3"
+	then
+		GENERATION_VERSION=$3
+	fi
+	OPTIONS=
+	if test $GENERATION_VERSION -gt 1
+	then
+		OPTIONS=" read_generation_data"
+	fi
+	VERSION=1
+	if test $GENERATION_VERSION -gt 2
+	then
+		VERSION=2
+	fi
+	cat >expect <<- EOF
+	header: 43475048 $VERSION $(test_oid oid_version) $NUM_CHUNKS 0
+	num_commits: $1
+	chunks: oid_fanout oid_lookup commit_metadata$OPTIONAL
+	options:$OPTIONS
+	EOF
+	test-tool read-graph >output &&
+	test_cmp expect output
+}
+
+>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> 819e565940a (commit-graph: write file format v2)
 test_expect_success 'exit with correct error on bad input to --stdin-commits' '
 	cd "$TRASH_DIRECTORY/full" &&
 	# invalid, non-hex OID
@@ -290,6 +355,15 @@ test_expect_success 'build graph using --reachable' '
 
 graph_git_behavior 'append graph, commit 8 vs merge 1' full commits/8 merge/1
 graph_git_behavior 'append graph, commit 8 vs merge 2' full commits/8 merge/2
+
+test_expect_success 'write file format v2 with generation number v3' '
+	cd "$TRASH_DIRECTORY/full" &&
+	git -c commitGraph.generationVersion=3 commit-graph write --reachable &&
+	graph_read_expect "11" "extra_edges" 3
+'
+
+graph_git_behavior 'graph v2, commit 8 vs merge 1' full commits/8 merge/1
+graph_git_behavior 'graph v2, commit 8 vs merge 2' full commits/8 merge/2
 
 test_expect_success 'setup bare repo' '
 	cd "$TRASH_DIRECTORY" &&

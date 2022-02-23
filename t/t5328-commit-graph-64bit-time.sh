@@ -63,4 +63,14 @@ test_expect_success 'set up and verify repo with generation data overflow chunk'
 
 graph_git_behavior 'overflow 2' repo left right
 
+test_expect_success TIME_IS_64BIT,TIME_T_IS_64BIT 'set up and verify repo with generation data overflow chunk (v3)' '
+	cd "$TRASH_DIRECTORY/repo" &&
+	git -c commitGraph.generationVersion=3 commit-graph write --reachable &&
+	graph_read_expect 10 "generation_data_overflow" 3 &&
+	git commit-graph verify
+'
+
+graph_git_behavior 'generation data overflow chunk repo' repo left right
+
+
 test_done
