@@ -392,6 +392,13 @@ stat_ref:
 		goto out;
 	}
 
+	if (!st.st_size) {
+		warning(_("ignoring empty ref file for %s"), refname);
+		myerr = ENOENT;
+		ret = 1;
+		goto out;
+	}
+
 	/* Follow "normalized" - ie "refs/.." symlinks by hand */
 	if (S_ISLNK(st.st_mode)) {
 		strbuf_reset(&sb_contents);

@@ -18,7 +18,10 @@ test_expect_success 'Broken refs are reported correctly' '
 	r=refs/heads/bogus &&
 	: >.git/$r &&
 	test_when_finished "rm -f .git/$r" &&
-	echo "warning: ignoring broken ref $r" >broken-err &&
+	cat >broken-err <<-EOF &&
+	warning: ignoring empty ref file for $r
+	warning: ignoring broken ref $r
+	EOF
 	git for-each-ref >out 2>err &&
 	test_cmp full-list out &&
 	test_cmp broken-err err

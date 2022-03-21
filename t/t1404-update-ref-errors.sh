@@ -632,4 +632,25 @@ test_expect_success REFFILES 'delete fails cleanly if packed-refs.new write fail
 	test_cmp unchanged actual
 '
 
+contains_broken_ref () {
+	grep "ignoring empty ref file for"
+}
+
+test_expect_success 'skip ref with zero length' '
+	touch .git/refs/heads/empty &&
+	test_must_fail git rev-parse empty 2>err &&
+	contains_broken_ref <err &&
+	git branch --list 2>err &&
+	contains_broken_ref <err &&
+	test_must_fail git checkout empty 2>err &&
+	contains_broken_ref <err &&
+
+	# Keep this one last, as it should fix the ref.
+	git branch empty HEAD 2>err &&
+	contains_broken_ref <err &&
+	git rev-parse HEAD >expect &&
+	git rev-parse empty >actual &&
+	test_cmp expect actual
+'
+
 test_done
