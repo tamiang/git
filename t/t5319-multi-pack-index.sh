@@ -106,6 +106,11 @@ test_expect_success 'write midx with one v1 pack' '
 	midx_read_expect 1 18 4 $objdir
 '
 
+test_expect_success MINGW 'normalize input object-dir' '
+	backslash=${objdir/\//\\} &&
+	git multi-pack-index --object-dir="$backslash" write
+'
+
 midx_git_two_modes () {
 	git -c core.multiPackIndex=false $1 >expect &&
 	git -c core.multiPackIndex=true $1 >actual &&

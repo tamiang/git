@@ -90,6 +90,20 @@ static void read_packs_from_stdin(struct string_list *to)
 	strbuf_release(&buf);
 }
 
+static void normalize_object_dir(void)
+{
+	if (!opts.object_dir)
+		opts.object_dir = get_object_directory();
+	else {
+		struct strbuf norm = STRBUF_INIT;
+		trace2_printf("normalizing '%s'", opts.object_dir);
+		strbuf_addstr(&norm, opts.object_dir);
+		strbuf_normalize_path(&norm);
+		opts.object_dir = strbuf_detach(&norm, NULL);
+		trace2_printf("normalized to '%s'", opts.object_dir);
+	}
+}
+
 static int cmd_multi_pack_index_write(int argc, const char **argv)
 {
 	struct option *options;
@@ -126,6 +140,8 @@ static int cmd_multi_pack_index_write(int argc, const char **argv)
 				   options);
 
 	FREE_AND_NULL(options);
+
+	normalize_object_dir();
 
 	if (opts.stdin_packs) {
 		struct string_list packs = STRING_LIST_INIT_DUP;
@@ -169,6 +185,8 @@ static int cmd_multi_pack_index_verify(int argc, const char **argv)
 
 	FREE_AND_NULL(options);
 
+	normalize_object_dir();
+
 	return verify_midx_file(the_repository, opts.object_dir, opts.flags);
 }
 
@@ -194,6 +212,8 @@ static int cmd_multi_pack_index_expire(int argc, const char **argv)
 				   options);
 
 	FREE_AND_NULL(options);
+
+	normalize_object_dir();
 
 	return expire_midx_packs(the_repository, opts.object_dir, opts.flags);
 }
@@ -225,6 +245,8 @@ static int cmd_multi_pack_index_repack(int argc, const char **argv)
 
 	FREE_AND_NULL(options);
 
+	normalize_object_dir();
+
 	return midx_repack(the_repository, opts.object_dir,
 			   (size_t)opts.batch_size, opts.flags);
 }
@@ -240,9 +262,6 @@ int cmd_multi_pack_index(int argc, const char **argv,
 			     builtin_multi_pack_index_options,
 			     builtin_multi_pack_index_usage,
 			     PARSE_OPT_STOP_AT_NON_OPTION);
-
-	if (!opts.object_dir)
-		opts.object_dir = get_object_directory();
 
 	if (!argc)
 		goto usage;
