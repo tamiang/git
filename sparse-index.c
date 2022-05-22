@@ -196,11 +196,8 @@ int convert_to_sparse(struct index_state *istate, int flags)
 		/*
 		 * Silently return if there is a problem with the cache tree update,
 		 * which might just be due to a conflict state in some entry.
-		 *
-		 * This might create new tree objects, so be sure to use
-		 * WRITE_TREE_MISSING_OK.
 		 */
-		if (cache_tree_update(istate, WRITE_TREE_MISSING_OK))
+		if (cache_tree_update(istate, 0))
 			return 0;
 	}
 
@@ -309,7 +306,7 @@ void expand_to_pattern_list(struct index_state *istate,
 		 * need to expand to a full index since we cannot satisfy
 		 * the current request as a sparse index.
 		 */
-		if (cache_tree_update(istate, WRITE_TREE_MISSING_OK))
+		if (cache_tree_update(istate, 0))
 			pl = NULL;
 	}
 
