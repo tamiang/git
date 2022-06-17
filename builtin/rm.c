@@ -5,6 +5,7 @@
  */
 #define USE_THE_REPOSITORY_VARIABLE
 #include "builtin.h"
+#include "environment.h"
 #include "advice.h"
 #include "config.h"
 #include "lockfile.h"
@@ -314,7 +315,7 @@ int cmd_rm(int argc,
 	for (i = 0; i < the_repository->index->cache_nr; i++) {
 		const struct cache_entry *ce = the_repository->index->cache[i];
 
-		if (!include_sparse &&
+		if (!include_sparse && !core_virtualfilesystem &&
 		    (ce_skip_worktree(ce) ||
 		     !path_in_sparse_checkout(ce->name, the_repository->index)))
 			continue;
@@ -351,7 +352,11 @@ int cmd_rm(int argc,
 				    *original ? original : ".");
 		}
 
-		if (only_match_skip_worktree.nr) {
+		/*
+		 * When using a virtual filesystem, we might re-add a path
+		 * that is currently virtual and we want that to succeed.
+		 */
+		if (!core_virtualfilesystem && only_match_skip_worktree.nr) {
 			advise_on_updating_sparse_paths(&only_match_skip_worktree);
 			ret = 1;
 		}
