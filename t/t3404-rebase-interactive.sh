@@ -1813,6 +1813,29 @@ test_expect_success '--update-refs adds commands with --rebase-merges' '
 	)
 '
 
+compare_two_refs () {
+	git rev-parse $1 >expect &&
+	git rev-parse $2 >actual &&
+	test_cmp expect actual
+}
+
+test_expect_success '--update-refs updates refs correctly' '
+	git checkout -B update-refs no-conflict-branch &&
+	git branch -f base HEAD~4 &&
+	git branch -f first HEAD~3 &&
+	git branch -f second HEAD~3 &&
+	git branch -f third HEAD~1 &&
+	test_commit extra2 fileX &&
+	git commit --amend --fixup=L &&
+
+	git rebase -i --autosquash --update-refs primary &&
+
+	compare_two_refs HEAD~3 refs/heads/first &&
+	compare_two_refs HEAD~3 refs/heads/second &&
+	compare_two_refs HEAD~1 refs/heads/third &&
+	compare_two_refs HEAD refs/heads/no-conflict-branch
+'
+
 # This must be the last test in this file
 test_expect_success '$EDITOR and friends are unchanged' '
 	test_editor_unchanged

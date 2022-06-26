@@ -36,6 +36,7 @@
 #include "rebase-interactive.h"
 #include "reset.h"
 #include "branch.h"
+#include "log-tree.h"
 
 #define GIT_REFLOG_ACTION "GIT_REFLOG_ACTION"
 
@@ -147,6 +148,14 @@ static GIT_PATH_FUNC(rebase_path_squash_onto, "rebase-merge/squash-onto")
  * finishes. This is used by the `label` command to record the need for cleanup.
  */
 static GIT_PATH_FUNC(rebase_path_refs_to_delete, "rebase-merge/refs-to-delete")
+
+/*
+ * The update-refs file stores a list of refs that will be updated at the end
+ * of the rebase sequence. The 'update-ref <ref>' commands in the todo file
+ * update the OIDs for the refs in this file, but the refs are not updated
+ * until the end of the rebase sequence.
+ */
+static GIT_PATH_FUNC(rebase_path_update_refs, "rebase-merge/update-refs")
 
 /*
  * The following files are written by git-rebase just after parsing the
@@ -4058,9 +4067,108 @@ leave_merge:
 	return ret;
 }
 
-static int do_update_ref(struct repository *r, const char *ref_name)
+static int write_update_refs_state(struct string_list *refs_to_oids)
 {
+	int result = 0;
+	FILE *fp = NULL;
+	struct string_list_item *item;
+	char *path = xstrdup(rebase_path_update_refs());
+
+	if (safe_create_leading_directories(path)) {
+		result = error(_("unable to create leading directories of %s"),
+			       path);
+		goto cleanup;
+	}
+
+	fp = fopen(path, "w");
+	if (!fp) {
+		result = error_errno(_("could not open '%s' for writing"), path);
+		goto cleanup;
+	}
+
+	for_each_string_list_item(item, refs_to_oids)
+		fprintf(fp, "%s\n%s\n", item->string, oid_to_hex(item->util));
+
+cleanup:
+	if (fp)
+		fclose(fp);
+	return result;
+}
+
+static int do_update_ref(struct repository *r, const char *refname)
+{
+	struct string_list_item *item;
+	struct string_list list = STRING_LIST_INIT_DUP;
+	int found = 0;
+
+	sequencer_get_update_refs_state(r->gitdir, &list);
+
+	for_each_string_list_item(item, &list) {
+		if (!strcmp(item->string, refname)) {
+			struct object_id oid;
+			free(item->util);
+			found = 1;
+
+			if (!read_ref("HEAD", &oid)) {
+				item->util = oiddup(&oid);
+				break;
+			}
+		}
+	}
+
+	if (!found) {
+		struct object_id oid;
+		item = string_list_append(&list, refname);
+
+		if (!read_ref("HEAD", &oid))
+			item->util = oiddup(&oid);
+		else
+			item->util = oiddup(the_hash_algo->null_oid);
+	}
+
+	write_update_refs_state(&list);
+	string_list_clear(&list, 1);
 	return 0;
+}
+
+static int do_update_refs(struct repository *r)
+{
+	int res;
+	struct string_list_item *item;
+	struct string_list refs_to_oids = STRING_LIST_INIT_DUP;
+	struct ref_store *refs = get_main_ref_store(r);
+
+	sequencer_get_update_refs_state(r->gitdir, &refs_to_oids);
+
+	for_each_string_list_item(item, &refs_to_oids) {
+		struct object_id *oid_to = item->util;
+		struct object_id oid_from;
+
+		if (oideq(oid_to, the_hash_algo->null_oid)) {
+			/*
+			 * Ref was not updated. User may have deleted the
+			 * 'update-ref' step.
+			 */
+			continue;
+		}
+
+		if (read_ref(item->string, &oid_from)) {
+			/*
+			 * The ref does not exist. The user probably
+			 * inserted a new 'update-ref' step with a new
+			 * branch name.
+			 */
+			oidcpy(&oid_from, the_hash_algo->null_oid);
+		}
+
+		res |= refs_update_ref(refs, "rewritten during rebase",
+				item->string,
+				oid_to, &oid_from,
+				0, UPDATE_REFS_MSG_ON_ERR);
+	}
+
+	string_list_clear(&refs_to_oids, 1);
+	return res;
 }
 
 static int is_final_fixup(struct todo_list *todo_list)
@@ -4579,6 +4687,8 @@ cleanup_head_ref:
 		strbuf_release(&buf);
 		strbuf_release(&head_ref);
 	}
+
+	do_update_refs(r);
 
 	/*
 	 * Sequence of picks finished successfully; cleanup by
@@ -5708,6 +5818,8 @@ static int todo_list_add_update_ref_commands(struct todo_list *todo_list)
 			add_decorations_to_list(item->commit, &ctx);
 		}
 	}
+
+	write_update_refs_state(&ctx.refs_to_oids);
 
 	string_list_clear(&ctx.refs_to_oids, 1);
 	free(todo_list->items);
