@@ -35,6 +35,8 @@
 #include "commit-reach.h"
 #include "rebase-interactive.h"
 #include "reset.h"
+#include "branch.h"
+#include "log-tree.h"
 
 #define GIT_REFLOG_ACTION "GIT_REFLOG_ACTION"
 
@@ -146,6 +148,14 @@ static GIT_PATH_FUNC(rebase_path_squash_onto, "rebase-merge/squash-onto")
  * finishes. This is used by the `label` command to record the need for cleanup.
  */
 static GIT_PATH_FUNC(rebase_path_refs_to_delete, "rebase-merge/refs-to-delete")
+
+/*
+ * The update-refs file stores a list of refs that will be updated at the end
+ * of the rebase sequence. The 'update-ref <ref>' commands in the todo file
+ * update the OIDs for the refs in this file, but the refs are not updated
+ * until the end of the rebase sequence.
+ */
+static GIT_PATH_FUNC(rebase_path_update_refs, "rebase-merge/update-refs")
 
 /*
  * The following files are written by git-rebase just after parsing the
@@ -1689,20 +1699,21 @@ static struct {
 	char c;
 	const char *str;
 } todo_command_info[] = {
-	{ 'p', "pick" },
-	{ 0,   "revert" },
-	{ 'e', "edit" },
-	{ 'r', "reword" },
-	{ 'f', "fixup" },
-	{ 's', "squash" },
-	{ 'x', "exec" },
-	{ 'b', "break" },
-	{ 'l', "label" },
-	{ 't', "reset" },
-	{ 'm', "merge" },
-	{ 0,   "noop" },
-	{ 'd', "drop" },
-	{ 0,   NULL }
+	[TODO_PICK] = { 'p', "pick" },
+	[TODO_REVERT] = { 0,   "revert" },
+	[TODO_EDIT] = { 'e', "edit" },
+	[TODO_REWORD] = { 'r', "reword" },
+	[TODO_FIXUP] = { 'f', "fixup" },
+	[TODO_SQUASH] = { 's', "squash" },
+	[TODO_EXEC] = { 'x', "exec" },
+	[TODO_BREAK] = { 'b', "break" },
+	[TODO_LABEL] = { 'l', "label" },
+	[TODO_RESET] = { 't', "reset" },
+	[TODO_MERGE] = { 'm', "merge" },
+	[TODO_UPDATE_REF] = { 'u', "update-ref" },
+	[TODO_NOOP] = { 0,   "noop" },
+	[TODO_DROP] = { 'd', "drop" },
+	[TODO_COMMENT] = { 0,   NULL },
 };
 
 static const char *command_to_string(const enum todo_command command)
@@ -2481,7 +2492,7 @@ static int parse_insn_line(struct repository *r, struct todo_item *item,
 			     command_to_string(item->command));
 
 	if (item->command == TODO_EXEC || item->command == TODO_LABEL ||
-	    item->command == TODO_RESET) {
+	    item->command == TODO_RESET || item->command == TODO_UPDATE_REF) {
 		item->commit = NULL;
 		item->arg_offset = bol - buf;
 		item->arg_len = (int)(eol - bol);
@@ -4081,6 +4092,110 @@ leave_merge:
 	return ret;
 }
 
+static int write_update_refs_state(struct string_list *refs_to_oids)
+{
+	int result = 0;
+	FILE *fp = NULL;
+	struct string_list_item *item;
+	char *path = xstrdup(rebase_path_update_refs());
+
+	if (safe_create_leading_directories(path)) {
+		result = error(_("unable to create leading directories of %s"),
+			       path);
+		goto cleanup;
+	}
+
+	fp = fopen(path, "w");
+	if (!fp) {
+		result = error_errno(_("could not open '%s' for writing"), path);
+		goto cleanup;
+	}
+
+	for_each_string_list_item(item, refs_to_oids)
+		fprintf(fp, "%s\n%s\n", item->string, oid_to_hex(item->util));
+
+cleanup:
+	if (fp)
+		fclose(fp);
+	return result;
+}
+
+static int do_update_ref(struct repository *r, const char *refname)
+{
+	struct string_list_item *item;
+	struct string_list list = STRING_LIST_INIT_DUP;
+	int found = 0;
+
+	sequencer_get_update_refs_state(r->gitdir, &list);
+
+	for_each_string_list_item(item, &list) {
+		if (!strcmp(item->string, refname)) {
+			struct object_id oid;
+			free(item->util);
+			found = 1;
+
+			if (!read_ref("HEAD", &oid)) {
+				item->util = oiddup(&oid);
+				break;
+			}
+		}
+	}
+
+	if (!found) {
+		struct object_id oid;
+		item = string_list_append(&list, refname);
+
+		if (!read_ref("HEAD", &oid))
+			item->util = oiddup(&oid);
+		else
+			item->util = oiddup(the_hash_algo->null_oid);
+	}
+
+	write_update_refs_state(&list);
+	string_list_clear(&list, 1);
+	return 0;
+}
+
+static int do_update_refs(struct repository *r)
+{
+	int res;
+	struct string_list_item *item;
+	struct string_list refs_to_oids = STRING_LIST_INIT_DUP;
+	struct ref_store *refs = get_main_ref_store(r);
+
+	sequencer_get_update_refs_state(r->gitdir, &refs_to_oids);
+
+	for_each_string_list_item(item, &refs_to_oids) {
+		struct object_id *oid_to = item->util;
+		struct object_id oid_from;
+
+		if (oideq(oid_to, the_hash_algo->null_oid)) {
+			/*
+			 * Ref was not updated. User may have deleted the
+			 * 'update-ref' step.
+			 */
+			continue;
+		}
+
+		if (read_ref(item->string, &oid_from)) {
+			/*
+			 * The ref does not exist. The user probably
+			 * inserted a new 'update-ref' step with a new
+			 * branch name.
+			 */
+			oidcpy(&oid_from, the_hash_algo->null_oid);
+		}
+
+		res |= refs_update_ref(refs, "rewritten during rebase",
+				item->string,
+				oid_to, &oid_from,
+				0, UPDATE_REFS_MSG_ON_ERR);
+	}
+
+	string_list_clear(&refs_to_oids, 1);
+	return res;
+}
+
 static int is_final_fixup(struct todo_list *todo_list)
 {
 	int i = todo_list->current;
@@ -4456,6 +4571,12 @@ static int pick_commits(struct repository *r,
 				return error_with_patch(r, item->commit,
 							arg, item->arg_len,
 							opts, res, 0);
+		} else if (item->command == TODO_UPDATE_REF) {
+			struct strbuf ref = STRBUF_INIT;
+			strbuf_add(&ref, arg, item->arg_len);
+			if ((res = do_update_ref(r, ref.buf)))
+				reschedule = 1;
+			strbuf_release(&ref);
 		} else if (!is_noop(item->command))
 			return error(_("unknown command %d"), item->command);
 
@@ -4592,6 +4713,8 @@ cleanup_head_ref:
 		strbuf_release(&buf);
 		strbuf_release(&head_ref);
 	}
+
+	do_update_refs(r);
 
 	/*
 	 * Sequence of picks finished successfully; cleanup by
@@ -5638,10 +5761,115 @@ static int skip_unnecessary_picks(struct repository *r,
 	return 0;
 }
 
+struct todo_add_branch_context {
+	struct todo_item *items;
+	size_t items_nr;
+	size_t items_alloc;
+	struct strbuf *buf;
+	struct commit *commit;
+	struct string_list refs_to_oids;
+};
+
+static int add_decorations_to_list(const struct commit *commit,
+				   struct todo_add_branch_context *ctx)
+{
+	const struct name_decoration *decoration = get_name_decoration(&commit->object);
+
+	while (decoration) {
+		struct todo_item *item;
+		const char *path;
+		size_t base_offset = ctx->buf->len;
+
+		ALLOC_GROW(ctx->items,
+			ctx->items_nr + 1,
+			ctx->items_alloc);
+		item = &ctx->items[ctx->items_nr];
+		memset(item, 0, sizeof(*item));
+
+		/* If the branch is checked out, then leave a comment instead. */
+		if ((path = branch_checked_out(decoration->name))) {
+			item->command = TODO_COMMENT;
+			strbuf_addf(ctx->buf, "# Ref %s checked out at '%s'\n",
+				    decoration->name, path);
+		} else {
+			struct string_list_item *sti;
+			item->command = TODO_UPDATE_REF;
+			strbuf_addf(ctx->buf, "%s\n", decoration->name);
+
+			sti = string_list_append(&ctx->refs_to_oids,
+						 decoration->name);
+			sti->util = oiddup(the_hash_algo->null_oid);
+		}
+
+		item->offset_in_buf = base_offset;
+		item->arg_offset = base_offset;
+		item->arg_len = ctx->buf->len - base_offset;
+		ctx->items_nr++;
+
+		decoration = decoration->next;
+	}
+
+	return 0;
+}
+
+/*
+ * For each 'pick' command, find out if the commit has a decoration in
+ * refs/heads/. If so, then add a 'label for-update-refs/' command.
+ */
+static int todo_list_add_update_ref_commands(struct todo_list *todo_list)
+{
+	int i;
+	static struct string_list decorate_refs_exclude = STRING_LIST_INIT_NODUP;
+	static struct string_list decorate_refs_exclude_config = STRING_LIST_INIT_NODUP;
+	static struct string_list decorate_refs_include = STRING_LIST_INIT_NODUP;
+	struct decoration_filter decoration_filter = {
+		.include_ref_pattern = &decorate_refs_include,
+		.exclude_ref_pattern = &decorate_refs_exclude,
+		.exclude_ref_config_pattern = &decorate_refs_exclude_config,
+	};
+	struct todo_add_branch_context ctx = {
+		.buf = &todo_list->buf,
+		.refs_to_oids = STRING_LIST_INIT_DUP,
+	};
+
+	ctx.items_alloc = 2 * todo_list->nr + 1;
+	ALLOC_ARRAY(ctx.items, ctx.items_alloc);
+
+	string_list_append(&decorate_refs_include, "refs/heads/");
+	load_ref_decorations(&decoration_filter, 0);
+
+	for (i = 0; i < todo_list->nr; ) {
+		struct todo_item *item = &todo_list->items[i];
+
+		/* insert ith item into new list */
+		ALLOC_GROW(ctx.items,
+			   ctx.items_nr + 1,
+			   ctx.items_alloc);
+
+		ctx.items[ctx.items_nr++] = todo_list->items[i++];
+
+		if (item->commit) {
+			ctx.commit = item->commit;
+			add_decorations_to_list(item->commit, &ctx);
+		}
+	}
+
+	write_update_refs_state(&ctx.refs_to_oids);
+
+	string_list_clear(&ctx.refs_to_oids, 1);
+	free(todo_list->items);
+	todo_list->items = ctx.items;
+	todo_list->nr = ctx.items_nr;
+	todo_list->alloc = ctx.items_alloc;
+
+	return 0;
+}
+
 int complete_action(struct repository *r, struct replay_opts *opts, unsigned flags,
 		    const char *shortrevisions, const char *onto_name,
 		    struct commit *onto, const struct object_id *orig_head,
 		    struct string_list *commands, unsigned autosquash,
+		    unsigned update_refs,
 		    struct todo_list *todo_list)
 {
 	char shortonto[GIT_MAX_HEXSZ + 1];
@@ -5659,6 +5887,9 @@ int complete_action(struct repository *r, struct replay_opts *opts, unsigned fla
 		item->commit = NULL;
 		item->arg_len = item->arg_offset = item->flags = item->offset_in_buf = 0;
 	}
+
+	if (update_refs && todo_list_add_update_ref_commands(todo_list))
+		return -1;
 
 	if (autosquash && todo_list_rearrange_squash(todo_list))
 		return -1;
@@ -5935,4 +6166,46 @@ int sequencer_determine_whence(struct repository *r, enum commit_whence *whence)
 	}
 
 	return 0;
+}
+
+int sequencer_get_update_refs_state(const char *wt_dir,
+				    struct string_list *refs)
+{
+	int result = 0;
+	struct stat st;
+	FILE *fp = NULL;
+	struct strbuf ref = STRBUF_INIT;
+	struct strbuf hash = STRBUF_INIT;
+	char *path = xstrfmt("%s/rebase-merge/update-refs", wt_dir);
+
+	if (stat(path, &st))
+		goto cleanup;
+
+	fp = fopen(path, "r");
+	if (!fp)
+		goto cleanup;
+
+	while (strbuf_getline(&ref, fp) != EOF) {
+		struct object_id oid;
+		struct string_list_item *item;
+
+		if (strbuf_getline(&hash, fp) == EOF ||
+		    get_oid_hex(hash.buf, &oid)) {
+			warning(_("update-refs file at '%s' is invalid"),
+				  path);
+			result = -1;
+			goto cleanup;
+		}
+
+		item = string_list_append(refs, ref.buf);
+		item->util = oiddup(&oid);
+	}
+
+cleanup:
+	if (fp)
+		fclose(fp);
+	free(path);
+	strbuf_release(&ref);
+	strbuf_release(&hash);
+	return result;
 }
