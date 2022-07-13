@@ -883,11 +883,9 @@ static void format_display(struct strbuf *display, char code,
 static int update_local_ref(struct ref *ref,
 			    struct ref_transaction *transaction,
 			    const char *remote, const struct ref *remote_ref,
-			    struct strbuf *display, int summary_width,
-			    struct worktree **worktrees)
+			    struct strbuf *display, int summary_width)
 {
 	struct commit *current = NULL, *updated;
-	const struct worktree *wt;
 	const char *pretty_ref = prettify_refname(ref->name);
 	int fast_forward = 0;
 
@@ -902,16 +900,14 @@ static int update_local_ref(struct ref *ref,
 	}
 
 	if (!update_head_ok &&
-	    (wt = find_shared_symref(worktrees, "HEAD", ref->name)) &&
-	    !wt->is_bare && !is_null_oid(&ref->old_oid)) {
+	    !is_null_oid(&ref->old_oid) &&
+	    branch_checked_out(ref->name)) {
 		/*
 		 * If this is the head, and it's not okay to update
 		 * the head, and the old value of the head isn't empty...
 		 */
 		format_display(display, '!', _("[rejected]"),
-			       wt->is_current ?
-				       _("can't fetch in current branch") :
-				       _("checked out in another worktree"),
+			       _("can't fetch into checked-out branch"),
 			       remote, pretty_ref, summary_width);
 		return 1;
 	}
@@ -1112,7 +1108,7 @@ N_("it took %.2f seconds to check forced updates; you can use\n"
 static int store_updated_refs(const char *raw_url, const char *remote_name,
 			      int connectivity_checked,
 			      struct ref_transaction *transaction, struct ref *ref_map,
-			      struct fetch_head *fetch_head, struct worktree **worktrees)
+			      struct fetch_head *fetch_head)
 {
 	int url_len, i, rc = 0;
 	struct strbuf note = STRBUF_INIT, err = STRBUF_INIT;
@@ -1249,8 +1245,7 @@ static int store_updated_refs(const char *raw_url, const char *remote_name,
 			strbuf_reset(&note);
 			if (ref) {
 				rc |= update_local_ref(ref, transaction, what,
-						       rm, &note, summary_width,
-						       worktrees);
+						       rm, &note, summary_width);
 				free(ref);
 			} else if (write_fetch_head || dry_run) {
 				/*
@@ -1341,8 +1336,7 @@ static int check_exist_and_connected(struct ref *ref_map)
 static int fetch_and_consume_refs(struct transport *transport,
 				  struct ref_transaction *transaction,
 				  struct ref *ref_map,
-				  struct fetch_head *fetch_head,
-				  struct worktree **worktrees)
+				  struct fetch_head *fetch_head)
 {
 	int connectivity_checked = 1;
 	int ret;
@@ -1365,7 +1359,7 @@ static int fetch_and_consume_refs(struct transport *transport,
 	trace2_region_enter("fetch", "consume_refs", the_repository);
 	ret = store_updated_refs(transport->url, transport->remote->name,
 				 connectivity_checked, transaction, ref_map,
-				 fetch_head, worktrees);
+				 fetch_head);
 	trace2_region_leave("fetch", "consume_refs", the_repository);
 
 out:
@@ -1443,19 +1437,16 @@ cleanup:
 	return result;
 }
 
-static void check_not_current_branch(struct ref *ref_map,
-				     struct worktree **worktrees)
+static void check_not_current_branch(struct ref *ref_map)
 {
-	const struct worktree *wt;
+	const char *path;
 	for (; ref_map; ref_map = ref_map->next)
 		if (ref_map->peer_ref &&
 		    starts_with(ref_map->peer_ref->name, "refs/heads/") &&
-		    (wt = find_shared_symref(worktrees, "HEAD",
-					     ref_map->peer_ref->name)) &&
-		    !wt->is_bare)
+		    (path = branch_checked_out(ref_map->peer_ref->name)))
 			die(_("refusing to fetch into branch '%s' "
 			      "checked out at '%s'"),
-			    ref_map->peer_ref->name, wt->path);
+			    ref_map->peer_ref->name, path);
 }
 
 static int truncate_fetch_head(void)
@@ -1558,8 +1549,7 @@ static struct transport *prepare_transport(struct remote *remote, int deepen)
 static int backfill_tags(struct transport *transport,
 			 struct ref_transaction *transaction,
 			 struct ref *ref_map,
-			 struct fetch_head *fetch_head,
-			 struct worktree **worktrees)
+			 struct fetch_head *fetch_head)
 {
 	int retcode, cannot_reuse;
 
@@ -1580,7 +1570,7 @@ static int backfill_tags(struct transport *transport,
 	transport_set_option(transport, TRANS_OPT_FOLLOWTAGS, NULL);
 	transport_set_option(transport, TRANS_OPT_DEPTH, "0");
 	transport_set_option(transport, TRANS_OPT_DEEPEN_RELATIVE, NULL);
-	retcode = fetch_and_consume_refs(transport, transaction, ref_map, fetch_head, worktrees);
+	retcode = fetch_and_consume_refs(transport, transaction, ref_map, fetch_head);
 
 	if (gsecondary) {
 		transport_disconnect(gsecondary);
@@ -1601,7 +1591,6 @@ static int do_fetch(struct transport *transport,
 	struct transport_ls_refs_options transport_ls_refs_options =
 		TRANSPORT_LS_REFS_OPTIONS_INIT;
 	int must_list_refs = 1;
-	struct worktree **worktrees = get_worktrees();
 	struct fetch_head fetch_head = { 0 };
 	struct strbuf err = STRBUF_INIT;
 
@@ -1659,7 +1648,7 @@ static int do_fetch(struct transport *transport,
 	ref_map = get_ref_map(transport->remote, remote_refs, rs,
 			      tags, &autotags);
 	if (!update_head_ok)
-		check_not_current_branch(ref_map, worktrees);
+		check_not_current_branch(ref_map);
 
 	retcode = open_fetch_head(&fetch_head);
 	if (retcode)
@@ -1692,7 +1681,7 @@ static int do_fetch(struct transport *transport,
 			retcode = 1;
 	}
 
-	if (fetch_and_consume_refs(transport, transaction, ref_map, &fetch_head, worktrees)) {
+	if (fetch_and_consume_refs(transport, transaction, ref_map, &fetch_head)) {
 		retcode = 1;
 		goto cleanup;
 	}
@@ -1715,7 +1704,7 @@ static int do_fetch(struct transport *transport,
 			 * the transaction and don't commit anything.
 			 */
 			if (backfill_tags(transport, transaction, tags_ref_map,
-					  &fetch_head, worktrees))
+					  &fetch_head))
 				retcode = 1;
 		}
 
@@ -1800,7 +1789,6 @@ cleanup:
 	close_fetch_head(&fetch_head);
 	strbuf_release(&err);
 	free_refs(ref_map);
-	free_worktrees(worktrees);
 	return retcode;
 }
 
