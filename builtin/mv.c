@@ -377,14 +377,10 @@ act_on_entry:
 remove_entry:
 		if (--argc > 0) {
 			int n = argc - i;
-			memmove(source + i, source + i + 1,
-				n * sizeof(char *));
-			memmove(destination + i, destination + i + 1,
-				n * sizeof(char *));
-			memmove(modes + i, modes + i + 1,
-				n * sizeof(enum update_mode));
-			memmove(submodule_gitfile + i, submodule_gitfile + i + 1,
-				n * sizeof(char *));
+			MOVE_ARRAY(source + i, source + i + 1, n);
+			MOVE_ARRAY(destination + i, destination + i + 1, n);
+			MOVE_ARRAY(modes + i, modes + i + 1, n);
+			MOVE_ARRAY(submodule_gitfile + i, submodule_gitfile + i + 1, n);
 			i--;
 		}
 	}
