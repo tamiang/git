@@ -37,6 +37,17 @@ cat >.vscode/settings.json.new <<\EOF ||
         "*.h": "c",
         "*.c": "c"
     },
+    "files.exclude" : {
+        "*.o": true,
+        "Documentation/*.html": true,
+        "*.gcov": true,
+        "git": true,
+        "libgit.a": true,
+        "git-[a-z]*": true,
+        "GIT-[A-Z]*": true,
+        "t/trash directory*": true,
+        "t/perf/build": true,
+    },
     "cSpell.ignorePaths": [
     ],
     "cSpell.words": [
