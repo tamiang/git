@@ -402,10 +402,6 @@ jobs:
       shell: pwsh
       env:
         AZURE_AAD_ID: ${{ secrets.AZURE_AAD_ID }}
-        # We temporarily need two AAD IDs, as we're using an SSL certificate associated
-        # with an older App Registration until we have the required hardware to approve
-        # the new certificate in SSL Admin.
-        AZURE_AAD_ID_SSL: ${{ secrets.AZURE_AAD_ID_SSL }}
         APPLE_KEY_CODE: ${{ secrets.APPLE_KEY_CODE }}
         APPLE_SIGNING_OP_CODE: ${{ secrets.APPLE_SIGNING_OPERATION_CODE }}
       run: |
@@ -514,10 +510,6 @@ jobs:
       shell: pwsh
       env:
         AZURE_AAD_ID: ${{ secrets.AZURE_AAD_ID }}
-        # We temporarily need two AAD IDs, as we're using an SSL certificate associated
-        # with an older App Registration until we have the required hardware to approve
-        # the new certificate in SSL Admin.
-        AZURE_AAD_ID_SSL: ${{ secrets.AZURE_AAD_ID_SSL }}
         APPLE_KEY_CODE: ${{ secrets.APPLE_KEY_CODE }}
         APPLE_SIGNING_OP_CODE: ${{ secrets.APPLE_SIGNING_OPERATION_CODE }}
       run: |
@@ -534,10 +526,6 @@ jobs:
       shell: pwsh
       env:
         AZURE_AAD_ID: ${{ secrets.AZURE_AAD_ID }}
-        # We temporarily need two AAD IDs, as we're using an SSL certificate associated
-        # with an older App Registration until we have the required hardware to approve
-        # the new certificate in SSL Admin.
-        AZURE_AAD_ID_SSL: ${{ secrets.AZURE_AAD_ID_SSL }}
         APPLE_KEY_CODE: ${{ secrets.APPLE_KEY_CODE }}
         APPLE_NOTARIZATION_OP_CODE: ${{ secrets.APPLE_NOTARIZATION_OPERATION_CODE }}
       run: |
@@ -691,10 +679,6 @@ jobs:
         shell: pwsh
         env:
           AZURE_AAD_ID: ${{ secrets.AZURE_AAD_ID }}
-          # We temporarily need two AAD IDs, as we're using an SSL certificate associated
-          # with an older App Registration until we have the required hardware to approve
-          # the new certificate in SSL Admin.
-          AZURE_AAD_ID_SSL: ${{ secrets.AZURE_AAD_ID_SSL }}
           LINUX_KEY_CODE: ${{ secrets.LINUX_KEY_CODE }}
           LINUX_OP_CODE: ${{ secrets.LINUX_OPERATION_CODE }}
         run: |
