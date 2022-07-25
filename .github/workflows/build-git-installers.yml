@@ -709,11 +709,16 @@ jobs:
         with:
           name: win-installer-x86_64
           path: win-installer-x86_64
-      - name: Download Mac installer
+      - name: Download Mac dmg
         uses: actions/download-artifact@v2
         with:
           name: osx-dmg
-          path: osx-installer
+          path: osx-dmg
+      - name: Download Mac pkg
+        uses: actions/download-artifact@v2
+        with:
+          name: osx-signed-pkg
+          path: osx-pkg
       - name: Download Ubuntu package (signed)
         if: needs.prereqs.outputs.deb_signable == 'true'
         uses: actions/download-artifact@v2
@@ -774,7 +779,8 @@ jobs:
               uploadDirectoryToRelease('win-portable-x86_64', ['.exe']),
 
               // Upload Mac artifacts
-              uploadDirectoryToRelease('osx-installer'),
+              uploadDirectoryToRelease('osx-dmg'),
+              uploadDirectoryToRelease('osx-pkg'),
 
               // Upload Ubuntu artifacts
               uploadDirectoryToRelease('deb-package')
