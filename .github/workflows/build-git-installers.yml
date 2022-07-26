@@ -285,6 +285,12 @@ jobs:
             git signtool artifacts/PortableGit-*.exe
           fi &&
           openssl dgst -sha256 artifacts/${{matrix.artifact.fileprefix}}-*.exe | sed "s/.* //" >artifacts/sha-256.txt
+      - name: Verify that .exe files are code-signed
+        if: env.CODESIGN_P12 != '' && env.CODESIGN_PASS != ''
+        shell: bash
+        run: |
+          PATH=$PATH:"/c/Program Files (x86)/Windows Kits/10/App Certification Kit/" \
+          signtool verify //pa artifacts/${{matrix.artifact.fileprefix}}-*.exe
       - name: Publish ${{matrix.artifact.name}}-x86_64
         uses: actions/upload-artifact@v2
         with:
