@@ -267,8 +267,11 @@ static int nth_bitmap_object_oid(struct bitmap_index *index,
 
 static int load_bitmap_entries_v1(struct bitmap_index *index)
 {
+	int result = 0;
 	uint32_t i;
 	struct stored_bitmap *recent_bitmaps[MAX_XOR_OFFSET] = { NULL };
+
+	trace2_region_enter("bitmap", "load_bitmap_entries", the_repository);
 
 	for (i = 0; i < index->entry_count; ++i) {
 		int xor_offset, flags;
@@ -277,36 +280,47 @@ static int load_bitmap_entries_v1(struct bitmap_index *index)
 		uint32_t commit_idx_pos;
 		struct object_id oid;
 
-		if (index->map_size - index->map_pos < 6)
-			return error(_("corrupt ewah bitmap: truncated header for entry %d"), i);
+		if (index->map_size - index->map_pos < 6) {
+			result = error(_("corrupt ewah bitmap: truncated header for entry %d"), i);
+			goto out;
+		}
 
 		commit_idx_pos = read_be32(index->map, &index->map_pos);
 		xor_offset = read_u8(index->map, &index->map_pos);
 		flags = read_u8(index->map, &index->map_pos);
 
-		if (nth_bitmap_object_oid(index, &oid, commit_idx_pos) < 0)
-			return error(_("corrupt ewah bitmap: commit index %u out of range"),
-				     (unsigned)commit_idx_pos);
+		if (nth_bitmap_object_oid(index, &oid, commit_idx_pos) < 0) {
+			result = error(_("corrupt ewah bitmap: commit index %u out of range"),
+				       (unsigned)commit_idx_pos);
+		}
 
 		bitmap = read_bitmap_1(index);
-		if (!bitmap)
-			return -1;
+		if (!bitmap) {
+			result = -1;
+			goto out;
+		}
 
-		if (xor_offset > MAX_XOR_OFFSET || xor_offset > i)
-			return error(_("corrupted bitmap pack index"));
+		if (xor_offset > MAX_XOR_OFFSET || xor_offset > i) {
+			result = error(_("corrupted bitmap pack index"));
+			goto out;
+		}
 
 		if (xor_offset > 0) {
 			xor_bitmap = recent_bitmaps[(i - xor_offset) % MAX_XOR_OFFSET];
 
-			if (!xor_bitmap)
-				return error(_("invalid XOR offset in bitmap pack index"));
+			if (!xor_bitmap) {
+				result = error(_("invalid XOR offset in bitmap pack index"));
+				goto out;
+			}
 		}
 
 		recent_bitmaps[i % MAX_XOR_OFFSET] = store_bitmap(
 			index, bitmap, &oid, xor_bitmap, flags);
 	}
 
-	return 0;
+out:
+	trace2_region_leave("bitmap", "load_bitmap_entries", the_repository);
+	return result;
 }
 
 char *midx_bitmap_filename(struct multi_pack_index *midx)
