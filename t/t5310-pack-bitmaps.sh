@@ -459,7 +459,8 @@ test_expect_success 'lookup table is actually used to traverse objects' '
 	git repack -adb &&
 	GIT_TRACE2_EVENT="$(pwd)/trace3" \
 		git rev-list --use-bitmap-index --count --all &&
-	grep "\"label\":\"reading_lookup_table\"" trace3
+	test_timer_count bitmap_for_commit 5 <trace3 &&
+	test_counter lazy_bitmap_lookup 2 <trace3
 '
 
 test_expect_success 'truncated bitmap fails gracefully (lookup table)' '

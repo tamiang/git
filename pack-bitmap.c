@@ -846,22 +846,35 @@ corrupt:
 struct ewah_bitmap *bitmap_for_commit(struct bitmap_index *bitmap_git,
 				      struct commit *commit)
 {
-	khiter_t hash_pos = kh_get_oid_map(bitmap_git->bitmaps,
-					   commit->object.oid);
+	struct ewah_bitmap *result;
+	khiter_t hash_pos;
+
+	trace2_timer_start(TRACE2_TIMER_ID_BITMAP_FOR_COMMIT);
+	hash_pos = kh_get_oid_map(bitmap_git->bitmaps,
+				 commit->object.oid);
+
 	if (hash_pos >= kh_end(bitmap_git->bitmaps)) {
 		struct stored_bitmap *bitmap = NULL;
-		if (!bitmap_git->table_lookup)
-			return NULL;
+		if (!bitmap_git->table_lookup) {
+			result = NULL;
+			goto out;
+		}
 
-		trace2_region_enter("pack-bitmap", "reading_lookup_table", the_repository);
 		/* NEEDSWORK: cache misses aren't recorded */
 		bitmap = lazy_bitmap_for_commit(bitmap_git, commit);
-		trace2_region_leave("pack-bitmap", "reading_lookup_table", the_repository);
+		trace2_counter_add(TRACE2_COUNTER_ID_LAZY_BITMAP_LOOKUP, 1);
+
 		if (!bitmap)
-			return NULL;
-		return lookup_stored_bitmap(bitmap);
+			result = NULL;
+		else
+			result = lookup_stored_bitmap(bitmap);
+	} else {
+		result = lookup_stored_bitmap(kh_value(bitmap_git->bitmaps, hash_pos));
 	}
-	return lookup_stored_bitmap(kh_value(bitmap_git->bitmaps, hash_pos));
+
+out:
+	trace2_timer_stop(TRACE2_TIMER_ID_BITMAP_FOR_COMMIT);
+	return result;
 }
 
 static inline int bitmap_position_extended(struct bitmap_index *bitmap_git,

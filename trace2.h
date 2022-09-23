@@ -524,6 +524,7 @@ enum trace2_timer_id {
 	TRACE2_TIMER_ID_TEST1 = 0, /* emits summary event only */
 	TRACE2_TIMER_ID_TEST2,     /* emits summary and thread events */
 
+	TRACE2_TIMER_ID_BITMAP_FOR_COMMIT,
 
 	/* Add additional timer definitions before here. */
 	TRACE2_NUMBER_OF_TIMERS
@@ -565,6 +566,7 @@ enum trace2_counter_id {
 	TRACE2_COUNTER_ID_TEST1 = 0, /* emits summary event only */
 	TRACE2_COUNTER_ID_TEST2,     /* emits summary and thread events */
 
+	TRACE2_COUNTER_ID_LAZY_BITMAP_LOOKUP,
 
 	/* Add additional counter definitions before here. */
 	TRACE2_NUMBER_OF_COUNTERS

@@ -20,6 +20,7 @@ struct tr2_timer_def {
 static struct tr2_timer_def tr2_timer_def_block[TRACE2_NUMBER_OF_TIMERS] = {
 	[TRACE2_TIMER_ID_TEST1] = { "test", "test1", 0 },
 	[TRACE2_TIMER_ID_TEST2] = { "test", "test2", 1 },
+	[TRACE2_TIMER_ID_BITMAP_FOR_COMMIT] = { "pack-bitmap", "bitmap_for_commit", 0 },
 };
 
 void tr2_start_timer(enum trace2_timer_id tid)

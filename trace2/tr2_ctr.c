@@ -17,6 +17,7 @@ struct tr2_counter_def {
 static struct tr2_counter_def tr2_counter_def_block[TRACE2_NUMBER_OF_COUNTERS] = {
 	[TRACE2_COUNTER_ID_TEST1] = { "test", "test1", 0 },
 	[TRACE2_COUNTER_ID_TEST2] = { "test", "test2", 1 },
+	[TRACE2_COUNTER_ID_LAZY_BITMAP_LOOKUP] = { "bitmap", "lazy_bitmap_lookup", 0 },
 };
 
 void tr2_counter_increment(enum trace2_counter_id cid, uint64_t value)
