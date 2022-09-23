@@ -500,12 +500,19 @@ static int load_reverse_index(struct bitmap_index *bitmap_git)
 
 static int load_bitmap(struct bitmap_index *bitmap_git)
 {
+	int result;
 	assert(bitmap_git->map);
+
+	trace2_region_enter("bitmap", "load_bitmap", the_repository);
 
 	bitmap_git->bitmaps = kh_init_oid_map();
 	bitmap_git->ext_index.positions = kh_init_oid_pos();
 
-	if (load_reverse_index(bitmap_git))
+	trace2_region_enter("bitmap", "load_reverse_index", the_repository);
+	result = load_reverse_index(bitmap_git);
+	trace2_region_leave("bitmap", "load_reverse_index", the_repository);
+
+	if (result)
 		goto failed;
 
 	if (!(bitmap_git->commits = read_bitmap_1(bitmap_git)) ||
@@ -517,6 +524,7 @@ static int load_bitmap(struct bitmap_index *bitmap_git)
 	if (!bitmap_git->table_lookup && load_bitmap_entries_v1(bitmap_git) < 0)
 		goto failed;
 
+	trace2_region_leave("bitmap", "load_bitmap", the_repository);
 	return 0;
 
 failed:
@@ -530,6 +538,7 @@ failed:
 	kh_destroy_oid_pos(bitmap_git->ext_index.positions);
 	bitmap_git->ext_index.positions = NULL;
 
+	trace2_region_leave("bitmap", "load_bitmap", the_repository);
 	return -1;
 }
 
