@@ -1830,6 +1830,34 @@ test_region () {
 	return 0
 }
 
+# Check that the given stopwatch was executed the specified number of times.
+#
+#	test_timer_count <name> <count> <trace-file
+#
+# For example, to look for the TRACE2_TIMER_ID_BITMAP_FOR_COMMIT timer,
+# which uses the "bitmap_for_commit" name, use:
+#
+#	GIT_TRACE2_EVENT="$(pwd)/trace.txt" \
+#		git rev-list --count --use-bitmap-index HEAD &&
+#	test_timer_count bitmap_for_commit 5 <trace.txt
+test_timer_count () {
+	grep -e '"event":"timer".*"name":"'"$1"'","count":'"$2"','
+}
+
+# Check that the given counter value was reported.
+#
+#	test_counter <name> <count> <trace-file
+#
+# For example, to look for the TRACE2_COUNTER_ID_LAZY_BITMAP_LOOKUP timer,
+# which uses the "lazy_bitmap_lookup" name, use:
+#
+#	GIT_TRACE2_EVENT="$(pwd)/trace.txt" \
+#		git rev-list --count --use-bitmap-index HEAD &&
+#	test_counter lazy_bitmap_lookup 5 <trace.txt
+test_counter () {
+	grep -e '"event":"counter".*"name":"'"$1"'","value":'"$2"
+}
+
 # Print the destination of symlink(s) provided as arguments. Basically
 # the same as the readlink command, but it's not available everywhere.
 test_readlink () {
