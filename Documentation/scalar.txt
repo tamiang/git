@@ -8,7 +8,8 @@ scalar - A tool for managing large Git repositories
 SYNOPSIS
 --------
 [verse]
-scalar clone [--single-branch] [--branch <main-branch>] [--full-clone] <url> [<enlistment>]
+scalar clone [--single-branch] [--branch <main-branch>] [--full-clone]
+	     [--[no-]src] <url> [<enlistment>]
 scalar list
 scalar register [<enlistment>]
 scalar unregister [<enlistment>]
@@ -79,6 +80,15 @@ Further fetches into the resulting repository will only update the
 remote-tracking branch for the branch this option was used for the initial
 cloning. If the HEAD at the remote did not point at any branch when
 `--single-branch` clone was made, no remote-tracking branch is created.
+
+--[no-]src::
+	Indicate explicitly whether `scalar clone` should add a `src`
+	directory within the target enlistment. This is enabled by default
+	in order to create space for sibling directories to contain
+	repository artifacts such as build outputs or imported packages;
+	keeping such files out of the `src` directory improves Git's
+	performance when interacting with worktree files. Use `--no-src`
+	to opt out of creating this directory.
 
 --[no-]full-clone::
 	A sparse-checkout is initialized by default. This behavior can be
