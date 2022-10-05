@@ -291,6 +291,9 @@ struct ref_transaction;
  */
 #define REF_BAD_NAME 0x08
 
+/* Reference is a chunked reference. */
+#define REF_ISCHUNKED 0x10
+
 /*
  * The signature for the callback function for the for_each_*()
  * functions below.  The memory pointed to by the refname and oid
