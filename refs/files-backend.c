@@ -3,6 +3,7 @@
 #include "../refs.h"
 #include "refs-internal.h"
 #include "ref-cache.h"
+#include "chunked-backend.h"
 #include "packed-backend.h"
 #include "../iterator.h"
 #include "../dir-iterator.h"
@@ -63,7 +64,7 @@ struct files_ref_store {
 
 	struct ref_cache *loose;
 
-	struct ref_store *packed_ref_store;
+	struct ref_store *chunked_ref_store;
 };
 
 static void clear_loose_ref_cache(struct files_ref_store *refs)
@@ -90,8 +91,8 @@ static struct ref_store *files_ref_store_create(struct repository *repo,
 	refs->store_flags = flags;
 	get_common_dir_noenv(&sb, gitdir);
 	refs->gitcommondir = strbuf_detach(&sb, NULL);
-	refs->packed_ref_store =
-		packed_ref_store_create(repo, refs->gitcommondir, flags);
+	refs->chunked_ref_store =
+		chunked_ref_store_create(repo, refs->gitcommondir, flags);
 
 	chdir_notify_reparent("files-backend $GIT_DIR", &refs->base.gitdir);
 	chdir_notify_reparent("files-backend $GIT_COMMONDIR",
@@ -383,7 +384,7 @@ stat_ref:
 		myerr = errno;
 		if (myerr != ENOENT || skip_packed_refs)
 			goto out;
-		if (refs_read_raw_ref(refs->packed_ref_store, refname, oid,
+		if (refs_read_raw_ref(refs->chunked_ref_store, refname, oid,
 				      referent, type, &ignore_errno)) {
 			myerr = ENOENT;
 			goto out;
@@ -426,7 +427,7 @@ stat_ref:
 		 * packed ref:
 		 */
 		if (skip_packed_refs ||
-		    refs_read_raw_ref(refs->packed_ref_store, refname, oid,
+		    refs_read_raw_ref(refs->chunked_ref_store, refname, oid,
 				      referent, type, &ignore_errno)) {
 			myerr = EISDIR;
 			goto out;
@@ -738,7 +739,7 @@ retry:
 		 * conflicts with refname:
 		 */
 		if (refs_verify_refname_available(
-				    refs->packed_ref_store, refname,
+				    refs->chunked_ref_store, refname,
 				    extras, NULL, err))
 			goto error_return;
 	}
@@ -874,7 +875,7 @@ static struct ref_iterator *files_ref_iterator_begin(
 	 * the packed and loose references.
 	 */
 	packed_iter = refs_ref_iterator_begin(
-			refs->packed_ref_store, prefix, 0,
+			refs->chunked_ref_store, prefix, 0,
 			DO_FOR_EACH_INCLUDE_BROKEN);
 
 	overlay_iter = overlay_ref_iterator_begin(loose_iter, packed_iter);
@@ -1042,7 +1043,7 @@ static struct ref_lock *lock_ref_oid_basic(struct files_ref_store *refs,
 	 * our refname.
 	 */
 	if (is_null_oid(&lock->old_oid) &&
-	    refs_verify_refname_available(refs->packed_ref_store, refname,
+	    refs_verify_refname_available(refs->chunked_ref_store, refname,
 					  NULL, NULL, err))
 		goto error_return;
 
@@ -1207,11 +1208,11 @@ static int files_pack_refs(struct ref_store *ref_store, unsigned int flags)
 	struct strbuf err = STRBUF_INIT;
 	struct ref_transaction *transaction;
 
-	transaction = ref_store_transaction_begin(refs->packed_ref_store, &err);
+	transaction = ref_store_transaction_begin(refs->chunked_ref_store, &err);
 	if (!transaction)
 		return -1;
 
-	packed_refs_lock(refs->packed_ref_store, LOCK_DIE_ON_ERROR, &err);
+	chunked_refs_lock(refs->chunked_ref_store, LOCK_DIE_ON_ERROR, &err);
 
 	iter = cache_ref_iterator_begin(get_loose_ref_cache(refs), NULL,
 					the_repository, 0);
@@ -1252,7 +1253,7 @@ static int files_pack_refs(struct ref_store *ref_store, unsigned int flags)
 
 	ref_transaction_free(transaction);
 
-	packed_refs_unlock(refs->packed_ref_store);
+	chunked_refs_unlock(refs->chunked_ref_store);
 
 	prune_refs(refs, &refs_to_prune);
 	strbuf_release(&err);
@@ -1270,15 +1271,15 @@ static int files_delete_refs(struct ref_store *ref_store, const char *msg,
 	if (!refnames->nr)
 		return 0;
 
-	if (packed_refs_lock(refs->packed_ref_store, 0, &err))
+	if (chunked_refs_lock(refs->chunked_ref_store, 0, &err))
 		goto error;
 
-	if (refs_delete_refs(refs->packed_ref_store, msg, refnames, flags)) {
-		packed_refs_unlock(refs->packed_ref_store);
+	if (refs_delete_refs(refs->chunked_ref_store, msg, refnames, flags)) {
+		chunked_refs_unlock(refs->chunked_ref_store);
 		goto error;
 	}
 
-	packed_refs_unlock(refs->packed_ref_store);
+	chunked_refs_unlock(refs->chunked_ref_store);
 
 	for (i = 0; i < refnames->nr; i++) {
 		const char *refname = refnames->items[i].string;
@@ -2662,7 +2663,7 @@ static void files_transaction_cleanup(struct files_ref_store *refs,
 		}
 
 		if (backend_data->packed_refs_locked)
-			packed_refs_unlock(refs->packed_ref_store);
+			chunked_refs_unlock(refs->chunked_ref_store);
 
 		free(backend_data);
 	}
@@ -2774,7 +2775,7 @@ static int files_transaction_prepare(struct ref_store *ref_store,
 			 */
 			if (!packed_transaction) {
 				packed_transaction = ref_store_transaction_begin(
-						refs->packed_ref_store, err);
+						refs->chunked_ref_store, err);
 				if (!packed_transaction) {
 					ret = TRANSACTION_GENERIC_ERROR;
 					goto cleanup;
@@ -2793,13 +2794,13 @@ static int files_transaction_prepare(struct ref_store *ref_store,
 	}
 
 	if (packed_transaction) {
-		if (packed_refs_lock(refs->packed_ref_store, 0, err)) {
+		if (chunked_refs_lock(refs->chunked_ref_store, 0, err)) {
 			ret = TRANSACTION_GENERIC_ERROR;
 			goto cleanup;
 		}
 		backend_data->packed_refs_locked = 1;
 
-		if (is_packed_transaction_needed(refs->packed_ref_store,
+		if (is_packed_transaction_needed(refs->chunked_ref_store,
 						 packed_transaction)) {
 			ret = ref_transaction_prepare(packed_transaction, err);
 			/*
@@ -3047,7 +3048,7 @@ static int files_initial_transaction_commit(struct ref_store *ref_store,
 				 &affected_refnames))
 		BUG("initial ref transaction called with existing refs");
 
-	packed_transaction = ref_store_transaction_begin(refs->packed_ref_store, err);
+	packed_transaction = ref_store_transaction_begin(refs->chunked_ref_store, err);
 	if (!packed_transaction) {
 		ret = TRANSACTION_GENERIC_ERROR;
 		goto cleanup;
@@ -3076,7 +3077,7 @@ static int files_initial_transaction_commit(struct ref_store *ref_store,
 					   NULL);
 	}
 
-	if (packed_refs_lock(refs->packed_ref_store, 0, err)) {
+	if (chunked_refs_lock(refs->chunked_ref_store, 0, err)) {
 		ret = TRANSACTION_GENERIC_ERROR;
 		goto cleanup;
 	}
@@ -3085,7 +3086,7 @@ static int files_initial_transaction_commit(struct ref_store *ref_store,
 		ret = TRANSACTION_GENERIC_ERROR;
 	}
 
-	packed_refs_unlock(refs->packed_ref_store);
+	chunked_refs_unlock(refs->chunked_ref_store);
 cleanup:
 	if (packed_transaction)
 		ref_transaction_free(packed_transaction);

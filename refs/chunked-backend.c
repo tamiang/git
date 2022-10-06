@@ -9,6 +9,11 @@
 #include "../chunk-format.h"
 #include "../csum-file.h"
 
+static inline int chunked_enabled(void)
+{
+	return git_env_bool("GIT_TEST_CHUNKED_BACKEND", 0);
+}
+
 /*
  * This value is set in `base.flags` if the peeled value of the
  * current reference is known. In that case, `peeled` contains the
@@ -170,9 +175,15 @@ struct ref_store *chunked_ref_store_create(struct repository *repo,
 					  const char *gitdir,
 					  unsigned int store_flags)
 {
-	struct chunked_ref_store *refs = xcalloc(1, sizeof(*refs));
-	struct ref_store *ref_store = (struct ref_store *)refs;
+	struct chunked_ref_store *refs;
+	struct ref_store *ref_store;
 	struct strbuf sb = STRBUF_INIT;
+
+	if (!chunked_enabled())
+		return NULL;
+
+	refs = xcalloc(1, sizeof(*refs));
+	ref_store = (struct ref_store *)refs;
 
 	base_ref_store_init(ref_store, repo, gitdir, &refs_be_chunked);
 	refs->store_flags = store_flags;
@@ -427,6 +438,9 @@ static int chunked_read_raw_ref(struct ref_store *ref_store, const char *refname
 	size_t ref_pos;
 	const unsigned char *oid_pos;
 
+	if (!chunked_enabled())
+		return -1;
+
 	*type = 0;
 
 	rec = find_reference_location(snapshot, refname, 1, &ref_pos);
@@ -596,6 +610,9 @@ static struct ref_iterator *chunked_ref_iterator_begin(
 	struct ref_iterator *ref_iterator;
 	unsigned int required_flags = REF_STORE_READ;
 	size_t start_pos;
+
+	if (!chunked_enabled())
+		return NULL;
 
 	if (!(flags & DO_FOR_EACH_INCLUDE_BROKEN))
 		required_flags |= REF_STORE_ODB;
@@ -1239,6 +1256,9 @@ static int chunked_transaction_prepare(struct ref_store *ref_store,
 	size_t i;
 	int ret = TRANSACTION_GENERIC_ERROR;
 
+	if (!chunked_enabled())
+		return -1;
+
 	/*
 	 * Note that we *don't* skip transactions with zero updates,
 	 * because such a transaction might be executed for the side
@@ -1296,6 +1316,9 @@ static int chunked_transaction_abort(struct ref_store *ref_store,
 			REF_STORE_READ | REF_STORE_WRITE | REF_STORE_ODB,
 			"ref_transaction_abort");
 
+	if (!chunked_enabled())
+		return -1;
+
 	chunked_transaction_cleanup(refs, transaction);
 	return 0;
 }
@@ -1310,6 +1333,9 @@ static int chunked_transaction_finish(struct ref_store *ref_store,
 			"ref_transaction_finish");
 	int ret = TRANSACTION_GENERIC_ERROR;
 	char *chunked_refs_path;
+
+	if (!chunked_enabled())
+		return -1;
 
 	clear_snapshot(refs);
 
@@ -1332,6 +1358,9 @@ static int chunked_initial_transaction_commit(struct ref_store *ref_store,
 					    struct ref_transaction *transaction,
 					    struct strbuf *err)
 {
+	if (!chunked_enabled())
+		return -1;
+
 	return ref_transaction_commit(transaction, err);
 }
 
@@ -1344,6 +1373,9 @@ static int chunked_delete_refs(struct ref_store *ref_store, const char *msg,
 	struct ref_transaction *transaction;
 	struct string_list_item *item;
 	int ret;
+
+	if (!chunked_enabled())
+		return -1;
 
 	(void)refs; /* We need the check above, but don't use the variable */
 
