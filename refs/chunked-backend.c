@@ -11,7 +11,13 @@
 
 static inline int chunked_enabled(void)
 {
-	return git_env_bool("GIT_TEST_CHUNKED_BACKEND", 0);
+	/*
+	 * This used to be gated on an environment variable, but the
+	 * chunked backend became a full replacement of the packed
+	 * backend so that environment variable is less important in
+	 * this experiment.
+	 */
+	return 1;
 }
 
 /*
