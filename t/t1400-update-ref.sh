@@ -191,7 +191,8 @@ test_expect_success "move $m (by HEAD)" '
 test_expect_success "delete $m (by HEAD) should remove both packed and loose $m" '
 	test_when_finished "git update-ref -d $m" &&
 	git update-ref -d HEAD $B &&
-	! grep "$m" .git/packed-refs &&
+	test_path_exists .git/deleted-refs &&
+	# ! grep "$m" .git/packed-refs &&
 	test_must_fail git show-ref --verify -q $m
 '
 

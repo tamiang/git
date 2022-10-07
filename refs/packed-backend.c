@@ -127,6 +127,7 @@ struct packed_ref_store {
 	struct ref_store base;
 
 	unsigned int store_flags;
+	unsigned int tombstone_refs;
 
 	/* The path of the "packed-refs" file: */
 	char *path;
@@ -203,6 +204,7 @@ struct ref_store *packed_ref_store_create(struct repository *repo,
 
 	base_ref_store_init(ref_store, repo, gitdir, &refs_be_packed);
 	refs->store_flags = store_flags;
+	refs->tombstone_refs = 1;
 
 	strbuf_addf(&sb, "%s/packed-refs", gitdir);
 	refs->path = strbuf_detach(&sb, NULL);

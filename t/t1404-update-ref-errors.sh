@@ -616,7 +616,9 @@ test_expect_success REFFILES 'delete fails cleanly if packed-refs file is locked
 	test_cmp unchanged actual
 '
 
-test_expect_success REFFILES 'delete fails cleanly if packed-refs.new write fails' '
+# Ref deletions are not enough for triggering the lock when tombstones
+# exist. But we should add similar tests for the tombstone.lock files
+test_expect_failure REFFILES 'delete fails cleanly if packed-refs.new write fails' '
 	# Setup and expectations are similar to the test above.
 	prefix=refs/failed-packed-refs &&
 	git update-ref $prefix/foo $C &&

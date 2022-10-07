@@ -1154,7 +1154,9 @@ struct repository_format {
 	int is_bare;
 	int hash_algo;
 	int sparse_index;
+	int tombstone_refs; /* value of extensions.tombstoneRefs */
 	char *work_tree;
+
 	struct string_list unknown_extensions;
 	struct string_list v1_only_extensions;
 };

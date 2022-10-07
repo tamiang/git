@@ -161,6 +161,9 @@ struct repository {
 	char *repository_format_partial_clone;
 	struct promisor_remote_config *promisor_remote_config;
 
+	/* Configurations related to tombstone refs */
+	int tombstone_refs;
+
 	/* Configurations */
 
 	/* Indicate if a repository has a different 'commondir' from 'gitdir' */

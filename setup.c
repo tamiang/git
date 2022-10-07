@@ -1425,6 +1425,10 @@ int discover_git_directory(struct strbuf *commondir,
 		candidate.partial_clone;
 	candidate.partial_clone = NULL;
 
+	/* take ownership of candidate.tombstone_refs */
+	/* TURN ON BY DEFAULT FOR NOW!!! */
+	the_repository->tombstone_refs = 1;
+
 	clear_repository_format(&candidate);
 	return 0;
 }
