@@ -7,6 +7,31 @@ Note that this setting should only be set by linkgit:git-init[1] or
 linkgit:git-clone[1].  Trying to change it after initialization will not
 work and will produce hard-to-diagnose issues.
 
+extensions.refFormat::
+	Specify the reference storage mechanisms used by the repoitory as a
+	multi-valued list. The acceptable values are `files` and `packed`.
+	If not specified, the list of `files` and `packed` is assumed. It
+	is an error to specify this key unless `core.repositoryFormatVersion`
+	is 1.
++
+As new ref formats are added, Git commands may modify this list before and
+after upgrading the on-disk reference storage files. The specific values
+indicate the existence of different layers:
++
+* `files`: When present, references may be stored as "loose" reference files
+  in the `$GIT_DIR/refs/` directory. The name of the reference corresponds
+  to the filename after `$GIT_DIR` and the file contains an object ID as
+  a hexadecimal string. If a loose reference file exists, then its value
+  takes precedence over all other formats.
++
+* `packed`: When present, references may be stored as a group in a
+  `packed-refs` file in its version 1 format. When grouped with `"files"`
+  or provided on its own, this file is located at `$GIT_DIR/packed-refs`.
+  This file contains a list of distinct reference names, paired with their
+  object IDs. When combined with `files`, the `packed` format will only be
+  used to group multiple loose object files upon request via the
+  `git pack-refs` command or via the `pack-refs` maintenance task.
+
 extensions.worktreeConfig::
 	If enabled, then worktrees will load config settings from the
 	`$GIT_DIR/config.worktree` file in addition to the
