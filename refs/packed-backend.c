@@ -45,12 +45,10 @@ struct tombstone_snapshot {
 	struct oidset deleted_branch_hashes;
 };
 
-MAYBE_UNUSED
 static void free_tombstones(struct tombstone_snapshot *ts)
 {
 }
 
-MAYBE_UNUSED
 static struct tombstone_snapshot *load_tombstones(const char *dirpath) {
 	return NULL;
 }
@@ -66,21 +64,18 @@ static void get_ref_hash(const char *ref, size_t reflen,
 	oid->algo = hash_algo_by_ptr(the_hash_algo);
 }
 
-MAYBE_UNUSED
 static int is_ref_deleted(struct tombstone_snapshot *ts,
 			  const char *ref, size_t reflen)
 {
 	return 0;
 }
 
-MAYBE_UNUSED
 static int create_tombstone(const char *dirpath,
 			    const char *ref, size_t reflen)
 {
 	return -1;
 }
 
-MAYBE_UNUSED
 static int delete_tombstones(struct tombstone_snapshot *ts,
 			     struct strbuf *err)
 {
@@ -806,6 +801,11 @@ static int packed_read_raw_ref(struct ref_store *ref_store, const char *refname,
 		return -1;
 	}
 
+	if (is_ref_deleted(snapshot->tombstones, refname, strlen(refname))) {
+		*failure_errno = ENOENT;
+		return -1;
+	}
+
 	if (get_oid_hex(rec, oid))
 		die_invalid_line(refs->path, rec, snapshot->eof - rec);
 
@@ -925,6 +925,12 @@ static int packed_ref_iterator_advance(struct ref_iterator *ref_iterator)
 	while ((ok = next_record(iter)) == ITER_OK) {
 		if (iter->flags & DO_FOR_EACH_PER_WORKTREE_ONLY &&
 		    ref_type(iter->base.refname) != REF_TYPE_PER_WORKTREE)
+			continue;
+
+		/* Skip deleted refs */
+		if (is_ref_deleted(iter->snapshot->tombstones,
+				   iter->refname_buf.buf,
+				   iter->refname_buf.len))
 			continue;
 
 		if (!(iter->flags & DO_FOR_EACH_INCLUDE_BROKEN) &&
@@ -1325,6 +1331,12 @@ static int write_with_updates(struct packed_ref_store *refs,
 		goto error;
 	}
 
+	if (delete_tombstones(refs->snapshot->tombstones, err)) {
+		strbuf_addstr(err, "unable to write packed-refs file: "
+			      "failed to delete old deleted refs");
+		goto error;
+	}
+
 	if (fsync_component(FSYNC_COMPONENT_REFERENCE, get_tempfile_fd(refs->tempfile)) ||
 	    close_tempfile_gently(refs->tempfile)) {
 		strbuf_addf(err, "error closing file %s: %s",
@@ -1474,6 +1486,41 @@ static void packed_transaction_cleanup(struct packed_ref_store *refs,
 	transaction->state = REF_TRANSACTION_CLOSED;
 }
 
+static int are_tombstones_sufficient(struct ref_transaction *transaction)
+{
+	int i;
+	for (i = 0; i < transaction->nr; i++) {
+		struct ref_update *update = transaction->updates[i];
+		if (!(update->flags & (REF_HAVE_NEW | REF_NO_DEREF)) ||
+		    !is_null_oid(&update->new_oid))
+			return 0;
+	}
+
+	return 1;
+}
+
+static int update_tombstones(struct packed_ref_store *refs,
+			     struct ref_transaction *transaction,
+			     struct strbuf *err)
+{
+	int i;
+	for (i = 0; i < transaction->nr; i++) {
+		struct ref_update *update = transaction->updates[i];
+
+		/* Should be validated already, but we can be extra careful*/
+		if (!is_null_oid(&update->new_oid))
+			return -1;
+
+		if (create_tombstone(refs->tombstone_dir,
+				     update->refname, strlen(update->refname))) {
+			strbuf_addf(err, "error deleting %s: %s",
+				    update->refname, strerror(errno));
+			return -1;
+		}
+	}
+	return 0;
+}
+
 static int packed_transaction_prepare(struct ref_store *ref_store,
 				      struct ref_transaction *transaction,
 				      struct strbuf *err)
@@ -1485,6 +1532,11 @@ static int packed_transaction_prepare(struct ref_store *ref_store,
 	struct packed_transaction_backend_data *data;
 	size_t i;
 	int ret = TRANSACTION_GENERIC_ERROR;
+
+	if (refs->tombstone_refs && are_tombstones_sufficient(transaction)) {
+		ret = update_tombstones(refs, transaction, err);
+		return ret;
+	}
 
 	/*
 	 * Note that we *don't* skip transactions with zero updates,
@@ -1556,15 +1608,17 @@ static int packed_transaction_finish(struct ref_store *ref_store,
 			REF_STORE_READ | REF_STORE_WRITE | REF_STORE_ODB,
 			"ref_transaction_finish");
 	int ret = TRANSACTION_GENERIC_ERROR;
-	char *packed_refs_path;
+	char *packed_refs_path = NULL;
 
 	clear_snapshot(refs);
 
-	packed_refs_path = get_locked_file_path(&refs->lock);
-	if (rename_tempfile(&refs->tempfile, packed_refs_path)) {
-		strbuf_addf(err, "error replacing %s: %s",
-			    refs->path, strerror(errno));
-		goto cleanup;
+	if (refs->tempfile) {
+		packed_refs_path = get_locked_file_path(&refs->lock);
+		if (rename_tempfile(&refs->tempfile, packed_refs_path)) {
+			strbuf_addf(err, "error replacing %s: %s",
+					refs->path, strerror(errno));
+			goto cleanup;
+		}
 	}
 
 	ret = 0;
