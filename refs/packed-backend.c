@@ -6,6 +6,8 @@
 #include "../iterator.h"
 #include "../lockfile.h"
 #include "../chdir-notify.h"
+#include "../dir.h"
+#include "../oidset.h"
 
 enum mmap_strategy {
 	/*
@@ -37,6 +39,53 @@ static enum mmap_strategy mmap_strategy = MMAP_OK;
 #endif
 
 struct packed_ref_store;
+
+struct tombstone_snapshot {
+	const char *dir;
+	struct oidset deleted_branch_hashes;
+};
+
+MAYBE_UNUSED
+static void free_tombstones(struct tombstone_snapshot *ts)
+{
+}
+
+MAYBE_UNUSED
+static struct tombstone_snapshot *load_tombstones(const char *dirpath) {
+	return NULL;
+}
+
+MAYBE_UNUSED
+static void get_ref_hash(const char *ref, size_t reflen,
+			 struct object_id *oid)
+{
+	git_hash_ctx ctx;
+	the_hash_algo->init_fn(&ctx);
+	the_hash_algo->update_fn(&ctx, ref, reflen);
+	the_hash_algo->final_fn(oid->hash, &ctx);
+	oid->algo = hash_algo_by_ptr(the_hash_algo);
+}
+
+MAYBE_UNUSED
+static int is_ref_deleted(struct tombstone_snapshot *ts,
+			  const char *ref, size_t reflen)
+{
+	return 0;
+}
+
+MAYBE_UNUSED
+static int create_tombstone(const char *dirpath,
+			    const char *ref, size_t reflen)
+{
+	return -1;
+}
+
+MAYBE_UNUSED
+static int delete_tombstones(struct tombstone_snapshot *ts,
+			     struct strbuf *err)
+{
+	return -1;
+}
 
 /*
  * A `snapshot` represents one snapshot of a `packed-refs` file.
@@ -92,6 +141,8 @@ struct snapshot {
 	 */
 	enum { PEELED_NONE, PEELED_TAGS, PEELED_FULLY } peeled;
 
+	struct tombstone_snapshot *tombstones;
+
 	/*
 	 * Count of references to this instance, including the pointer
 	 * from `packed_ref_store::snapshot`, if any. The instance
@@ -131,6 +182,9 @@ struct packed_ref_store {
 
 	/* The path of the "packed-refs" file: */
 	char *path;
+
+	/* The directory of the tombstone refs, if any. */
+	char *tombstone_dir;
 
 	/*
 	 * A snapshot of the values read from the `packed-refs` file,
@@ -176,6 +230,7 @@ static void clear_snapshot_buffer(struct snapshot *snapshot)
 		free(snapshot->buf);
 	}
 	snapshot->buf = snapshot->start = snapshot->eof = NULL;
+	free_tombstones(snapshot->tombstones);
 }
 
 /*
@@ -208,6 +263,8 @@ struct ref_store *packed_ref_store_create(struct repository *repo,
 
 	strbuf_addf(&sb, "%s/packed-refs", gitdir);
 	refs->path = strbuf_detach(&sb, NULL);
+	strbuf_addf(&sb, "%s/deleted-refs", gitdir);
+	refs->tombstone_dir = strbuf_detach(&sb, NULL);
 	chdir_notify_reparent("packed-refs", &refs->path);
 	return ref_store;
 }
@@ -519,6 +576,9 @@ static int load_contents(struct snapshot *snapshot)
 
 	snapshot->start = snapshot->buf;
 	snapshot->eof = snapshot->buf + size;
+
+	if (snapshot->refs->tombstone_refs)
+		snapshot->tombstones = load_tombstones(snapshot->refs->tombstone_dir);
 
 	return 1;
 }
