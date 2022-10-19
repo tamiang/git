@@ -8,6 +8,8 @@
 #include "../chdir-notify.h"
 #include "../dir.h"
 #include "../oidset.h"
+#include "../strmap.h"
+#include "../string-list.h"
 
 enum mmap_strategy {
 	/*
@@ -41,45 +43,93 @@ static enum mmap_strategy mmap_strategy = MMAP_OK;
 struct packed_ref_store;
 
 struct tombstone_snapshot {
-	const char *dir;
-	struct oidset deleted_branch_hashes;
+	const char *file;
+	struct strset deleted_branch_names;
+	struct string_list sorted;
 };
 
 static void free_tombstones(struct tombstone_snapshot *ts)
 {
+	if (!ts)
+		return;
+	strset_clear(&ts->deleted_branch_names);
+	free(ts);
 }
 
-static struct tombstone_snapshot *load_tombstones(const char *dirpath) {
-	return NULL;
-}
+static struct tombstone_snapshot *load_tombstones(const char *filename) {
+	struct tombstone_snapshot *ts;
+	struct strbuf refname = STRBUF_INIT;
+	FILE *fp;
 
-MAYBE_UNUSED
-static void get_ref_hash(const char *ref, size_t reflen,
-			 struct object_id *oid)
-{
-	git_hash_ctx ctx;
-	the_hash_algo->init_fn(&ctx);
-	the_hash_algo->update_fn(&ctx, ref, reflen);
-	the_hash_algo->final_fn(oid->hash, &ctx);
-	oid->algo = hash_algo_by_ptr(the_hash_algo);
+	CALLOC_ARRAY(ts, 1);
+	strset_init(&ts->deleted_branch_names);
+	string_list_init_dup(&ts->sorted);
+	ts->file = filename;
+
+	fp = fopen(filename, "r");
+	if (!fp)
+		return ts;
+
+	while (strbuf_getline(&refname, fp) != EOF) {
+		if (strset_add(&ts->deleted_branch_names, refname.buf))
+			string_list_append(&ts->sorted, refname.buf);
+	}
+
+	return ts;
 }
 
 static int is_ref_deleted(struct tombstone_snapshot *ts,
 			  const char *ref, size_t reflen)
 {
+	if (!ts)
+		return 0;
+
+	return strset_contains(&ts->deleted_branch_names, ref);
+}
+
+static int add_tombstone(struct tombstone_snapshot *ts,
+			    const char *ref)
+{
+	if (!ts)
+		return -1;
+
+	if (strset_add(&ts->deleted_branch_names, ref))
+		string_list_append(&ts->sorted, ref);
+
 	return 0;
 }
 
-static int create_tombstone(const char *dirpath,
-			    const char *ref, size_t reflen)
+static int commit_tombstone_file(struct tombstone_snapshot *ts)
 {
-	return -1;
+	struct lock_file lk;
+	int fd;
+	struct string_list_item *item;
+
+	if (!ts)
+		return -1;
+
+	string_list_sort(&ts->sorted);
+
+	fd = hold_lock_file_for_update(&lk, ts->file, LOCK_REPORT_ON_ERROR);
+	if (fd < 0)
+		return -1;
+
+	for_each_string_list_item(item, &ts->sorted) {
+		const char endline[] = { '\n', 0 };
+		write_str_in_full(fd, item->string);
+		write_or_die(fd, endline, 1);
+	}
+
+	return commit_lock_file(&lk);
 }
 
 static int delete_tombstones(struct tombstone_snapshot *ts,
 			     struct strbuf *err)
 {
-	return -1;
+	if (!ts)
+		return 0;
+
+	return unlink(ts->file);
 }
 
 /*
@@ -258,7 +308,7 @@ struct ref_store *packed_ref_store_create(struct repository *repo,
 
 	strbuf_addf(&sb, "%s/packed-refs", gitdir);
 	refs->path = strbuf_detach(&sb, NULL);
-	strbuf_addf(&sb, "%s/deleted-refs", gitdir);
+	strbuf_addf(&sb, "%s/deleted-refs-file", gitdir);
 	refs->tombstone_dir = strbuf_detach(&sb, NULL);
 	chdir_notify_reparent("packed-refs", &refs->path);
 	return ref_store;
@@ -835,6 +885,9 @@ struct packed_ref_iterator {
 	/* The end of the part of the buffer that will be iterated over: */
 	const char *eof;
 
+	/* The current position in the tombstone string list. */
+	size_t deleted_pos;
+
 	/* Scratch space for current values: */
 	struct object_id oid, peeled;
 	struct strbuf refname_buf;
@@ -928,10 +981,23 @@ static int packed_ref_iterator_advance(struct ref_iterator *ref_iterator)
 			continue;
 
 		/* Skip deleted refs */
-		if (is_ref_deleted(iter->snapshot->tombstones,
-				   iter->refname_buf.buf,
-				   iter->refname_buf.len))
-			continue;
+deleted_refs_loop:
+		if (iter->snapshot->tombstones &&
+		    iter->deleted_pos < iter->snapshot->tombstones->sorted.nr) {
+			const char *delref = iter->snapshot->tombstones->sorted.items[iter->deleted_pos].string;
+			int cmp = strcmp(iter->refname_buf.buf, delref);
+			iter->deleted_pos++;
+
+			/* If equal, then skip this ref */
+			if (!cmp) {
+				iter->deleted_pos++;
+				continue;
+			}
+			if (cmp > 0) {
+				iter->deleted_pos++;
+				goto deleted_refs_loop;
+			}
+		}
 
 		if (!(iter->flags & DO_FOR_EACH_INCLUDE_BROKEN) &&
 		    !ref_resolves_to_object(iter->base.refname, iter->repo,
@@ -1006,9 +1072,9 @@ static struct ref_iterator *packed_ref_iterator_begin(
 	 */
 	snapshot = get_snapshot(refs);
 
-	if (prefix && *prefix)
+	if (prefix && *prefix) {
 		start = find_reference_location(snapshot, prefix, 0);
-	else
+	} else
 		start = snapshot->start;
 
 	if (start == snapshot->eof)
@@ -1030,9 +1096,16 @@ static struct ref_iterator *packed_ref_iterator_begin(
 	iter->repo = ref_store->repo;
 	iter->flags = flags;
 
-	if (prefix && *prefix)
+	if (prefix && *prefix) {
 		/* Stop iteration after we've gone *past* prefix: */
 		ref_iterator = prefix_ref_iterator_begin(ref_iterator, prefix, 0);
+
+		while (snapshot->tombstones &&
+		       iter->deleted_pos < snapshot->tombstones->sorted.nr &&
+		       strcmp(prefix, snapshot->tombstones->sorted.items[iter->deleted_pos].string) > 0) {
+			iter->deleted_pos++;
+		}
+	}
 
 	return ref_iterator;
 }
@@ -1491,7 +1564,7 @@ static int are_tombstones_sufficient(struct ref_transaction *transaction)
 	int i;
 	for (i = 0; i < transaction->nr; i++) {
 		struct ref_update *update = transaction->updates[i];
-		if (!(update->flags & (REF_HAVE_NEW | REF_NO_DEREF)) ||
+		if (!(update->flags & (REF_HAVE_NEW | REF_NO_DEREF | REF_ISSYMREF)) ||
 		    !is_null_oid(&update->new_oid))
 			return 0;
 	}
@@ -1511,13 +1584,19 @@ static int update_tombstones(struct packed_ref_store *refs,
 		if (!is_null_oid(&update->new_oid))
 			return -1;
 
-		if (create_tombstone(refs->tombstone_dir,
-				     update->refname, strlen(update->refname))) {
+		if (add_tombstone(refs->snapshot->tombstones,
+				  update->refname)) {
 			strbuf_addf(err, "error deleting %s: %s",
 				    update->refname, strerror(errno));
 			return -1;
 		}
 	}
+
+	if (commit_tombstone_file(refs->snapshot->tombstones)) {
+		strbuf_addf(err, "error committing tombstone file\n");
+		return -1;
+	}
+
 	return 0;
 }
 
