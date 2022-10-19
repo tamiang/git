@@ -8,6 +8,7 @@
 #include "../chdir-notify.h"
 #include "../dir.h"
 #include "../oidset.h"
+#include "../strmap.h"
 
 enum mmap_strategy {
 	/*
@@ -43,17 +44,69 @@ struct packed_ref_store;
 struct tombstone_snapshot {
 	const char *dir;
 	struct oidset deleted_branch_hashes;
+	struct strset deleted_branch_names;
 };
 
 static void free_tombstones(struct tombstone_snapshot *ts)
 {
+	if (!ts)
+		return;
+	oidset_clear(&ts->deleted_branch_hashes);
+	strset_clear(&ts->deleted_branch_names);
+	free(ts);
 }
 
 static struct tombstone_snapshot *load_tombstones(const char *dirpath) {
+	struct tombstone_snapshot *ts;
+	DIR *dir;
+	struct dirent *de;
+	struct strbuf refname = STRBUF_INIT;
+	struct strbuf path = STRBUF_INIT;
+	size_t pathlen;
+
+	dir = opendir(dirpath);
+	if (!dir)
+		return NULL;
+
+	CALLOC_ARRAY(ts, 1);
+	oidset_init(&ts->deleted_branch_hashes, 128);
+	strset_init(&ts->deleted_branch_names);
+	ts->dir = dirpath;
+
+	strbuf_addf(&path, "%s/", dirpath);
+	pathlen = path.len;
+
+	while ((de = readdir(dir)) != NULL) {
+		struct object_id oid;
+		const char *end;
+
+		if (is_dot_or_dotdot(de->d_name) ||
+		    strlen(de->d_name) != the_hash_algo->hexsz)
+			continue;
+
+		if (parse_oid_hex(de->d_name, &oid, &end))
+			continue;
+
+		oidset_insert(&ts->deleted_branch_hashes, &oid);
+
+		strbuf_setlen(&path, pathlen);
+		strbuf_add(&path, de->d_name, the_hash_algo->hexsz);
+
+		strbuf_reset(&refname);
+		strbuf_read_file(&refname, path.buf, 128);
+		strset_add(&ts->deleted_branch_names, refname.buf);
+	}
+
+	strbuf_release(&path);
+	strbuf_release(&refname);
+
+	if (oidset_size(&ts->deleted_branch_hashes))
+		return ts;
+
+	free_tombstones(ts);
 	return NULL;
 }
 
-MAYBE_UNUSED
 static void get_ref_hash(const char *ref, size_t reflen,
 			 struct object_id *oid)
 {
@@ -67,19 +120,73 @@ static void get_ref_hash(const char *ref, size_t reflen,
 static int is_ref_deleted(struct tombstone_snapshot *ts,
 			  const char *ref, size_t reflen)
 {
-	return 0;
+	struct object_id oid;
+
+	if (!ts)
+		return 0;
+
+	if (1) {
+		return strset_contains(&ts->deleted_branch_names, ref);
+	} else {
+		get_ref_hash(ref, reflen, &oid);
+		return oidset_contains(&ts->deleted_branch_hashes, &oid);
+	}
 }
 
 static int create_tombstone(const char *dirpath,
 			    const char *ref, size_t reflen)
 {
-	return -1;
+	struct lock_file lk;
+	int fd;
+	struct object_id oid;
+	struct strbuf path = STRBUF_INIT;
+
+	get_ref_hash(ref, reflen, &oid);
+	strbuf_addf(&path, "%s/%s", dirpath, oid_to_hex(&oid));
+
+	if (safe_create_leading_directories(path.buf))
+		return -1;
+
+	fd = hold_lock_file_for_update(&lk, path.buf, LOCK_REPORT_ON_ERROR);
+	strbuf_release(&path);
+
+	if (fd < 0)
+		return -1;
+
+	write_or_die(fd, ref, reflen);
+	commit_lock_file(&lk);
+	return 0;
 }
 
 static int delete_tombstones(struct tombstone_snapshot *ts,
 			     struct strbuf *err)
 {
-	return -1;
+	struct oidset_iter iter = { 0 };
+	struct object_id *oid;
+	struct strbuf path = STRBUF_INIT;
+	size_t pathlen;
+
+	if (!ts)
+		return 0;
+
+	strbuf_addf(&path, "%s/", ts->dir);
+	pathlen = path.len;
+
+	oidset_iter_init(&ts->deleted_branch_hashes, &iter);
+
+	while ((oid = oidset_iter_next(&iter))) {
+		strbuf_setlen(&path, pathlen);
+		strbuf_add(&path, oid_to_hex(oid), the_hash_algo->hexsz);
+
+		if (unlink(path.buf)) {
+			strbuf_addf(err, "failed to delete tombstone: %s\n", path.buf);
+			strbuf_release(&path);
+			return -1;
+		}
+	}
+
+	strbuf_release(&path);
+	return 0;
 }
 
 /*
