@@ -798,13 +798,18 @@ static int write_ref_and_update_arrays(struct hashfile *f,
 	size_t len = strlen(refname) + 1;
 	size_t i = ctx->nr;
 
+	trace2_timer_start(TRACE2_TIMER_ID_ALLOCS);
 	ALLOC_GROW(ctx->peel_indexes, i + 1, ctx->peel_alloc);
 	ALLOC_GROW(ctx->offsets, i + 1, ctx->offsets_alloc);
 	ALLOC_GROW(ctx->oids, i + 1, ctx->oids_alloc);
+	trace2_timer_stop(TRACE2_TIMER_ID_ALLOCS);
 
 	/* Write entire ref, including null terminator. */
+	trace2_timer_start(TRACE2_TIMER_ID_HASHWRITE);
 	hashwrite(f, refname, len);
+	trace2_timer_stop(TRACE2_TIMER_ID_HASHWRITE);
 
+	trace2_timer_start(TRACE2_TIMER_ID_COPIES);
 	oidcpy(&ctx->oids[i], oid);
 	if (i)
 		ctx->offsets[i] = ctx->offsets[i - 1] + len;
@@ -819,6 +824,7 @@ static int write_ref_and_update_arrays(struct hashfile *f,
 	} else {
 		ctx->peel_indexes[i] = NO_PEEL_EXISTS;
 	}
+	trace2_timer_stop(TRACE2_TIMER_ID_COPIES);
 
 	ctx->nr++;
 	return 0;
