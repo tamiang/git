@@ -833,6 +833,7 @@ static int write_refs_chunk_refs(struct hashfile *f,
 	int ok;
 
 	/* TODO: this merge of iterators can be abstracted! */
+	trace2_region_enter("refs", "refs-chunk", the_repository);
 
 	/*
 	 * We iterate in parallel through the current list of refs and
@@ -967,6 +968,7 @@ static int write_refs_chunk_refs(struct hashfile *f,
 		hashwrite(f, padding, padlen);
 	}
 
+	trace2_region_leave("refs", "refs-chunk", the_repository);
 
 	return 0;
 
@@ -986,9 +988,11 @@ static int write_refs_chunk_oids(struct hashfile *f,
 	struct chunked_refs_write_context *ctx = data;
 	size_t i;
 
+	trace2_region_enter("refs", "oids-chunk", the_repository);
 	for (i = 0; i < ctx->nr; i++)
 		hashwrite(f, ctx->oids[i].hash, the_hash_algo->rawsz);
 
+	trace2_region_leave("refs", "oids-chunk", the_repository);
 	return 0;
 }
 
@@ -998,9 +1002,11 @@ static int write_refs_chunk_offsets(struct hashfile *f,
 	struct chunked_refs_write_context *ctx = data;
 	size_t i;
 
+	trace2_region_enter("refs", "offsets", the_repository);
 	for (i = 0; i < ctx->nr; i++)
 		hashwrite_be64(f, ctx->offsets[i]);
 
+	trace2_region_leave("refs", "offsets", the_repository);
 	return 0;
 }
 
@@ -1010,9 +1016,11 @@ static int write_refs_chunk_peeled_offsets(struct hashfile *f,
 	struct chunked_refs_write_context *ctx = data;
 	size_t i;
 
+	trace2_region_enter("refs", "peeled-offsets", the_repository);
 	for (i = 0; i < ctx->nr; i++)
 		hashwrite_be32(f, ctx->peel_indexes[i]);
 
+	trace2_region_leave("refs", "peeled-offsets", the_repository);
 	return 0;
 }
 
@@ -1022,9 +1030,11 @@ static int write_refs_chunk_peeled_oids(struct hashfile *f,
 	struct chunked_refs_write_context *ctx = data;
 	size_t i;
 
+	trace2_region_enter("refs", "peeled-oids", the_repository);
 	for (i = 0; i < ctx->peeled_nr; i++)
 		hashwrite(f, ctx->peeled[i].hash, the_hash_algo->rawsz);
 
+	trace2_region_leave("refs", "peeled-oids", the_repository);
 	return 0;
 }
 

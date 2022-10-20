@@ -2800,8 +2800,8 @@ static int files_transaction_prepare(struct ref_store *ref_store,
 		}
 		backend_data->packed_refs_locked = 1;
 
-		if (is_packed_transaction_needed(refs->chunked_ref_store,
-						 packed_transaction)) {
+		if (is_chunked_transaction_needed(refs->chunked_ref_store,
+						  packed_transaction)) {
 			ret = ref_transaction_prepare(packed_transaction, err);
 			/*
 			 * A failure during the prepare step will abort
