@@ -77,9 +77,6 @@ struct chunked_snapshot {
 	size_t nr;
 	const unsigned char *offset_chunk;
 	const char *refs_chunk;
-	const unsigned char *oids_chunk;
-	const unsigned char *peeled_offsets_chunk;
-	const unsigned char *peeled_oids_chunk;
 
 	/*
 	 * Count of references to this instance, including the pointer
@@ -294,7 +291,12 @@ static const char *get_nth_ref(struct chunked_snapshot *snapshot,
 		BUG("asking for position %"PRIuMAX" outside of bounds (%"PRIuMAX")",
 		    n, snapshot->nr);
 
-	offset = get_be64(snapshot->offset_chunk + n * sizeof(uint64_t));
+	if (n)
+		offset = get_be64(snapshot->offset_chunk + (n-1) * sizeof(uint64_t))
+				  & ~OFFSET_IS_PEELED;
+	else
+		offset = 0;
+
 	return snapshot->refs_chunk + offset;
 }
 
@@ -343,7 +345,10 @@ static const char *find_reference_location(struct chunked_snapshot *snapshot,
 		 * 'lo' position as the indicator.
 		 */
 		*pos = lo;
-		return get_nth_ref(snapshot, lo);
+		if (lo < snapshot->nr)
+			return get_nth_ref(snapshot, lo);
+		else
+			return NULL;
 	}
 }
 
@@ -399,9 +404,6 @@ static struct chunked_snapshot *create_snapshot(struct chunked_ref_store *refs)
 
 	read_chunk(cf, CHREFS_CHUNKID_OFFSETS, chunked_refs_read_offsets, snapshot);
 	pair_chunk(cf, CHREFS_CHUNKID_REFS, (const unsigned char**)&snapshot->refs_chunk);
-	pair_chunk(cf, CHREFS_CHUNKID_OIDS, &snapshot->oids_chunk);
-	pair_chunk(cf, CHREFS_CHUNKID_PEELED_OFFSETS, &snapshot->peeled_offsets_chunk);
-	pair_chunk(cf, CHREFS_CHUNKID_PEELED_OIDS, &snapshot->peeled_oids_chunk);
 
 cleanup:
 	free_chunkfile(cf);
@@ -464,7 +466,7 @@ static int chunked_read_raw_ref(struct ref_store *ref_store, const char *refname
 		return -1;
 	}
 
-	oid_pos = snapshot->oids_chunk + ref_pos * the_hash_algo->rawsz;
+	oid_pos = (const unsigned char *)rec + strlen(rec) + 1;
 	hashcpy(oid->hash, oid_pos);
 	oid->algo = hash_algo_by_ptr(the_hash_algo);
 
@@ -482,12 +484,8 @@ struct chunked_ref_iterator {
 
 	struct chunked_snapshot *snapshot;
 
+	uint32_t row;
 	const char *ref_pos;
-	const unsigned char *oid_pos;
-	const unsigned char *peeled_pos;
-
-	/* The end of the oids chunk that will be iterated over. */
-	const unsigned char *end_of_oids;
 
 	/* Scratch space for current values: */
 	struct object_id oid, peeled;
@@ -506,10 +504,10 @@ struct chunked_ref_iterator {
  */
 static int next_record(struct chunked_ref_iterator *iter)
 {
-	uint32_t peel_offset;
+	uint64_t offset;
 	strbuf_reset(&iter->refname_buf);
 
-	if (iter->oid_pos == iter->end_of_oids)
+	if (iter->row == iter->snapshot->nr)
 		return ITER_DONE;
 
 	trace2_timer_start(TRACE2_TIMER_ID_ITERATOR);
@@ -517,9 +515,11 @@ static int next_record(struct chunked_ref_iterator *iter)
 
 	strbuf_addstr(&iter->refname_buf, iter->ref_pos);
 	iter->base.refname = iter->refname_buf.buf;
+	iter->ref_pos += iter->refname_buf.len + 1;
 
-	hashcpy(iter->oid.hash, iter->oid_pos);
+	hashcpy(iter->oid.hash, (const unsigned char *)iter->ref_pos);
 	iter->oid.algo = hash_algo_by_ptr(the_hash_algo);
+	iter->ref_pos += the_hash_algo->rawsz;
 
 	if (check_refname_format(iter->base.refname, REFNAME_ALLOW_ONELEVEL)) {
 		if (!refname_is_safe(iter->base.refname))
@@ -532,24 +532,20 @@ static int next_record(struct chunked_ref_iterator *iter)
 	/* We always know the peeled value! */
 	iter->base.flags |= REF_KNOWS_PEELED;
 
-	peel_offset = get_be32(iter->peeled_pos);
-	if (peel_offset == NO_PEEL_EXISTS) {
+	offset = get_be64(iter->snapshot->offset_chunk + sizeof(uint64_t) * iter->row);
+	if (offset & OFFSET_IS_PEELED) {
+		hashcpy(iter->peeled.hash, (const unsigned char *)iter->ref_pos);
+		iter->peeled.algo = hash_algo_by_ptr(the_hash_algo);
+		iter->ref_pos += the_hash_algo->rawsz;
+	} else {
 		oidclr(&iter->peeled);
 		iter->base.flags &= ~REF_KNOWS_PEELED;
-	} else {
-		const unsigned char *peeled_oid;
-
-		peeled_oid = iter->snapshot->peeled_oids_chunk +
-			     peel_offset * the_hash_algo->rawsz;
-		hashcpy(iter->peeled.hash, peeled_oid);
-		iter->peeled.algo = hash_algo_by_ptr(the_hash_algo);
-		iter->base.flags |= REF_KNOWS_PEELED;
 	}
 
-	/* Move to next ref in all pointers. */
-	iter->ref_pos += iter->refname_buf.len + 1;
-	iter->oid_pos += the_hash_algo->rawsz;
-	iter->peeled_pos += sizeof(uint32_t);
+
+	assert(iter->ref_pos - iter->snapshot->refs_chunk == (offset & (~OFFSET_IS_PEELED)));
+
+	iter->row++;
 
 	trace2_timer_stop(TRACE2_TIMER_ID_ITERATOR);
 	return ITER_OK;
@@ -583,7 +579,6 @@ static int chunked_ref_iterator_advance(struct ref_iterator *ref_iterator)
 static int chunked_ref_iterator_peel(struct ref_iterator *ref_iterator,
 				     struct object_id *peeled)
 {
-	uint32_t peel_offset;
 	struct chunked_ref_iterator *iter =
 		(struct chunked_ref_iterator *)ref_iterator;
 
@@ -593,10 +588,6 @@ static int chunked_ref_iterator_peel(struct ref_iterator *ref_iterator,
 	if ((iter->base.flags & REF_KNOWS_PEELED)) {
 		oidcpy(peeled, &iter->peeled);
 		return is_null_oid(&iter->peeled) ? -1 : 0;
-	} else if ((peel_offset = get_be32(iter->peeled_pos - sizeof(uint32_t))) != NO_PEEL_EXISTS) {
-		hashcpy(peeled->hash, iter->snapshot->peeled_oids_chunk +
-			the_hash_algo->rawsz * peel_offset);
-		return 0;
 	} else {
 		/*
 		 * TODO: why do we need to trust the file here?
@@ -671,10 +662,8 @@ static struct ref_iterator *chunked_ref_iterator_begin(
 	iter->snapshot = snapshot;
 	acquire_snapshot(snapshot);
 
+	iter->row = start_pos;
 	iter->ref_pos = start;
-	iter->oid_pos = snapshot->oids_chunk + start_pos * the_hash_algo->rawsz;
-	iter->end_of_oids = snapshot->oids_chunk + snapshot->nr * the_hash_algo->rawsz;
-	iter->peeled_pos = snapshot->peeled_offsets_chunk + start_pos * sizeof(uint32_t);
 
 	strbuf_init(&iter->refname_buf, 0);
 

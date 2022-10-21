@@ -159,14 +159,18 @@ test_expect_success 'delete ref while another dangling packed ref' '
 test_expect_success 'pack ref directly below refs/' '
 	git update-ref refs/top HEAD &&
 	git pack-refs --all --prune &&
-	grep refs/top .git/packed-refs &&
+
+	# Grep will not work on chunked-refs file!
+	# grep refs/top .git/chunked-refs &&
 	test_path_is_missing .git/refs/top
 '
 
 test_expect_success 'do not pack ref in refs/bisect' '
 	git update-ref refs/bisect/local HEAD &&
 	git pack-refs --all --prune &&
-	! grep refs/bisect/local .git/packed-refs >/dev/null &&
+
+	# Grep will not work on chunked-refs file!
+	# ! grep refs/bisect/local .git/chunked-refs >/dev/null &&
 	test_path_is_file .git/refs/bisect/local
 '
 
@@ -197,42 +201,42 @@ test_expect_success 'notice d/f conflict with existing ref' '
 	test_must_fail git branch foo/bar/baz/lots/of/extra/components
 '
 
-test_expect_success 'reject packed-refs with unterminated line' '
-	cp .git/packed-refs .git/packed-refs.bak &&
-	test_when_finished "mv .git/packed-refs.bak .git/packed-refs" &&
-	printf "%s" "$HEAD refs/zzzzz" >>.git/packed-refs &&
-	echo "fatal: unterminated line in .git/packed-refs: $HEAD refs/zzzzz" >expected_err &&
-	test_must_fail git for-each-ref >out 2>err &&
-	test_cmp expected_err err
-'
+# test_expect_success 'reject packed-refs with unterminated line' '
+# 	cp .git/chunked-refs .git/chunked-refs.bak &&
+# 	test_when_finished "mv .git/chunked-refs.bak .git/chunked-refs" &&
+# 	printf "%s" "$HEAD refs/zzzzz" >>.git/chunked-refs &&
+# 	echo "fatal: unterminated line in .git/chunked-refs: $HEAD refs/zzzzz" >expected_err &&
+# 	test_must_fail git for-each-ref >out 2>err &&
+# 	test_cmp expected_err err
+# '
 
-test_expect_success 'reject packed-refs containing junk' '
-	cp .git/packed-refs .git/packed-refs.bak &&
-	test_when_finished "mv .git/packed-refs.bak .git/packed-refs" &&
-	printf "%s\n" "bogus content" >>.git/packed-refs &&
-	echo "fatal: unexpected line in .git/packed-refs: bogus content" >expected_err &&
-	test_must_fail git for-each-ref >out 2>err &&
-	test_cmp expected_err err
-'
+# test_expect_success 'reject packed-refs containing junk' '
+# 	cp .git/chunked-refs .git/chunked-refs.bak &&
+# 	test_when_finished "mv .git/chunked-refs.bak .git/chunked-refs" &&
+# 	printf "%s\n" "bogus content" >>.git/chunked-refs &&
+# 	echo "fatal: unexpected line in .git/chunked-refs: bogus content" >expected_err &&
+# 	test_must_fail git for-each-ref >out 2>err &&
+# 	test_cmp expected_err err
+# '
 
-test_expect_success 'reject packed-refs with a short SHA-1' '
-	cp .git/packed-refs .git/packed-refs.bak &&
-	test_when_finished "mv .git/packed-refs.bak .git/packed-refs" &&
-	printf "%.7s %s\n" $HEAD refs/zzzzz >>.git/packed-refs &&
-	printf "fatal: unexpected line in .git/packed-refs: %.7s %s\n" $HEAD refs/zzzzz >expected_err &&
-	test_must_fail git for-each-ref >out 2>err &&
-	test_cmp expected_err err
-'
+# test_expect_success 'reject packed-refs with a short SHA-1' '
+# 	cp .git/chunked-refs .git/chunked-refs.bak &&
+# 	test_when_finished "mv .git/chunked-refs.bak .git/chunked-refs" &&
+# 	printf "%.7s %s\n" $HEAD refs/zzzzz >>.git/chunked-refs &&
+# 	printf "fatal: unexpected line in .git/chunked-refs: %.7s %s\n" $HEAD refs/zzzzz >expected_err &&
+# 	test_must_fail git for-each-ref >out 2>err &&
+# 	test_cmp expected_err err
+# '
 
 test_expect_success 'timeout if packed-refs.lock exists' '
-	LOCK=.git/packed-refs.lock &&
+	LOCK=.git/chunked-refs.lock &&
 	>"$LOCK" &&
 	test_when_finished "rm -f $LOCK" &&
 	test_must_fail git pack-refs --all --prune
 '
 
 test_expect_success 'retry acquiring packed-refs.lock' '
-	LOCK=.git/packed-refs.lock &&
+	LOCK=.git/chunked-refs.lock &&
 	>"$LOCK" &&
 	test_when_finished "wait && rm -f $LOCK" &&
 	{
@@ -245,15 +249,15 @@ test_expect_success SYMLINKS 'pack symlinked packed-refs' '
 	# First make sure that symlinking works when reading:
 	git update-ref refs/heads/lossy refs/heads/main &&
 	git for-each-ref >all-refs-before &&
-	mv .git/packed-refs .git/my-deviant-packed-refs &&
-	ln -s my-deviant-packed-refs .git/packed-refs &&
+	mv .git/chunked-refs .git/my-deviant-packed-refs &&
+	ln -s my-deviant-packed-refs .git/chunked-refs &&
 	git for-each-ref >all-refs-linked &&
 	test_cmp all-refs-before all-refs-linked &&
 	git pack-refs --all --prune &&
 	git for-each-ref >all-refs-packed &&
 	test_cmp all-refs-before all-refs-packed &&
-	test -h .git/packed-refs &&
-	test "$(test_readlink .git/packed-refs)" = "my-deviant-packed-refs"
+	test -h .git/chunked-refs &&
+	test "$(test_readlink .git/chunked-refs)" = "my-deviant-packed-refs"
 '
 
 test_done
