@@ -2228,6 +2228,9 @@ struct ref_filter_cbdata {
 	struct ref_filter *filter;
 	struct contains_cache contains_cache;
 	struct contains_cache no_contains_cache;
+
+	unsigned do_count;
+	size_t count;
 };
 
 /*
@@ -2281,6 +2284,11 @@ static int ref_filter_handler(const char *refname, const struct object_id *oid, 
 		if (filter->no_commit &&
 		    commit_contains(filter, commit, filter->no_commit, &ref_cbdata->no_contains_cache))
 			return 0;
+	}
+
+	if (ref_cbdata->do_count) {
+		ref_cbdata->count++;
+		return 0;
 	}
 
 	/*
@@ -2415,6 +2423,8 @@ int filter_refs(struct ref_array *array, struct ref_filter *filter, unsigned int
 
 	save_commit_buffer_orig = save_commit_buffer;
 	save_commit_buffer = 0;
+
+	ref_cbdata.do_count = 1;
 
 	init_contains_cache(&ref_cbdata.contains_cache);
 	init_contains_cache(&ref_cbdata.no_contains_cache);
