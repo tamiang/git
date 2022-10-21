@@ -927,6 +927,8 @@ static int write_ref_and_update_arrays(struct hashfile *f,
 
 	if (i)
 		ctx->offsets[i] = (ctx->offsets[i - 1] & (~OFFSET_IS_PEELED));
+	else
+		ctx->offsets[i] = 0;
 	ctx->offsets[i] += len + the_hash_algo->rawsz;
 
 	if (peeled)
