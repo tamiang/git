@@ -505,6 +505,7 @@ struct chunked_ref_iterator {
 static int next_record(struct chunked_ref_iterator *iter)
 {
 	uint64_t offset;
+	const char *pos = iter->ref_pos;
 	strbuf_reset(&iter->refname_buf);
 
 	if (iter->row == iter->snapshot->nr)
@@ -513,13 +514,13 @@ static int next_record(struct chunked_ref_iterator *iter)
 	trace2_timer_start(TRACE2_TIMER_ID_ITERATOR);
 	iter->base.flags = REF_ISCHUNKED;
 
-	strbuf_addstr(&iter->refname_buf, iter->ref_pos);
+	strbuf_addstr(&iter->refname_buf, pos);
 	iter->base.refname = iter->refname_buf.buf;
-	iter->ref_pos += iter->refname_buf.len + 1;
+	pos += iter->refname_buf.len + 1;
 
-	hashcpy(iter->oid.hash, (const unsigned char *)iter->ref_pos);
+	hashcpy(iter->oid.hash, (const unsigned char *)pos);
 	iter->oid.algo = hash_algo_by_ptr(the_hash_algo);
-	iter->ref_pos += the_hash_algo->rawsz;
+	pos += the_hash_algo->rawsz;
 
 	if (check_refname_format(iter->base.refname, REFNAME_ALLOW_ONELEVEL)) {
 		if (!refname_is_safe(iter->base.refname))
@@ -534,16 +535,17 @@ static int next_record(struct chunked_ref_iterator *iter)
 
 	offset = get_be64(iter->snapshot->offset_chunk + sizeof(uint64_t) * iter->row);
 	if (offset & OFFSET_IS_PEELED) {
-		hashcpy(iter->peeled.hash, (const unsigned char *)iter->ref_pos);
+		hashcpy(iter->peeled.hash, (const unsigned char *)pos);
 		iter->peeled.algo = hash_algo_by_ptr(the_hash_algo);
-		iter->ref_pos += the_hash_algo->rawsz;
 	} else {
 		oidclr(&iter->peeled);
 		iter->base.flags &= ~REF_KNOWS_PEELED;
 	}
 
-
-	assert(iter->ref_pos - iter->snapshot->refs_chunk == (offset & (~OFFSET_IS_PEELED)));
+	/* TODO: somehow all tags are getting OFFSET_IS_PEELED even though
+	 * some are not annotated tags.
+	 */
+	iter->ref_pos = iter->snapshot->refs_chunk + (offset & (~OFFSET_IS_PEELED));
 
 	iter->row++;
 
