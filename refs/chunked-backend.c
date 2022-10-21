@@ -807,9 +807,8 @@ static int write_ref_and_update_arrays(struct hashfile *f,
 	trace2_timer_stop(TRACE2_TIMER_ID_HASHWRITE);
 
 	if (i)
-		ctx->offsets[i] = ctx->offsets[i - 1] + len + the_hash_algo->rawsz;
-	else
-		ctx->offsets[i] = len + the_hash_algo->rawsz;
+		ctx->offsets[i] = (ctx->offsets[i - 1] & (~OFFSET_IS_PEELED));
+	ctx->offsets[i] += len + the_hash_algo->rawsz;
 
 	if (peeled)
 		ctx->offsets[i] = OFFSET_IS_PEELED | (ctx->offsets[i] +  the_hash_algo->rawsz);
