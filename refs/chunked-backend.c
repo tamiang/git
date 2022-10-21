@@ -28,6 +28,8 @@ static inline int chunked_enabled(void)
  */
 #define REF_KNOWS_PEELED 0x40
 
+#define OFFSET_IS_PEELED (((uint64_t)1) << 63)
+
 /* 4-byte identifiers for the chunked-refs format */
 #define CHREFS_SIGNATURE               0x43524546 /* "CGPH" */
 #define CHREFS_CHUNKID_OIDS            0x4F494453 /* "OIDS" */
@@ -785,26 +787,13 @@ struct chunked_refs_write_context {
 	 * As we stream the ref names to the refs chunk, store these
 	 * values in-memory. These arrays are populated one for every ref.
 	 */
-	uint32_t *peel_indexes;
-	size_t *offsets;
-	struct object_id *oids;
+	uint64_t *offsets;
 	size_t nr;
-	size_t peel_alloc;
 	size_t offsets_alloc;
-	size_t oids_alloc;
-
-	/*
-	 * Only the peeled refs populate this array.
-	 */
-	struct object_id *peeled;
-	size_t peeled_nr, peeled_alloc;
 };
 
 static void clear_write_context(struct chunked_refs_write_context *ctx) {
-	free(ctx->peel_indexes);
 	free(ctx->offsets);
-	free(ctx->oids);
-	free(ctx->peeled);
 }
 
 static int write_ref_and_update_arrays(struct hashfile *f,
@@ -816,33 +805,23 @@ static int write_ref_and_update_arrays(struct hashfile *f,
 	size_t len = strlen(refname) + 1;
 	size_t i = ctx->nr;
 
-	trace2_timer_start(TRACE2_TIMER_ID_ALLOCS);
-	ALLOC_GROW(ctx->peel_indexes, i + 1, ctx->peel_alloc);
 	ALLOC_GROW(ctx->offsets, i + 1, ctx->offsets_alloc);
-	ALLOC_GROW(ctx->oids, i + 1, ctx->oids_alloc);
-	trace2_timer_stop(TRACE2_TIMER_ID_ALLOCS);
 
 	/* Write entire ref, including null terminator. */
 	trace2_timer_start(TRACE2_TIMER_ID_HASHWRITE);
 	hashwrite(f, refname, len);
+	hashwrite(f, oid->hash, the_hash_algo->rawsz);
+	if (peeled)
+		hashwrite(f, peeled->hash, the_hash_algo->rawsz);
 	trace2_timer_stop(TRACE2_TIMER_ID_HASHWRITE);
 
-	trace2_timer_start(TRACE2_TIMER_ID_COPIES);
-	oidcpy(&ctx->oids[i], oid);
 	if (i)
-		ctx->offsets[i] = ctx->offsets[i - 1] + len;
+		ctx->offsets[i] = ctx->offsets[i - 1] + len + the_hash_algo->rawsz;
 	else
-		ctx->offsets[i] = len;
+		ctx->offsets[i] = len + the_hash_algo->rawsz;
 
-	if (peeled) {
-		ALLOC_GROW(ctx->peeled, ctx->peeled_nr + 1, ctx->peeled_alloc);
-		oidcpy(&ctx->peeled[ctx->peeled_nr], peeled);
-		ctx->peel_indexes[i] = ctx->peeled_nr;
-		ctx->peeled_nr++;
-	} else {
-		ctx->peel_indexes[i] = NO_PEEL_EXISTS;
-	}
-	trace2_timer_stop(TRACE2_TIMER_ID_COPIES);
+	if (peeled)
+		ctx->offsets[i] = OFFSET_IS_PEELED | (ctx->offsets[i] +  the_hash_algo->rawsz);
 
 	ctx->nr++;
 	return 0;
@@ -1006,20 +985,6 @@ error:
 	return -1;
 }
 
-static int write_refs_chunk_oids(struct hashfile *f,
-				 void *data)
-{
-	struct chunked_refs_write_context *ctx = data;
-	size_t i;
-
-	trace2_region_enter("refs", "oids-chunk", the_repository);
-	for (i = 0; i < ctx->nr; i++)
-		hashwrite(f, ctx->oids[i].hash, the_hash_algo->rawsz);
-
-	trace2_region_leave("refs", "oids-chunk", the_repository);
-	return 0;
-}
-
 static int write_refs_chunk_offsets(struct hashfile *f,
 				    void *data)
 {
@@ -1031,34 +996,6 @@ static int write_refs_chunk_offsets(struct hashfile *f,
 		hashwrite_be64(f, ctx->offsets[i]);
 
 	trace2_region_leave("refs", "offsets", the_repository);
-	return 0;
-}
-
-static int write_refs_chunk_peeled_offsets(struct hashfile *f,
-					   void *data)
-{
-	struct chunked_refs_write_context *ctx = data;
-	size_t i;
-
-	trace2_region_enter("refs", "peeled-offsets", the_repository);
-	for (i = 0; i < ctx->nr; i++)
-		hashwrite_be32(f, ctx->peel_indexes[i]);
-
-	trace2_region_leave("refs", "peeled-offsets", the_repository);
-	return 0;
-}
-
-static int write_refs_chunk_peeled_oids(struct hashfile *f,
-					void *data)
-{
-	struct chunked_refs_write_context *ctx = data;
-	size_t i;
-
-	trace2_region_enter("refs", "peeled-oids", the_repository);
-	for (i = 0; i < ctx->peeled_nr; i++)
-		hashwrite(f, ctx->peeled[i].hash, the_hash_algo->rawsz);
-
-	trace2_region_leave("refs", "peeled-oids", the_repository);
 	return 0;
 }
 
@@ -1123,10 +1060,7 @@ static int write_with_updates(struct chunked_ref_store *refs,
 	cf = init_chunkfile(f);
 
 	add_chunk(cf, CHREFS_CHUNKID_REFS, 0, write_refs_chunk_refs);
-	add_chunk(cf, CHREFS_CHUNKID_OIDS, 0, write_refs_chunk_oids);
 	add_chunk(cf, CHREFS_CHUNKID_OFFSETS, 0, write_refs_chunk_offsets);
-	add_chunk(cf, CHREFS_CHUNKID_PEELED_OFFSETS, 0, write_refs_chunk_peeled_offsets);
-	add_chunk(cf, CHREFS_CHUNKID_PEELED_OIDS, 0, write_refs_chunk_peeled_oids);
 
 	hashwrite_be32(f, CHREFS_SIGNATURE);
 	hashwrite_be32(f, the_hash_algo->format_id);
