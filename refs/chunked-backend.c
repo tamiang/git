@@ -367,11 +367,15 @@ static struct chunked_snapshot *create_snapshot(struct chunked_ref_store *refs)
 	struct chunkfile *cf = NULL;
 	uint32_t file_signature, hash_version;
 
+	trace2_region_enter("refs", "create_snapshot", the_repository);
+
 	snapshot->refs = refs;
 	acquire_snapshot(snapshot);
 
-	if (!load_contents(snapshot))
+	if (!load_contents(snapshot)) {
+	trace2_region_leave("refs", "create_snapshot", the_repository);
 		return snapshot;
+	}
 
 	file_signature = get_be32(snapshot->mmap);
 	if (file_signature != CHREFS_SIGNATURE)
@@ -399,6 +403,7 @@ static struct chunked_snapshot *create_snapshot(struct chunked_ref_store *refs)
 
 cleanup:
 	free_chunkfile(cf);
+	trace2_region_leave("refs", "create_snapshot", the_repository);
 	return snapshot;
 }
 
@@ -461,6 +466,8 @@ static int chunked_read_raw_ref(struct ref_store *ref_store, const char *refname
 	hashcpy(oid->hash, oid_pos);
 	oid->algo = hash_algo_by_ptr(the_hash_algo);
 
+	/* Nothing to do with peeled here? ok. */
+
 	*type = REF_ISCHUNKED;
 	return 0;
 }
@@ -503,6 +510,7 @@ static int next_record(struct chunked_ref_iterator *iter)
 	if (iter->oid_pos == iter->end_of_oids)
 		return ITER_DONE;
 
+	trace2_timer_start(TRACE2_TIMER_ID_ITERATOR);
 	iter->base.flags = REF_ISCHUNKED;
 
 	strbuf_addstr(&iter->refname_buf, iter->ref_pos);
@@ -518,8 +526,9 @@ static int next_record(struct chunked_ref_iterator *iter)
 		oidclr(&iter->oid);
 		iter->base.flags |= REF_BAD_NAME | REF_ISBROKEN;
 	}
-	if (starts_with(iter->base.refname, "refs/tags/"))
-		iter->base.flags |= REF_KNOWS_PEELED;
+
+	/* We always know the peeled value! */
+	iter->base.flags |= REF_KNOWS_PEELED;
 
 	peel_offset = get_be32(iter->peeled_pos);
 	if (peel_offset == NO_PEEL_EXISTS) {
@@ -540,6 +549,7 @@ static int next_record(struct chunked_ref_iterator *iter)
 	iter->oid_pos += the_hash_algo->rawsz;
 	iter->peeled_pos += sizeof(uint32_t);
 
+	trace2_timer_stop(TRACE2_TIMER_ID_ITERATOR);
 	return ITER_OK;
 }
 
@@ -571,6 +581,7 @@ static int chunked_ref_iterator_advance(struct ref_iterator *ref_iterator)
 static int chunked_ref_iterator_peel(struct ref_iterator *ref_iterator,
 				     struct object_id *peeled)
 {
+	uint32_t peel_offset;
 	struct chunked_ref_iterator *iter =
 		(struct chunked_ref_iterator *)ref_iterator;
 
@@ -580,10 +591,17 @@ static int chunked_ref_iterator_peel(struct ref_iterator *ref_iterator,
 	if ((iter->base.flags & REF_KNOWS_PEELED)) {
 		oidcpy(peeled, &iter->peeled);
 		return is_null_oid(&iter->peeled) ? -1 : 0;
-	} else if ((iter->base.flags & (REF_ISBROKEN | REF_ISSYMREF))) {
-		return -1;
+	} else if ((peel_offset = get_be32(iter->peeled_pos - sizeof(uint32_t))) != NO_PEEL_EXISTS) {
+		hashcpy(peeled->hash, iter->snapshot->peeled_oids_chunk +
+			the_hash_algo->rawsz * peel_offset);
+		return 0;
 	} else {
-		return peel_object(&iter->oid, peeled) ? -1 : 0;
+		/*
+		 * TODO: why do we need to trust the file here?
+		 *
+		 * This differs from the packed-backend somehow...
+		 */
+		return -1;
 	}
 }
 

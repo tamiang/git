@@ -512,6 +512,8 @@ enum trace2_timer_id {
 	TRACE2_TIMER_ID_HASHWRITE,
 	TRACE2_TIMER_ID_ALLOCS,
 	TRACE2_TIMER_ID_COPIES,
+	TRACE2_TIMER_ID_ITERATOR,
+	TRACE2_TIMER_ID_PEEL,
 
 	/* Add additional timer definitions before here. */
 	TRACE2_NUMBER_OF_TIMERS
