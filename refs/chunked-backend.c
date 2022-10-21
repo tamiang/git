@@ -1047,6 +1047,7 @@ static int write_with_updates(struct chunked_ref_store *refs,
 
 	fd = get_tempfile_fd(refs->tempfile);
 	f = hashfd(fd, refs->tempfile->filename.buf);
+	f->skip_hash = 1;
 	cf = init_chunkfile(f);
 
 	add_chunk(cf, CHREFS_CHUNKID_REFS, 0, write_refs_chunk_refs);
