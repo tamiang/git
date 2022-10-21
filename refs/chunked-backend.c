@@ -295,13 +295,13 @@ static const char *get_nth_prefix(struct chunked_snapshot *snapshot,
 		    n, snapshot->prefixes_nr);
 
 	if (n)
-		offset = get_be64(snapshot->prefix_offsets_chunk +
+		offset = get_be32(snapshot->prefix_offsets_chunk +
 				  2 * sizeof(uint32_t) * (n - 1));
 	else
 		offset = 0;
 
 	if (len) {
-		next_offset = get_be64(snapshot->prefix_offsets_chunk +
+		next_offset = get_be32(snapshot->prefix_offsets_chunk +
 				       2 * sizeof(uint32_t) * n);
 
 		/* Prefix includes null terminator. */
@@ -350,7 +350,7 @@ static const char *find_prefix_location(struct chunked_snapshot *snapshot,
 	}
 
 	*pos = lo;
-	if (lo < snapshot->nr)
+	if (lo < snapshot->prefixes_nr)
 		return get_nth_prefix(snapshot, lo, NULL);
 	else
 		return NULL;
@@ -390,7 +390,7 @@ static const char *get_nth_ref(struct chunked_snapshot *snapshot,
  */
 static const char *find_reference_location(struct chunked_snapshot *snapshot,
 					   const char *refname, int mustexist,
-					   size_t *pos)
+					   size_t *pos, struct strbuf *full_ref)
 {
 	size_t lo = 0, hi = snapshot->nr;
 
@@ -407,6 +407,9 @@ static const char *find_reference_location(struct chunked_snapshot *snapshot,
 			found = 0;
 		}
 
+		if (prefix && full_ref)
+			strbuf_addstr(full_ref, prefix);
+
 		/* The second 4-byte column of the prefix offsets */
 		if (prefix_row) {
 			/* if prefix_row == 0, then lo = 0, which is already true. */
@@ -415,13 +418,24 @@ static const char *find_reference_location(struct chunked_snapshot *snapshot,
 		}
 
 		if (!found) {
+			const char *ret;
 			/* Terminate early with this lo position as the insertion point. */
 			*pos = lo;
-			return get_nth_ref(snapshot, lo);
+
+			if (lo >= snapshot->nr)
+				return NULL;
+
+			ret = get_nth_ref(snapshot, lo);
+			if (full_ref)
+				strbuf_addstr(full_ref, ret);
+			return ret;
 		}
 
 		hi = get_be32(snapshot->prefix_offsets_chunk +
 			      2 * sizeof(uint32_t) * prefix_row + sizeof(uint32_t));
+
+		if (prefix)
+			refname += strlen(prefix);
 	}
 
 	while (lo != hi) {
@@ -437,6 +451,8 @@ static const char *find_reference_location(struct chunked_snapshot *snapshot,
 			hi = mid;
 		} else {
 			*pos = mid;
+			if (full_ref)
+				strbuf_addstr(full_ref, rec);
 			return rec;
 		}
 	}
@@ -444,15 +460,19 @@ static const char *find_reference_location(struct chunked_snapshot *snapshot,
 	if (mustexist) {
 		return NULL;
 	} else {
+		const char *ret;
 		/*
 		 * We are likely doing a prefix match, so use the current
 		 * 'lo' position as the indicator.
 		 */
 		*pos = lo;
-		if (lo < snapshot->nr)
-			return get_nth_ref(snapshot, lo);
-		else
+		if (lo >= snapshot->nr)
 			return NULL;
+
+		ret = get_nth_ref(snapshot, lo);
+		if (full_ref)
+			strbuf_addstr(full_ref, ret);
+		return ret;
 	}
 }
 
@@ -577,7 +597,7 @@ static int chunked_read_raw_ref(struct ref_store *ref_store, const char *refname
 
 	*type = 0;
 
-	rec = find_reference_location(snapshot, refname, 1, &ref_pos);
+	rec = find_reference_location(snapshot, refname, 1, &ref_pos, NULL);
 
 	if (!rec) {
 		/* refname is not a chunked reference. */
@@ -606,6 +626,10 @@ struct chunked_ref_iterator {
 	uint32_t row;
 	const char *ref_pos;
 
+	uint32_t prefix_i;
+	uint32_t prefix_row_end;
+	const char *cur_prefix;
+
 	/* Scratch space for current values: */
 	struct object_id oid, peeled;
 	struct strbuf refname_buf;
@@ -633,9 +657,10 @@ static int next_record(struct chunked_ref_iterator *iter)
 	trace2_timer_start(TRACE2_TIMER_ID_ITERATOR);
 	iter->base.flags = REF_ISCHUNKED;
 
+	strbuf_addstr(&iter->refname_buf, iter->cur_prefix);
 	strbuf_addstr(&iter->refname_buf, pos);
 	iter->base.refname = iter->refname_buf.buf;
-	pos += iter->refname_buf.len + 1;
+	pos += strlen(pos) + 1;
 
 	hashcpy(iter->oid.hash, (const unsigned char *)pos);
 	iter->oid.algo = hash_algo_by_ptr(the_hash_algo);
@@ -667,6 +692,16 @@ static int next_record(struct chunked_ref_iterator *iter)
 	iter->ref_pos = iter->snapshot->refs_chunk + (offset & (~OFFSET_IS_PEELED));
 
 	iter->row++;
+
+	if (iter->row == iter->prefix_row_end) {
+		size_t prefix_pos = get_be32(iter->snapshot->prefix_offsets_chunk +
+					     2 * sizeof(uint32_t) * iter->prefix_i);
+		iter->cur_prefix = iter->snapshot->prefix_chunk + prefix_pos;
+		iter->prefix_i++;
+		iter->prefix_row_end = get_be32(iter->snapshot->prefix_offsets_chunk +
+						2 * sizeof(uint32_t) * iter->prefix_i + sizeof(uint32_t));
+	}
+
 
 	trace2_timer_stop(TRACE2_TIMER_ID_ITERATOR);
 	return ITER_OK;
@@ -741,6 +776,7 @@ static struct ref_iterator *chunked_ref_iterator_begin(
 		struct ref_store *ref_store,
 		const char *prefix, unsigned int flags)
 {
+	static struct strbuf full_ref = STRBUF_INIT;
 	struct chunked_ref_store *refs;
 	struct chunked_snapshot *snapshot;
 	const char *start;
@@ -751,6 +787,8 @@ static struct ref_iterator *chunked_ref_iterator_begin(
 
 	if (!chunked_enabled())
 		return NULL;
+
+	strbuf_reset(&full_ref);
 
 	if (!(flags & DO_FOR_EACH_INCLUDE_BROKEN))
 		required_flags |= REF_STORE_ODB;
@@ -767,7 +805,7 @@ static struct ref_iterator *chunked_ref_iterator_begin(
 		return empty_ref_iterator_begin();
 
 	if (prefix && *prefix) {
-		start = find_reference_location(snapshot, prefix, 0, &start_pos);
+		start = find_reference_location(snapshot, prefix, 0, &start_pos, NULL);
 	} else {
 		start = snapshot->refs_chunk;
 		start_pos = 0;
@@ -785,6 +823,15 @@ static struct ref_iterator *chunked_ref_iterator_begin(
 
 	iter->row = start_pos;
 	iter->ref_pos = start;
+
+	iter->prefix_i = 0;
+
+	if (snapshot->prefix_chunk) {
+		iter->cur_prefix = snapshot->prefix_chunk;
+		iter->prefix_row_end = get_be32(snapshot->prefix_offsets_chunk + sizeof(uint32_t));
+	} else {
+		iter->cur_prefix = "";
+	}
 
 	strbuf_init(&iter->refname_buf, 0);
 
@@ -900,6 +947,18 @@ struct chunked_refs_write_context {
 	uint64_t *offsets;
 	size_t nr;
 	size_t offsets_alloc;
+
+	int prefix_dir_depth;
+	const char *cur_prefix;
+	size_t cur_prefix_len;
+
+	char **prefixes;
+	uint32_t *prefix_offsets;
+	uint32_t *prefix_rows;
+	size_t prefix_nr;
+	size_t prefixes_alloc;
+	size_t prefix_offsets_alloc;
+	size_t prefix_rows_alloc;
 };
 
 static void clear_write_context(struct chunked_refs_write_context *ctx) {
@@ -912,14 +971,61 @@ static int write_ref_and_update_arrays(struct hashfile *f,
 				       const struct object_id *oid,
 				       const struct object_id *peeled)
 {
-	size_t len = strlen(refname) + 1;
+	size_t reflen = strlen(refname) + 1;
 	size_t i = ctx->nr;
 
 	ALLOC_GROW(ctx->offsets, i + 1, ctx->offsets_alloc);
 
+	if (ctx->cur_prefix && starts_with(refname, ctx->cur_prefix)) {
+		/* skip ahead! */
+		refname += ctx->cur_prefix_len;
+		reflen -= ctx->cur_prefix_len;
+	} else {
+		size_t len;
+		const char *slash, *slashslash = NULL;
+		if (ctx->prefix_nr) {
+			/* close out the old prefix. */
+			ctx->prefix_rows[ctx->prefix_nr - 1] = ctx->nr;
+		}
+
+		/* Find the new prefix. */
+		slash = strchr(refname, '/');
+		if (slash)
+			slashslash = strchr(slash + 1, '/');
+		/* If there are two slashes, use that. */
+		slash = slashslash ? slashslash : slash;
+		/*
+		 * If there is at least one slash, use that,
+		 * and include the slash in the string.
+		 * Otherwise, use the end of the ref.
+		 */
+		slash = slash ? slash + 1 : refname + strlen(refname);
+
+		len = slash - refname;
+		ALLOC_GROW(ctx->prefixes, ctx->prefix_nr + 1, ctx->prefixes_alloc);
+		ALLOC_GROW(ctx->prefix_offsets, ctx->prefix_nr + 1, ctx->prefix_offsets_alloc);
+		ALLOC_GROW(ctx->prefix_rows, ctx->prefix_nr + 1, ctx->prefix_rows_alloc);
+
+		if (ctx->prefix_nr)
+			ctx->prefix_offsets[ctx->prefix_nr] = ctx->prefix_offsets[ctx->prefix_nr - 1] + len + 1;
+		else
+			ctx->prefix_offsets[ctx->prefix_nr] = len + 1;
+
+		ctx->prefixes[ctx->prefix_nr] = strndup(refname, len);
+		ctx->cur_prefix = ctx->prefixes[ctx->prefix_nr];
+		ctx->prefix_nr++;
+
+		refname += len;
+		reflen -= len;
+		ctx->cur_prefix_len = len;
+	}
+
+	/* Update the last row continually. */
+	ctx->prefix_rows[ctx->prefix_nr - 1] = i + 1;
+
 	/* Write entire ref, including null terminator. */
 	trace2_timer_start(TRACE2_TIMER_ID_HASHWRITE);
-	hashwrite(f, refname, len);
+	hashwrite(f, refname, reflen);
 	hashwrite(f, oid->hash, the_hash_algo->rawsz);
 	if (peeled)
 		hashwrite(f, peeled->hash, the_hash_algo->rawsz);
@@ -929,7 +1035,7 @@ static int write_ref_and_update_arrays(struct hashfile *f,
 		ctx->offsets[i] = (ctx->offsets[i - 1] & (~OFFSET_IS_PEELED));
 	else
 		ctx->offsets[i] = 0;
-	ctx->offsets[i] += len + the_hash_algo->rawsz;
+	ctx->offsets[i] += reflen + the_hash_algo->rawsz;
 
 	if (peeled)
 		ctx->offsets[i] = OFFSET_IS_PEELED | (ctx->offsets[i] +  the_hash_algo->rawsz);
@@ -1110,6 +1216,40 @@ static int write_refs_chunk_offsets(struct hashfile *f,
 	return 0;
 }
 
+static int write_refs_chunk_prefix_data(struct hashfile *f,
+					void *data)
+{
+	struct chunked_refs_write_context *ctx = data;
+	size_t i;
+
+	trace2_region_enter("refs", "prefix-data", the_repository);
+	for (i = 0; i < ctx->prefix_nr; i++) {
+		size_t len = strlen(ctx->prefixes[i]) + 1;
+		hashwrite(f, ctx->prefixes[i], len);
+
+		/* TODO: assert the prefix lengths match the stored offsets? */
+	}
+
+	trace2_region_leave("refs", "prefix-data", the_repository);
+	return 0;
+}
+
+static int write_refs_chunk_prefix_offsets(struct hashfile *f,
+				    void *data)
+{
+	struct chunked_refs_write_context *ctx = data;
+	size_t i;
+
+	trace2_region_enter("refs", "prefix-offsets", the_repository);
+	for (i = 0; i < ctx->prefix_nr; i++) {
+		hashwrite_be32(f, ctx->prefix_offsets[i]);
+		hashwrite_be32(f, ctx->prefix_rows[i]);
+	}
+
+	trace2_region_leave("refs", "prefix-offsets", the_repository);
+	return 0;
+}
+
 /*
  * Write the chunked refs from the current snapshot to the chunked-refs
  * tempfile, incorporating any changes from `updates`. `updates` must
@@ -1173,6 +1313,8 @@ static int write_with_updates(struct chunked_ref_store *refs,
 
 	add_chunk(cf, CHREFS_CHUNKID_REFS, 0, write_refs_chunk_refs);
 	add_chunk(cf, CHREFS_CHUNKID_OFFSETS, 0, write_refs_chunk_offsets);
+	add_chunk(cf, CHREFS_CHUNKID_PREFIX_DATA, 0, write_refs_chunk_prefix_data);
+	add_chunk(cf, CHREFS_CHUNKID_PREFIX_OFFSETS, 0, write_refs_chunk_prefix_offsets);
 
 	hashwrite_be32(f, CHREFS_SIGNATURE);
 	hashwrite_be32(f, the_hash_algo->format_id);
