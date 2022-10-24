@@ -72,12 +72,12 @@ MIDXs, both the bit-cache and rev-cache extensions are required.
 	    pack/MIDX. The format and meaning of the name-hash is
 	    described below.
 
-		** {empty}
-		BITMAP_OPT_LOOKUP_TABLE (0x10): :::
-		If present, the end of the bitmap file contains a table
-		containing a list of `N` <commit_pos, offset, xor_row>
-		triplets. The format and meaning of the table is described
-		below.
+	    ** {empty}
+	    BITMAP_OPT_LOOKUP_TABLE (0x10): :::
+	    If present, the end of the bitmap file contains a table
+	    containing a list of `N` <commit_pos, offset, xor_row>
+	    triplets. The format and meaning of the table is described
+	    below.
 +
 NOTE: Unlike the xor_offset used to compress an individual bitmap,
 `xor_row` stores an *absolute* index into the lookup table, not a location
