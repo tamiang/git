@@ -847,6 +847,7 @@ test_expect_success 'auto-discover multiple bundles from HTTP clone: creationTok
 		version = 1
 		mode = all
 		heuristic = creationToken
+		flag = forFetch
 
 	[bundle "everything"]
 		uri = $HTTPD_URL/everything.bundle
@@ -865,6 +866,8 @@ test_expect_success 'auto-discover multiple bundles from HTTP clone: creationTok
 		git -c protocol.version=2 \
 		    -c transfer.bundleURI=true clone \
 		"$HTTPD_URL/smart/repo4.git" clone-heuristic &&
+	test_cmp_config -C clone-heuristic "remote:origin" fetch.bundleuri &&
+	git -C clone-heuristic config transfer.bundleURI true &&
 
 	cat >expect <<-EOF &&
 	$HTTPD_URL/newest.bundle

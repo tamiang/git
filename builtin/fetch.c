@@ -2031,6 +2031,40 @@ static inline void fetch_one_setup_partial(struct remote *remote)
 	return;
 }
 
+/**
+ * Check if fetch.bundleURI is configured to the given remote. If so, fetch the
+ * bundle list over protocol v2 and download the latest bundles. Do this before
+ * the ref advertisement.
+ */
+static void attempt_bundle_uri_fetch(struct remote *remote, struct transport *transport)
+{
+	const char *bundle_uri;
+	const char *remote_name;
+
+	/* Is this remote configured to be used for fetching bundles? */
+	if (git_config_get_string_tmp("fetch.bundleuri", &bundle_uri) ||
+	    !skip_prefix(bundle_uri, "remote:", &remote_name) ||
+	    strcmp(remote->name, remote_name))
+		return;
+
+	/*
+	 * Populate transport->got_remote_bundle_uri and
+	 * transport->bundle_uri. We might get nothing.
+	 */
+	transport_get_remote_bundle_uri(transport);
+
+	if (!transport->bundles)
+		return;
+
+	if (hashmap_get_size(&transport->bundles->bundles) &&
+	    fetch_bundle_list(the_repository, transport->bundles))
+		warning(_("failed to fetch advertised bundles"));
+
+	clear_bundle_list(transport->bundles);
+	FREE_AND_NULL(transport->bundles);
+	return;
+}
+
 static int fetch_one(struct remote *remote, int argc, const char **argv,
 		     int prune_tags_ok, int use_stdin_refspecs)
 {
@@ -2045,6 +2079,8 @@ static int fetch_one(struct remote *remote, int argc, const char **argv,
 		      "remote name from which new revisions should be fetched"));
 
 	gtransport = prepare_transport(remote, 1);
+
+	attempt_bundle_uri_fetch(remote, gtransport);
 
 	if (prune < 0) {
 		/* no command line request */

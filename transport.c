@@ -371,11 +371,10 @@ static int get_bundle_uri(struct transport *transport)
 		init_bundle_list(transport->bundles);
 	}
 
+	/* TODO: fix this! Test if we lose protocol v2. */
 	if (!data->finished_handshake) {
 		struct ref *refs = handshake(transport, 0, NULL, 0);
-
-		if (refs)
-			free_refs(refs);
+		free_refs(refs);
 	}
 
 	/*
