@@ -8,8 +8,11 @@ the two versions consistent with one another.'
 TEST_PASSES_SANITIZE_LEAK=true
 . ./test-lib.sh
 
-test_expect_success 'setup: list of builtins' '
-	git --list-cmds=builtins >builtins
+test_expect_success 'setup: list of commands' '
+	for builtin in $(git --list-cmds=builtins)
+	do
+		printf "git %s\n" "$builtin" || return 1
+	done >cmds
 '
 
 test_expect_success 'list of txt and help mismatches is sorted' '
@@ -21,8 +24,8 @@ test_expect_success 'list of txt and help mismatches is sorted' '
 '
 
 help_to_synopsis () {
-	builtin="$1" &&
-	out_dir="out/$builtin" &&
+	cmd="$1" &&
+	out_dir="out/$cmd" &&
 	out="$out_dir/help.synopsis" &&
 	if test -f "$out"
 	then
@@ -30,7 +33,7 @@ help_to_synopsis () {
 		return 0
 	fi &&
 	mkdir -p "$out_dir" &&
-	test_expect_code 129 git $builtin -h >"$out.raw" 2>&1 &&
+	test_expect_code 129 $cmd -h >"$out.raw" 2>&1 &&
 	sed -n \
 		-e '1,/^$/ {
 			/^$/d;
@@ -41,20 +44,29 @@ help_to_synopsis () {
 	echo "$out"
 }
 
-builtin_to_txt () {
-       echo "$GIT_BUILD_DIR/Documentation/git-$1.txt"
+cmd_to_dashed() {
+	printf "$1" | sed s/\ /-/g
+}
+
+cmd_to_underscore() {
+	printf "$1" | sed s/\ /_/g
+}
+
+cmd_to_txt () {
+	cmd=$(cmd_to_dashed "$1") &&
+	echo "$GIT_BUILD_DIR/Documentation/$cmd.txt"
 }
 
 txt_to_synopsis () {
-	builtin="$1" &&
-	out_dir="out/$builtin" &&
+	cmd="$1" &&
+	out_dir="out/$cmd" &&
 	out="$out_dir/txt.synopsis" &&
 	if test -f "$out"
 	then
 		echo "$out" &&
 		return 0
 	fi &&
-	b2t="$(builtin_to_txt "$builtin")" &&
+	b2t="$(cmd_to_txt "$cmd")" &&
 	sed -n \
 		-e '/^\[verse\]$/,/^$/ {
 			/^$/d;
@@ -76,28 +88,28 @@ check_dashed_labels () {
 HT="	"
 
 align_after_nl () {
-	builtin="$1" &&
-	len=$(printf "git %s " "$builtin" | wc -c) &&
+	cmd="$1" &&
+	len=$(printf "$cmd" | wc -c) &&
 	pad=$(printf "%${len}s" "") &&
 
 	sed "s/^[ $HT][ $HT]*/$pad/"
 }
 
 test_debug '>failing'
-while read builtin
+while read cmd
 do
 	# -h output assertions
-	test_expect_success "$builtin -h output has no \t" '
-		h2s="$(help_to_synopsis "$builtin")" &&
+	test_expect_success "$cmd -h output has no \t" '
+		h2s="$(help_to_synopsis "$cmd")" &&
 		! grep "$HT" "$h2s"
 	'
 
-	test_expect_success "$builtin -h output has dashed labels" '
-		check_dashed_labels "$(help_to_synopsis "$builtin")"
+	test_expect_success "$cmd -h output has dashed labels" '
+		check_dashed_labels "$(help_to_synopsis "$cmd")"
 	'
 
-	test_expect_success "$builtin -h output has consistent spacing" '
-		h2s="$(help_to_synopsis "$builtin")" &&
+	test_expect_success "$cmd -h output has consistent spacing" '
+		h2s="$(help_to_synopsis "$cmd")" &&
 		sed -n \
 			-e "/^ / {
 				s/[^ ].*//;
@@ -111,8 +123,9 @@ do
 		fi
 	'
 
-	txt="$(builtin_to_txt "$builtin")" &&
-	preq="$(echo BUILTIN_TXT_$builtin | tr '[:lower:]-' '[:upper:]_')" &&
+	txt="$(cmd_to_txt "$cmd")" &&
+	underscored="$(cmd_to_dashed "$cmd")" &&
+	preq="$(echo BUILTIN_TXT_$underscored | tr '[:lower:]-' '[:upper:]_')" &&
 
 	if test -f "$txt"
 	then
@@ -120,32 +133,32 @@ do
 	fi &&
 
 	# *.txt output assertions
-	test_expect_success "$preq" "$builtin *.txt SYNOPSIS has dashed labels" '
-		check_dashed_labels "$(txt_to_synopsis "$builtin")"
+	test_expect_success "$preq" "$cmd *.txt SYNOPSIS has dashed labels" '
+		check_dashed_labels "$(txt_to_synopsis "$cmd")"
 	'
 
 	# *.txt output consistency assertions
 	result=
-	if grep -q "^$builtin$" "$TEST_DIRECTORY"/t0450/txt-help-mismatches
+	if grep -q "^$cmd$" "$TEST_DIRECTORY"/t0450/txt-help-mismatches
 	then
 		result=failure
 	else
 		result=success
 	fi &&
-	test_expect_$result "$preq" "$builtin -h output and SYNOPSIS agree" '
-		t2s="$(txt_to_synopsis "$builtin")" &&
-		if test "$builtin" = "merge-tree"
+	test_expect_$result "$preq" "$cmd -h output and SYNOPSIS agree" '
+		t2s="$(txt_to_synopsis "$cmd")" &&
+		if test "$cmd" = "git merge-tree"
 		then
 			test_when_finished "rm -f t2s.new" &&
 			sed -e '\''s/ (deprecated)$//g'\'' <"$t2s" >t2s.new
 			t2s=t2s.new
 		fi &&
-		h2s="$(help_to_synopsis "$builtin")" &&
+		h2s="$(help_to_synopsis "$cmd")" &&
 
 		# The *.txt and -h use different spacing for the
 		# alignment of continued usage output, normalize it.
-		align_after_nl "$builtin" <"$t2s" >txt &&
-		align_after_nl "$builtin" <"$h2s" >help &&
+		align_after_nl "$cmd" <"$t2s" >txt &&
+		align_after_nl "$cmd" <"$h2s" >help &&
 		test_cmp txt help
 	'
 
@@ -154,9 +167,9 @@ do
 		test_debug '
 			if test_cmp txt help >cmp 2>/dev/null
 			then
-				echo "=== DONE: $builtin ==="
+				echo "=== DONE: $cmd ==="
 			else
-				echo "=== TODO: $builtin ===" &&
+				echo "=== TODO: $cmd ===" &&
 				cat cmp
 			fi >>failing
 		'
@@ -165,7 +178,7 @@ do
 		# used with --debug
 		rm -f txt help tmp 2>/dev/null
 	fi
-done <builtins
+done <cmds
 
 test_debug 'say "$(cat failing)"'
 

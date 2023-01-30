@@ -1,58 +1,58 @@
-add
-am
-apply
-archive
-bisect
-blame
-branch
-check-ref-format
-checkout
-checkout-index
-clone
-column
-config
-credential
-credential-cache
-credential-store
-fast-export
-fast-import
-fetch-pack
-fmt-merge-msg
-for-each-ref
-format-patch
-fsck-objects
-fsmonitor--daemon
-gc
-grep
-index-pack
-init-db
-log
-ls-files
-ls-tree
-mailinfo
-mailsplit
-maintenance
-merge
-merge-file
-merge-index
-merge-one-file
-multi-pack-index
-name-rev
-notes
-pack-objects
-push
-range-diff
-rebase
-remote
-remote-ext
-remote-fd
-repack
-reset
-restore
-rev-parse
-show
-stage
-switch
-update-index
-update-ref
-whatchanged
+git add
+git am
+git apply
+git archive
+git bisect
+git blame
+git branch
+git check-ref-format
+git checkout
+git checkout-index
+git clone
+git column
+git config
+git credential
+git credential-cache
+git credential-store
+git fast-export
+git fast-import
+git fetch-pack
+git fmt-merge-msg
+git for-each-ref
+git format-patch
+git fsck-objects
+git fsmonitor--daemon
+git gc
+git grep
+git index-pack
+git init-db
+git log
+git ls-files
+git ls-tree
+git mailinfo
+git mailsplit
+git maintenance
+git merge
+git merge-file
+git merge-index
+git merge-one-file
+git multi-pack-index
+git name-rev
+git notes
+git pack-objects
+git push
+git range-diff
+git rebase
+git remote
+git remote-ext
+git remote-fd
+git repack
+git reset
+git restore
+git rev-parse
+git show
+git stage
+git switch
+git update-index
+git update-ref
+git whatchanged
