@@ -15,6 +15,24 @@
 #include "packfile.h"
 #include "help.h"
 
+#define SCALAR_CLONE_USAGE \
+	N_("scalar clone [--single-branch] [--branch <main-branch>] [--full-clone]\n" \
+	   "             [--[no-]src] <url> [<enlistment>]")
+#define SCALAR_LIST_USAGE \
+	N_("scalar list")
+#define SCALAR_REGISTER_USAGE \
+	N_("scalar register [<enlistment>]")
+#define SCALAR_UNREGISTER_USAGE \
+	N_("scalar unregister [<enlistment>]")
+#define SCALAR_RUN_USAGE \
+	N_("scalar run ( all | config | commit-graph | fetch | loose-objects | pack-files ) [<enlistment>]")
+#define SCALAR_RECONFIGURE_USAGE \
+	N_("scalar reconfigure [ --all | <enlistment> ]")
+#define SCALAR_DIAGNOSE_USAGE \
+	N_("scalar diagnose [<enlistment>]")
+#define SCALAR_DELETE_USAGE \
+	N_("scalar delete <enlistment>")
+
 static void setup_enlistment_directory(int argc, const char **argv,
 				       const char * const *usagestr,
 				       const struct option *options,
@@ -402,7 +420,7 @@ void load_builtin_commands(const char *prefix, struct cmdnames *cmds)
 	die("not implemented");
 }
 
-static int cmd_clone(int argc, const char **argv)
+static int cmd_clone(int argc, const char **argv, UNUSED const char *prefix)
 {
 	const char *branch = NULL;
 	int full_clone = 0, single_branch = 0, show_progress = isatty(2);
@@ -420,7 +438,7 @@ static int cmd_clone(int argc, const char **argv)
 		OPT_END(),
 	};
 	const char * const clone_usage[] = {
-		N_("scalar clone [<options>] [--] <repo> [<dir>]"),
+		SCALAR_CLONE_USAGE,
 		NULL
 	};
 	const char *url;
@@ -544,13 +562,13 @@ cleanup:
 	return res;
 }
 
-static int cmd_diagnose(int argc, const char **argv)
+static int cmd_diagnose(int argc, const char **argv, UNUSED const char *prefix)
 {
 	struct option options[] = {
 		OPT_END(),
 	};
 	const char * const usage[] = {
-		N_("scalar diagnose [<enlistment>]"),
+		SCALAR_DIAGNOSE_USAGE,
 		NULL
 	};
 	struct strbuf diagnostics_root = STRBUF_INIT;
@@ -569,7 +587,7 @@ static int cmd_diagnose(int argc, const char **argv)
 	return res;
 }
 
-static int cmd_list(int argc, const char **argv)
+static int cmd_list(int argc, const char **argv, UNUSED const char *prefix)
 {
 	if (argc != 1)
 		die(_("`scalar list` does not take arguments"));
@@ -579,13 +597,13 @@ static int cmd_list(int argc, const char **argv)
 	return 0;
 }
 
-static int cmd_register(int argc, const char **argv)
+static int cmd_register(int argc, const char **argv, UNUSED const char *prefix)
 {
 	struct option options[] = {
 		OPT_END(),
 	};
 	const char * const usage[] = {
-		N_("scalar register [<enlistment>]"),
+		SCALAR_REGISTER_USAGE,
 		NULL
 	};
 
@@ -625,7 +643,7 @@ static int remove_deleted_enlistment(struct strbuf *path)
 	return res;
 }
 
-static int cmd_reconfigure(int argc, const char **argv)
+static int cmd_reconfigure(int argc, const char **argv, UNUSED const char *prefix)
 {
 	int all = 0;
 	struct option options[] = {
@@ -634,7 +652,7 @@ static int cmd_reconfigure(int argc, const char **argv)
 		OPT_END(),
 	};
 	const char * const usage[] = {
-		N_("scalar reconfigure [--all | <enlistment>]"),
+		SCALAR_RECONFIGURE_USAGE,
 		NULL
 	};
 	struct string_list scalar_repos = STRING_LIST_INIT_DUP;
@@ -702,7 +720,7 @@ static int cmd_reconfigure(int argc, const char **argv)
 	return res;
 }
 
-static int cmd_run(int argc, const char **argv)
+static int cmd_run(int argc, const char **argv, UNUSED const char *prefix)
 {
 	struct option options[] = {
 		OPT_END(),
@@ -718,7 +736,10 @@ static int cmd_run(int argc, const char **argv)
 		{ NULL, NULL }
 	};
 	struct strbuf buf = STRBUF_INIT;
-	const char *usagestr[] = { NULL, NULL };
+	const char *usagestr[] = {
+		SCALAR_RUN_USAGE,
+		NULL
+	};
 	int i;
 
 	strbuf_addstr(&buf, N_("scalar run <task> [<enlistment>]\nTasks:\n"));
@@ -765,13 +786,13 @@ static int cmd_run(int argc, const char **argv)
 	return 0;
 }
 
-static int cmd_unregister(int argc, const char **argv)
+static int cmd_unregister(int argc, const char **argv, UNUSED const char *prefix)
 {
 	struct option options[] = {
 		OPT_END(),
 	};
 	const char * const usage[] = {
-		N_("scalar unregister [<enlistment>]"),
+		SCALAR_UNREGISTER_USAGE,
 		NULL
 	};
 
@@ -811,14 +832,14 @@ static int cmd_unregister(int argc, const char **argv)
 	return unregister_dir();
 }
 
-static int cmd_delete(int argc, const char **argv)
+static int cmd_delete(int argc, const char **argv, UNUSED const char *prefix)
 {
 	char *cwd = xgetcwd();
 	struct option options[] = {
 		OPT_END(),
 	};
 	const char * const usage[] = {
-		N_("scalar delete <enlistment>"),
+		SCALAR_DELETE_USAGE,
 		NULL
 	};
 	struct strbuf enlistment = STRBUF_INIT;
@@ -844,7 +865,7 @@ static int cmd_delete(int argc, const char **argv)
 	return res;
 }
 
-static int cmd_help(int argc, const char **argv)
+static int cmd_help(int argc, const char **argv, UNUSED const char *prefix)
 {
 	struct option options[] = {
 		OPT_END(),
@@ -863,7 +884,7 @@ static int cmd_help(int argc, const char **argv)
 	return run_git("help", "scalar", NULL);
 }
 
-static int cmd_version(int argc, const char **argv)
+static int cmd_version(int argc, const char **argv, UNUSED const char *prefix)
 {
 	int verbose = 0, build_options = 0;
 	struct option options[] = {
@@ -873,7 +894,7 @@ static int cmd_version(int argc, const char **argv)
 		OPT_END(),
 	};
 	const char * const usage[] = {
-		N_("scalar verbose [-v | --verbose] [--build-options]"),
+		N_("scalar version [-v | --verbose] [--build-options]"),
 		NULL
 	};
 	struct strbuf buf = STRBUF_INIT;
@@ -891,27 +912,33 @@ static int cmd_version(int argc, const char **argv)
 	return 0;
 }
 
-static struct {
-	const char *name;
-	int (*fn)(int, const char **);
-} builtins[] = {
-	{ "clone", cmd_clone },
-	{ "list", cmd_list },
-	{ "register", cmd_register },
-	{ "unregister", cmd_unregister },
-	{ "run", cmd_run },
-	{ "reconfigure", cmd_reconfigure },
-	{ "delete", cmd_delete },
-	{ "help", cmd_help },
-	{ "version", cmd_version },
-	{ "diagnose", cmd_diagnose },
-	{ NULL, NULL},
-};
-
 int cmd_main(int argc, const char **argv)
 {
-	struct strbuf scalar_usage = STRBUF_INIT;
-	int i;
+	parse_opt_subcommand_fn *fn = NULL;
+	const char * const scalar_usage[] = {
+		SCALAR_CLONE_USAGE,
+		SCALAR_LIST_USAGE,
+		SCALAR_REGISTER_USAGE,
+		SCALAR_UNREGISTER_USAGE,
+		SCALAR_RUN_USAGE,
+		SCALAR_RECONFIGURE_USAGE,
+		SCALAR_DIAGNOSE_USAGE,
+		SCALAR_DELETE_USAGE,
+		NULL
+	};
+	struct option options[] = {
+		OPT_SUBCOMMAND("clone", &fn, cmd_clone),
+		OPT_SUBCOMMAND("list", &fn, cmd_list),
+		OPT_SUBCOMMAND("register", &fn, cmd_register),
+		OPT_SUBCOMMAND("unregister", &fn, cmd_unregister),
+		OPT_SUBCOMMAND("run", &fn, cmd_run),
+		OPT_SUBCOMMAND("reconfigure", &fn, cmd_reconfigure),
+		OPT_SUBCOMMAND("delete", &fn, cmd_delete),
+		OPT_SUBCOMMAND("help", &fn, cmd_help),
+		OPT_SUBCOMMAND("version", &fn, cmd_version),
+		OPT_SUBCOMMAND("diagnose", &fn, cmd_diagnose),
+		OPT_END(),
+	};
 
 	while (argc > 1 && *argv[1] == '-') {
 		if (!strcmp(argv[1], "-C")) {
@@ -932,20 +959,8 @@ int cmd_main(int argc, const char **argv)
 			break;
 	}
 
-	if (argc > 1) {
-		argv++;
-		argc--;
+	argc = parse_options(argc, argv, NULL, options,
+			     scalar_usage, 0);
 
-		for (i = 0; builtins[i].name; i++)
-			if (!strcmp(builtins[i].name, argv[0]))
-				return !!builtins[i].fn(argc, argv);
-	}
-
-	strbuf_addstr(&scalar_usage,
-		      N_("scalar [-C <directory>] [-c <key>=<value>] "
-			 "<command> [<options>]\n\nCommands:\n"));
-	for (i = 0; builtins[i].name; i++)
-		strbuf_addf(&scalar_usage, "\t%s\n", builtins[i].name);
-
-	usage(scalar_usage.buf);
+	return fn(argc, argv, NULL);
 }
