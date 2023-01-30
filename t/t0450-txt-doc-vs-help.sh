@@ -12,7 +12,12 @@ test_expect_success 'setup: list of commands' '
 	for builtin in $(git --list-cmds=builtins)
 	do
 		printf "git %s\n" "$builtin" || return 1
-	done >cmds
+	done >cmds &&
+
+	# Exceptional commands
+	cat >>cmds <<-EOF
+	scalar
+	EOF
 '
 
 test_expect_success 'list of txt and help mismatches is sorted' '
