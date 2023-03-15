@@ -185,6 +185,7 @@ static int set_recommended_config(int reconfigure)
 		{ "core.safeCRLF", "false" },
 		{ "fetch.showForcedUpdates", "false" },
 		{ "core.configWriteLockTimeoutMS", "150" },
+		{ "core.fsync", "all" },
 		{ NULL, NULL },
 	};
 	int i;
