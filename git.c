@@ -432,24 +432,25 @@ static int run_pre_command_hook(const char **argv)
 	strvec_pushv(&opt.args, sargv.v);
 	ret = run_hooks_opt("pre-command", &opt);
 
-	if (!ret)
-		run_post_hook = 1;
+	if (!ret) {
+		char *lock = getenv("COMMAND_HOOK_LOCK");
+		if (lock && !strcmp(lock, "true"))
+			run_post_hook = 1;
+	}
+
 	return ret;
 }
 
 static int run_post_command_hook(void)
 {
-	char *lock;
 	int ret = 0;
 	struct run_hooks_opt opt = RUN_HOOKS_OPT_INIT;
 
 	/*
 	 * Only run post_command if pre_command succeeded in this process
+	 * and COMMAND_HOOK_LOCK (checked during pre-command) is not true.
 	 */
 	if (!run_post_hook)
-		return 0;
-	lock = getenv("COMMAND_HOOK_LOCK");
-	if (!lock || strcmp(lock, "true"))
 		return 0;
 
 	strvec_pushv(&opt.args, sargv.v);
