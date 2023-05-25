@@ -156,7 +156,8 @@ static int add_ref_decoration(const char *refname, const struct object_id *oid,
 
 	if (starts_with(refname, git_replace_ref_base)) {
 		struct object_id original_oid;
-		if (!read_replace_refs)
+		prepare_repo_settings(the_repository);
+		if (!the_repository->settings.read_replace_refs)
 			return 0;
 		if (get_oid_hex(refname + strlen(git_replace_ref_base),
 				&original_oid)) {

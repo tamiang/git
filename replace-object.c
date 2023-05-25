@@ -64,7 +64,7 @@ void prepare_replace_object(struct repository *r)
  * replacement object's name (replaced recursively, if necessary).
  * The return value is either oid or a pointer to a
  * permanently-allocated value.  This function always respects replace
- * references, regardless of the value of read_replace_refs.
+ * references, regardless of the value of r->settings.read_replace_refs.
  */
 const struct object_id *do_lookup_replace_object(struct repository *r,
 						 const struct object_id *oid)
@@ -87,5 +87,13 @@ const struct object_id *do_lookup_replace_object(struct repository *r,
 
 void disable_replace_refs(struct repository *r)
 {
-	read_replace_refs = 0;
+	/*
+	 * Only attempt to prepare repo settings if we actually have a
+	 * gitdir. If not, then replace refs do nothing (and are
+	 * initialized to zero anyway).
+	 */
+	if (r->gitdir) {
+		prepare_repo_settings(r);
+		r->settings.read_replace_refs = 0;
+	}
 }

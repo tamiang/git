@@ -63,6 +63,10 @@ void prepare_repo_settings(struct repository *r)
 	repo_cfg_bool(r, "index.sparse", &r->settings.sparse_index, 0);
 	repo_cfg_bool(r, "index.skiphash", &r->settings.index_skip_hash, r->settings.index_skip_hash);
 	repo_cfg_bool(r, "pack.readreverseindex", &r->settings.pack_read_reverse_index, 1);
+	repo_cfg_bool(r, "core.usereplacerefs", &r->settings.read_replace_refs, 1);
+
+	if (getenv(NO_REPLACE_OBJECTS_ENVIRONMENT))
+		r->settings.read_replace_refs = 0;
 
 	/*
 	 * The GIT_TEST_MULTI_PACK_INDEX variable is special in that

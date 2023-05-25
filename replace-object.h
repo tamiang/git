@@ -5,14 +5,6 @@
 #include "repository.h"
 #include "object-store.h"
 
-/*
- * Do replace refs need to be checked this run?  This variable is
- * initialized to true unless --no-replace-object is used or
- * $GIT_NO_REPLACE_OBJECTS is set, but is set to false by some
- * commands that do not want replace references to be active.
- */
-extern int read_replace_refs;
-
 struct replace_object {
 	struct oidmap_entry original;
 	struct object_id replacement;
@@ -41,7 +33,8 @@ const struct object_id *do_lookup_replace_object(struct repository *r,
 static inline const struct object_id *lookup_replace_object(struct repository *r,
 							    const struct object_id *oid)
 {
-	if (!read_replace_refs ||
+	prepare_repo_settings(r);
+	if (!r->settings.read_replace_refs ||
 	    (r->objects->replace_map_initialized &&
 	     r->objects->replace_map->map.tablesize == 0))
 		return oid;

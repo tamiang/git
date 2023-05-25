@@ -204,14 +204,13 @@ static struct commit_graph *alloc_commit_graph(void)
 	return g;
 }
 
-extern int read_replace_refs;
-
 static int commit_graph_compatible(struct repository *r)
 {
 	if (!r->gitdir)
 		return 0;
 
-	if (read_replace_refs) {
+	prepare_repo_settings(r);
+	if (r->settings.read_replace_refs) {
 		prepare_replace_object(r);
 		if (hashmap_get_size(&r->objects->replace_map->map))
 			return 0;
