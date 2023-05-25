@@ -5364,6 +5364,7 @@ static const char *label_oid(struct object_id *oid, const char *label,
 		strbuf_grow(&state->buf, GIT_MAX_HEXSZ);
 		label = p = state->buf.buf;
 
+		prepare_default_config();
 		repo_find_unique_abbrev_r(the_repository, p, oid,
 					  default_abbrev);
 
@@ -5405,6 +5406,7 @@ static const char *label_oid(struct object_id *oid, const char *label,
 				strbuf_addch(buf, '-');
 		if (!buf->len) {
 			strbuf_addstr(buf, "rev-");
+			prepare_default_config();
 			strbuf_add_unique_abbrev(buf, oid, default_abbrev);
 		}
 		label = buf->buf;
