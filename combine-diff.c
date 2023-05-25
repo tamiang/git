@@ -1108,6 +1108,7 @@ static void show_patch_diff(struct combine_diff_path *elem, int num_parent,
 			if (is_file) {
 				struct strbuf buf = STRBUF_INIT;
 
+				prepare_default_config();
 				if (convert_to_git(rev->diffopt.repo->index,
 						   elem->path, result, len, &buf, global_conv_flags_eol)) {
 					free(result);

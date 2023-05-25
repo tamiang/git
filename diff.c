@@ -4070,7 +4070,11 @@ int diff_populate_filespec(struct repository *r,
 	int size_only = options ? options->check_size_only : 0;
 	int check_binary = options ? options->check_binary : 0;
 	int err = 0;
-	int conv_flags = global_conv_flags_eol;
+	int conv_flags;
+
+	prepare_default_config();
+	conv_flags = global_conv_flags_eol;
+
 	/*
 	 * demote FAIL to WARN to allow inspecting the situation
 	 * instead of refusing.

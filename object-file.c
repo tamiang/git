@@ -314,6 +314,7 @@ static struct cached_object *find_cached_object(const struct object_id *oid)
 
 static int get_conv_flags(unsigned flags)
 {
+	prepare_default_config();
 	if (flags & HASH_RENORMALIZE)
 		return CONV_EOL_RENORMALIZE;
 	else if (flags & HASH_WRITE_OBJECT)
