@@ -880,6 +880,7 @@ static const char *git_etc_gitattributes(void)
 
 static const char *get_home_gitattributes(void)
 {
+	prepare_default_config();
 	if (!git_attributes_file)
 		git_attributes_file = xdg_config_home("attributes");
 
