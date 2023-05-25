@@ -984,6 +984,7 @@ static int update_file_flags(struct merge_options *opt,
 			update_wd = 0;
 			goto free_buf;
 		}
+		prepare_default_config();
 		if (S_ISREG(contents->mode) ||
 		    (!has_symlinks && S_ISLNK(contents->mode))) {
 			int fd;

@@ -310,6 +310,7 @@ static int write_entry(struct cache_entry *ce, char *path, struct conv_attrs *ca
 		 * We can't make a real symlink; write out a regular file entry
 		 * with the symlink destination as its contents.
 		 */
+		prepare_default_config();
 		if (!has_symlinks || to_tempfile)
 			goto write_file_entry;
 
