@@ -93,7 +93,7 @@ int cmd_var(int argc, const char **argv, const char *prefix UNUSED)
 		list_vars();
 		return 0;
 	}
-	git_config(git_default_config, NULL);
+	prepare_default_config();
 
 	git_var = get_git_var(argv[1]);
 	if (!git_var)

@@ -1113,7 +1113,7 @@ int cmd_update_index(int argc, const char **argv, const char *prefix)
 	if (argc == 2 && !strcmp(argv[1], "-h"))
 		usage_with_options(update_index_usage, options);
 
-	git_config(git_default_config, NULL);
+	prepare_default_config();
 
 	prepare_repo_settings(r);
 	the_repository->settings.command_requires_full_index = 0;

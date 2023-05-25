@@ -134,6 +134,12 @@ typedef int (*config_fn_t)(const char *, const char *, void *);
 int git_default_config(const char *, const char *, void *);
 
 /**
+ * Ensure that git_default_config has been parsed. Will not repeat the
+ * parsing if this has happened once before.
+ */
+void prepare_default_config(void);
+
+/**
  * Read a specific file in git-config format.
  * This function takes the same callback and data parameters as `git_config`.
  *

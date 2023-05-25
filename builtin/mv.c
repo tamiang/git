@@ -190,7 +190,7 @@ int cmd_mv(int argc, const char **argv, const char *prefix)
 	struct string_list only_match_skip_worktree = STRING_LIST_INIT_NODUP;
 	struct string_list dirty_paths = STRING_LIST_INIT_NODUP;
 
-	git_config(git_default_config, NULL);
+	prepare_default_config();
 
 	argc = parse_options(argc, argv, prefix, builtin_mv_options,
 			     builtin_mv_usage, 0);

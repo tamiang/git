@@ -321,7 +321,7 @@ int cmd_commit_graph(int argc, const char **argv, const char *prefix)
 	};
 	struct option *options = parse_options_concat(builtin_commit_graph_options, common_opts);
 
-	git_config(git_default_config, NULL);
+	prepare_default_config();
 	save_commit_buffer = 0;
 
 	argc = parse_options(argc, argv, prefix, options,

@@ -225,7 +225,7 @@ static int create_default_files(const char *template_path,
 	free((char *)init_template_dir);
 	git_config_clear();
 	reset_shared_repository();
-	git_config(git_default_config, NULL);
+	prepare_default_config();
 
 	/*
 	 * We must make sure command-line options continue to override any

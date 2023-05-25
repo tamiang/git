@@ -2977,7 +2977,7 @@ static int module_create_branch(int argc, const char **argv, const char *prefix)
 		NULL
 	};
 
-	git_config(git_default_config, NULL);
+	prepare_default_config();
 	track = git_branch_track;
 	argc = parse_options(argc, argv, prefix, options, usage, 0);
 

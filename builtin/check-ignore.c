@@ -158,7 +158,7 @@ int cmd_check_ignore(int argc, const char **argv, const char *prefix)
 	int num_ignored;
 	struct dir_struct dir = DIR_INIT;
 
-	git_config(git_default_config, NULL);
+	prepare_default_config();
 
 	argc = parse_options(argc, argv, prefix, check_ignore_options,
 			     check_ignore_usage, 0);

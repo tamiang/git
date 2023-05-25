@@ -784,7 +784,7 @@ int cmd_ls_files(int argc, const char **argv, const char *cmd_prefix)
 	prefix = cmd_prefix;
 	if (prefix)
 		prefix_len = strlen(prefix);
-	git_config(git_default_config, NULL);
+	prepare_default_config();
 
 	if (repo_read_index(the_repository) < 0)
 		die("index file corrupt");

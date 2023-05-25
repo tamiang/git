@@ -527,7 +527,7 @@ int cmd_rev_list(int argc, const char **argv, const char *prefix)
 	if (argc == 2 && !strcmp(argv[1], "-h"))
 		usage(rev_list_usage);
 
-	git_config(git_default_config, NULL);
+	prepare_default_config();
 	repo_init_revisions(the_repository, &revs, prefix);
 	revs.abbrev = DEFAULT_ABBREV;
 	revs.commit_format = CMIT_FMT_UNSPECIFIED;

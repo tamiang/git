@@ -272,7 +272,7 @@ int cmd_multi_pack_index(int argc, const char **argv,
 	};
 	struct option *options = parse_options_concat(builtin_multi_pack_index_options, common_opts);
 
-	git_config(git_default_config, NULL);
+	prepare_default_config();
 
 	if (the_repository &&
 	    the_repository->objects &&

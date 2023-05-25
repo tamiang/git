@@ -116,7 +116,7 @@ int cmd_commit_tree(int argc, const char **argv, const char *prefix)
 		OPT_END()
 	};
 
-	git_config(git_default_config, NULL);
+	prepare_default_config();
 
 	if (argc < 2 || !strcmp(argv[1], "-h"))
 		usage_with_options(commit_tree_usage, options);

@@ -734,7 +734,7 @@ int write_archive(int argc, const char **argv, const char *prefix,
 	int rc;
 
 	git_config_get_bool("uploadarchive.allowunreachable", &remote_allow_unreachable);
-	git_config(git_default_config, NULL);
+	prepare_default_config();
 
 	describe_status.max_invocations = 1;
 	ctx.date_mode.type = DATE_NORMAL;

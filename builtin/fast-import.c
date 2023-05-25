@@ -3488,7 +3488,7 @@ static void git_pack_config(void)
 	else if (!git_config_get_int("transfer.unpacklimit", &limit))
 		unpack_limit = limit;
 
-	git_config(git_default_config, NULL);
+	prepare_default_config();
 }
 
 static const char fast_import_usage[] =

@@ -702,7 +702,7 @@ int cmd_rev_parse(int argc, const char **argv, const char *prefix)
 	/* No options; just report on whether we're in a git repo or not. */
 	if (argc == 1) {
 		setup_git_directory();
-		git_config(git_default_config, NULL);
+		prepare_default_config();
 		return 0;
 	}
 
@@ -737,7 +737,7 @@ int cmd_rev_parse(int argc, const char **argv, const char *prefix)
 		/* The rest of the options require a git repository. */
 		if (!did_repo_setup) {
 			prefix = setup_git_directory();
-			git_config(git_default_config, NULL);
+			prepare_default_config();
 			did_repo_setup = 1;
 
 			prepare_repo_settings(the_repository);

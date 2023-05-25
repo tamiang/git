@@ -143,7 +143,7 @@ int cmd_main(int argc, const char **argv)
 
 	trace2_cmd_name("http-fetch");
 
-	git_config(git_default_config, NULL);
+	prepare_default_config();
 
 	if (packfile) {
 		if (!index_pack_args.nr)

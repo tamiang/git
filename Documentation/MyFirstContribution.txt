@@ -318,7 +318,7 @@ function body:
 
 ...
 
-	git_config(git_default_config, NULL);
+	prepare_default_config();
 	if (git_config_get_string_tmp("user.name", &cfg_name) > 0)
 		printf(_("No name is found in config\n"));
 	else

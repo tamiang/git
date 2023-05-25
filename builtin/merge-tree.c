@@ -629,7 +629,7 @@ int cmd_merge_tree(int argc, const char **argv, const char *prefix)
 	if (argc != expected_remaining_argc)
 		usage_with_options(merge_tree_usage, mt_options);
 
-	git_config(git_default_config, NULL);
+	prepare_default_config();
 
 	/* Do the relevant type of merge */
 	if (o.mode == MODE_REAL)

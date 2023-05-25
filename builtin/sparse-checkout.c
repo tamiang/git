@@ -1040,7 +1040,7 @@ int cmd_sparse_checkout(int argc, const char **argv, const char *prefix)
 			     builtin_sparse_checkout_options,
 			     builtin_sparse_checkout_usage, 0);
 
-	git_config(git_default_config, NULL);
+	prepare_default_config();
 
 	prepare_repo_settings(the_repository);
 	the_repository->settings.command_requires_full_index = 0;

@@ -405,7 +405,7 @@ int cmd_ls_tree(int argc, const char **argv, const char *prefix)
 	struct ls_tree_cmdmode_to_fmt *m2f = ls_tree_cmdmode_format;
 	int ret;
 
-	git_config(git_default_config, NULL);
+	prepare_default_config();
 	options.ls_tree_prefix = prefix;
 	if (prefix)
 		options.chomp_prefix = strlen(prefix);

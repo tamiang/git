@@ -35,7 +35,7 @@ int cmd_unpack_file(int argc, const char **argv, const char *prefix UNUSED)
 	if (repo_get_oid(the_repository, argv[1], &oid))
 		die("Not a valid object name %s", argv[1]);
 
-	git_config(git_default_config, NULL);
+	prepare_default_config();
 
 	puts(create_temp_file(&oid));
 	return 0;

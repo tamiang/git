@@ -51,7 +51,7 @@ int cmd_stripspace(int argc, const char **argv, const char *prefix)
 
 	if (mode == STRIP_COMMENTS || mode == COMMENT_LINES) {
 		setup_git_directory_gently(&nongit);
-		git_config(git_default_config, NULL);
+		prepare_default_config();
 	}
 
 	if (strbuf_read(&buf, 0, 1024) < 0)

@@ -170,7 +170,7 @@ static void gc_config(void)
 	git_config_get_ulong("gc.bigpackthreshold", &big_pack_threshold);
 	git_config_get_ulong("pack.deltacachesize", &max_delta_cache_size);
 
-	git_config(git_default_config, NULL);
+	prepare_default_config();
 }
 
 struct maintenance_run_opts;

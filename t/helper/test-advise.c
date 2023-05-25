@@ -9,7 +9,7 @@ int cmd__advise_if_enabled(int argc, const char **argv)
 		die("usage: %s <advice>", argv[0]);
 
 	setup_git_directory();
-	git_config(git_default_config, NULL);
+	prepare_default_config();
 
 	/*
 	 * Any advice type can be used for testing, but NESTED_TAG was

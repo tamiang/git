@@ -1995,6 +1995,21 @@ int git_default_config(const char *var, const char *value, void *cb)
 	return 0;
 }
 
+/**
+ * Ensure that git_default_config has been parsed. Will not repeat the
+ * parsing if this has happened once before.
+ */
+void prepare_default_config(void)
+{
+	static int config_done = 0;
+
+	if (config_done)
+		return;
+	config_done = 1;
+
+	git_config(git_default_config, NULL);
+}
+
 /*
  * All source specific fields in the union, die_on_error, name and the callbacks
  * fgetc, ungetc, ftell of top need to be initialized before calling

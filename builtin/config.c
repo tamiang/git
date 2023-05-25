@@ -846,7 +846,7 @@ int cmd_config(int argc, const char **argv, const char *prefix)
 			die(_("editing stdin is not supported"));
 		if (given_config_source.blob)
 			die(_("editing blobs is not supported"));
-		git_config(git_default_config, NULL);
+		prepare_default_config();
 		config_file = given_config_source.file ?
 				xstrdup(given_config_source.file) :
 				git_pathdup("config");

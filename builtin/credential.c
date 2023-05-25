@@ -11,7 +11,7 @@ int cmd_credential(int argc, const char **argv, const char *prefix UNUSED)
 	const char *op;
 	struct credential c = CREDENTIAL_INIT;
 
-	git_config(git_default_config, NULL);
+	prepare_default_config();
 
 	if (argc != 2 || !strcmp(argv[1], "-h"))
 		usage(usage_msg);
