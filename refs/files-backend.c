@@ -1534,6 +1534,7 @@ static int files_copy_or_rename_ref(struct ref_store *ref_store,
 		goto rollbacklog;
 	}
 
+	prepare_default_config();
 	flag = log_all_ref_updates;
 	log_all_ref_updates = LOG_REFS_NONE;
 	if (write_ref_to_lockfile(lock, &orig_oid, 0, &err) ||
@@ -1728,6 +1729,7 @@ static int files_log_ref_write(struct files_ref_store *refs,
 {
 	int logfd, result;
 
+	prepare_default_config();
 	if (log_all_ref_updates == LOG_REFS_UNSET)
 		log_all_ref_updates = is_bare_repository() ? LOG_REFS_NONE : LOG_REFS_NORMAL;
 

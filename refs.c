@@ -966,6 +966,7 @@ static char *normalize_reflog_message(const char *msg)
 
 int should_autocreate_reflog(const char *refname)
 {
+	prepare_default_config();
 	switch (log_all_ref_updates) {
 	case LOG_REFS_ALWAYS:
 		return 1;

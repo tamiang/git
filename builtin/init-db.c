@@ -296,6 +296,7 @@ static int create_default_files(const char *template_path,
 		git_config_set("core.bare", "true");
 	else {
 		git_config_set("core.bare", "false");
+		prepare_default_config();
 		/* allow template config file to override the default */
 		if (log_all_ref_updates == LOG_REFS_UNSET)
 			git_config_set("core.logallrefupdates", "true");
