@@ -13,6 +13,7 @@
 #include "entry.h"
 #include "parallel-checkout.h"
 #include "wrapper.h"
+#include "config.h"
 
 static void create_directories(const char *path, int path_len,
 			       const struct checkout *state)
@@ -431,7 +432,9 @@ static int check_path(const char *path, int len, struct stat *st, int skiplen)
 static void mark_colliding_entries(const struct checkout *state,
 				   struct cache_entry *ce, struct stat *st)
 {
-	int i, trust_ino = check_stat;
+	int i, trust_ino;
+	prepare_default_config();
+	trust_ino = check_stat;
 
 #if defined(GIT_WINDOWS_NATIVE) || defined(__CYGWIN__)
 	trust_ino = 0;
