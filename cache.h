@@ -126,6 +126,9 @@ static inline unsigned create_ce_flags(unsigned stage)
 #define ce_mark_uptodate(ce) ((ce)->ce_flags |= CE_UPTODATE)
 #define ce_intent_to_add(ce) ((ce)->ce_flags & CE_INTENT_TO_ADD)
 
+/* See config.h for full declaration. */
+void prepare_default_config(void);
+
 static inline unsigned int ce_mode_from_stat(const struct cache_entry *ce,
 					     unsigned int mode)
 {
@@ -133,6 +136,7 @@ static inline unsigned int ce_mode_from_stat(const struct cache_entry *ce,
 	if (!has_symlinks && S_ISREG(mode) &&
 	    ce && S_ISLNK(ce->ce_mode))
 		return ce->ce_mode;
+	prepare_default_config();
 	if (!trust_executable_bit && S_ISREG(mode)) {
 		if (ce && S_ISREG(ce->ce_mode))
 			return ce->ce_mode;
