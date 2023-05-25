@@ -157,6 +157,7 @@ const char *get_wt_convert_stats_ascii(const char *path)
 
 static int text_eol_is_crlf(void)
 {
+	prepare_default_config();
 	if (auto_crlf == AUTO_CRLF_TRUE)
 		return 1;
 	else if (auto_crlf == AUTO_CRLF_INPUT)
@@ -1336,6 +1337,7 @@ void convert_attrs(struct index_state *istate,
 	ca->working_tree_encoding = git_path_check_encoding(ccheck + 5);
 
 	/* Save attr and make a decision for action */
+	prepare_default_config();
 	ca->attr_action = ca->crlf_action;
 	if (ca->crlf_action == CRLF_TEXT)
 		ca->crlf_action = text_eol_is_crlf() ? CRLF_TEXT_CRLF : CRLF_TEXT_INPUT;
