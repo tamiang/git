@@ -18,6 +18,7 @@
 #include "oid-array.h"
 #include "revision.h"
 #include "wrapper.h"
+#include "config.h"
 
 static int compare_paths(const struct combine_diff_path *one,
 			  const struct diff_filespec *two)
@@ -1087,6 +1088,7 @@ static void show_patch_diff(struct combine_diff_path *elem, int num_parent,
 			/* if symlinks don't work, assume symlink if all parents
 			 * are symlinks
 			 */
+			prepare_default_config();
 			is_file = has_symlinks;
 			for (i = 0; !is_file && i < num_parent; i++)
 				is_file = !S_ISLNK(elem->parent[i].mode);

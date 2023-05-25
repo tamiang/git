@@ -345,6 +345,7 @@ static int ce_match_stat_basic(const struct cache_entry *ce, struct stat *st)
 			changed |= MODE_CHANGED;
 		break;
 	case S_IFLNK:
+		prepare_default_config();
 		if (!S_ISLNK(st->st_mode) &&
 		    (has_symlinks || !S_ISREG(st->st_mode)))
 			changed |= TYPE_CHANGED;

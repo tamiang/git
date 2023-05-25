@@ -4387,6 +4387,7 @@ static int try_create_file(struct apply_state *state, const char *path,
 		return !!mkdir(path, 0777);
 	}
 
+	prepare_default_config();
 	if (has_symlinks && S_ISLNK(mode))
 		/* Although buf:size is counted string, it also is NUL
 		 * terminated.
