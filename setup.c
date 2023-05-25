@@ -1131,7 +1131,7 @@ static int safe_directory_cb(const char *key, const char *value, void *d)
 		const char *interpolated = NULL;
 
 		if (!git_config_pathname(&interpolated, key, value) &&
-		    !fspathcmp(data->path, interpolated ? interpolated : value))
+		    !strcmp(data->path, interpolated ? interpolated : value))
 			data->is_safe = 1;
 
 		free((char *)interpolated);
