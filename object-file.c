@@ -1972,6 +1972,7 @@ static int start_loose_object_common(struct strbuf *tmp_file,
 	}
 
 	/*  Setup zlib stream for compression */
+	prepare_default_config();
 	git_deflate_init(stream, zlib_compression_level);
 	stream->next_out = buf;
 	stream->avail_out = buflen;

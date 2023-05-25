@@ -20,6 +20,7 @@
 #include "packfile.h"
 #include "object-store.h"
 #include "commit-reach.h"
+#include "config.h"
 
 #ifdef EXPAT_NEEDS_XMLPARSE_H
 #include <xmlparse.h>
@@ -372,6 +373,7 @@ static void start_put(struct transfer_request *request)
 	hdrlen = format_object_header(hdr, sizeof(hdr), type, len);
 
 	/* Set it up */
+	prepare_default_config();
 	git_deflate_init(&stream, zlib_compression_level);
 	size = git_deflate_bound(&stream, len + hdrlen);
 	strbuf_init(&request->buffer.buf, size);

@@ -1325,6 +1325,7 @@ static int write_compressed(struct hashfile *f, void *in, unsigned int size)
 	int status;
 	unsigned char outbuf[4096];
 
+	prepare_default_config();
 	git_deflate_init(&stream, zlib_compression_level);
 	stream.next_in = in;
 	stream.avail_in = size;
