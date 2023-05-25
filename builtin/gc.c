@@ -299,6 +299,8 @@ static uint64_t estimate_repack_memory(struct packed_git *pack)
 	if (!pack || !nr_objects)
 		return 0;
 
+	prepare_default_config();
+
 	/*
 	 * First we have to scan through at least one pack.
 	 * Assume enough room in OS file cache to keep the entire pack

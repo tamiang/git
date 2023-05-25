@@ -1500,6 +1500,7 @@ static void add_delta_base_cache(struct packed_git *p, off_t base_offset,
 
 	delta_base_cached += base_size;
 
+	prepare_default_config();
 	list_for_each_safe(lru, tmp, &delta_base_cache_lru) {
 		struct delta_base_cache_entry *f =
 			list_entry(lru, struct delta_base_cache_entry, lru);
