@@ -1911,6 +1911,7 @@ static int create_symref_locked(struct files_ref_store *refs,
 				struct ref_lock *lock, const char *refname,
 				const char *target, const char *logmsg)
 {
+	prepare_default_config();
 	if (prefer_symlink_refs && !create_ref_symlink(lock, target)) {
 		update_symref_reflog(refs, lock, refname, target, logmsg);
 		return 0;
