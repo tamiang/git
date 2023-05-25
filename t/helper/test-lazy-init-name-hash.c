@@ -216,6 +216,7 @@ int cmd__lazy_init_name_hash(int argc, const char **argv)
 	/*
 	 * istate->dir_hash is only created when ignore_case is set.
 	 */
+	prepare_default_config();
 	ignore_case = 1;
 
 	if (dump) {

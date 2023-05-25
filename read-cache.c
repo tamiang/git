@@ -772,6 +772,7 @@ int add_to_index(struct index_state *istate, const char *path, struct stat *st, 
 	 * case of the file being added to the repository matches (is folded into) the existing
 	 * entry's directory case.
 	 */
+	prepare_default_config();
 	if (ignore_case) {
 		adjust_dirname_case(istate, ce->name);
 	}

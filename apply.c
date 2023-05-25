@@ -3884,6 +3884,7 @@ static int path_is_beyond_symlink_1(struct apply_state *state, struct strbuf *na
 		if (state->check_index) {
 			struct cache_entry *ce;
 
+			prepare_default_config();
 			ce = index_file_exists(state->repo->index, name->buf,
 					       name->len, ignore_case);
 			if (ce && S_ISLNK(ce->ce_mode))

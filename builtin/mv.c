@@ -359,6 +359,7 @@ dir_check:
 			bad = _("conflicted");
 			goto act_on_entry;
 		}
+		prepare_default_config();
 		if (lstat(dst, &st) == 0 &&
 		    (!ignore_case || strcasecmp(src, dst))) {
 			bad = _("destination exists");
