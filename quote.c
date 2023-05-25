@@ -4,6 +4,7 @@
 #include "quote.h"
 #include "strbuf.h"
 #include "strvec.h"
+#include "config.h"
 
 int quote_path_fully = 1;
 
@@ -233,6 +234,7 @@ static signed char const cq_lookup[256] = {
 
 static inline int cq_must_quote(char c)
 {
+	prepare_default_config();
 	return cq_lookup[(unsigned char)c] + quote_path_fully > 0;
 }
 
