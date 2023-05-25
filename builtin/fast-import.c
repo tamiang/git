@@ -986,6 +986,7 @@ static int store_object(
 	} else
 		delta = NULL;
 
+	prepare_default_config();
 	git_deflate_init(&s, pack_compression_level);
 	if (delta) {
 		s.next_in = delta;
@@ -1113,6 +1114,7 @@ static void stream_blob(uintmax_t len, struct object_id *oidout, uintmax_t mark)
 
 	crc32_begin(pack_file);
 
+	prepare_default_config();
 	git_deflate_init(&s, pack_compression_level);
 
 	hdrlen = encode_in_pack_object_header(out_buf, out_sz, OBJ_BLOB, len);

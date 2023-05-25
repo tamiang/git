@@ -325,6 +325,7 @@ static unsigned long do_compress(void **pptr, unsigned long size)
 	void *in, *out;
 	unsigned long maxsize;
 
+	prepare_default_config();
 	git_deflate_init(&stream, pack_compression_level);
 	maxsize = git_deflate_bound(&stream, size);
 
@@ -352,6 +353,7 @@ static unsigned long write_large_blob_data(struct git_istream *st, struct hashfi
 	unsigned char obuf[1024 * 16];
 	unsigned long olen = 0;
 
+	prepare_default_config();
 	git_deflate_init(&stream, pack_compression_level);
 
 	for (;;) {
@@ -4297,6 +4299,12 @@ int cmd_pack_objects(int argc, const char **argv, const char *prefix)
 	git_config(git_pack_config, NULL);
 	if (git_env_bool(GIT_TEST_NO_WRITE_REV_INDEX, 0))
 		pack_idx_opts.flags &= ~WRITE_REV;
+
+	/*
+	 * Load default config before pack_compression_level may be
+	 * overwrriten by --compression option.
+	 */
+	prepare_default_config();
 
 	progress = isatty(2);
 	argc = parse_options(argc, argv, prefix, pack_objects_options,
