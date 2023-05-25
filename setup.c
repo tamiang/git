@@ -667,6 +667,7 @@ static int check_repository_format_gently(const char *gitdir, struct repository_
 
 	if (!has_common) {
 		if (candidate->is_bare != -1) {
+			prepare_default_config();
 			is_bare_repository_cfg = candidate->is_bare;
 			if (is_bare_repository_cfg == 1)
 				inside_work_tree = -1;
@@ -918,6 +919,7 @@ static const char *setup_explicit_git_dir(const char *gitdirenv,
 		return NULL;
 	}
 
+	prepare_default_config();
 	/* #3, #7, #11, #15, #19, #23, #27, #31 (see t1510) */
 	if (work_tree_env)
 		set_git_work_tree(work_tree_env);
@@ -1006,6 +1008,7 @@ static const char *setup_discovered_git_dir(const char *gitdir,
 		return ret;
 	}
 
+	prepare_default_config();
 	/* #16.2, #17.2, #20.2, #21.2, #24, #25, #28, #29 (see t1510) */
 	if (is_bare_repository_cfg > 0) {
 		set_git_dir(gitdir, (offset != cwd->len));

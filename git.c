@@ -234,6 +234,7 @@ static int handle_options(const char ***argv, int *argc, int *envchanged)
 				*envchanged = 1;
 		} else if (!strcmp(cmd, "--bare")) {
 			char *cwd = xgetcwd();
+			prepare_default_config();
 			is_bare_repository_cfg = 1;
 			setenv(GIT_DIR_ENVIRONMENT, cwd, 0);
 			free(cwd);
