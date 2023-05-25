@@ -4138,6 +4138,7 @@ int diff_populate_filespec(struct repository *r,
 		 * opening the file and inspecting the contents, this
 		 * is probably fine.
 		 */
+		prepare_default_config();
 		if (check_binary &&
 		    s->size > big_file_threshold && s->is_binary == -1) {
 			s->is_binary = 1;
@@ -4189,6 +4190,7 @@ object_read:
 		if (size_only || check_binary) {
 			if (size_only)
 				return 0;
+			prepare_default_config();
 			if (s->size > big_file_threshold && s->is_binary == -1) {
 				s->is_binary = 1;
 				return 0;

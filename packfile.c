@@ -25,6 +25,7 @@
 #include "pack-revindex.h"
 #include "promisor-remote.h"
 #include "wrapper.h"
+#include "config.h"
 
 char *odb_pack_name(struct strbuf *buf,
 		    const unsigned char *hash,
@@ -62,6 +63,7 @@ static inline uintmax_t sz_fmt(size_t s) { return s; }
 
 void pack_report(void)
 {
+	prepare_default_config();
 	fprintf(stderr,
 		"pack_report: getpagesize()            = %10" SZ_FMT "\n"
 		"pack_report: core.packedGitWindowSize = %10" SZ_FMT "\n"
@@ -652,9 +654,11 @@ unsigned char *use_pack(struct packed_git *p,
 				break;
 		}
 		if (!win) {
-			size_t window_align = packed_git_window_size / 2;
+			size_t window_align;
 			off_t len;
 
+			prepare_default_config();
+			window_align = packed_git_window_size / 2;
 			if (p->pack_fd == -1 && open_packed_git(p))
 				die("packfile %s cannot be accessed", p->pack_name);
 

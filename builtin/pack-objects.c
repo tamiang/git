@@ -459,6 +459,7 @@ static unsigned long write_no_reuse_object(struct hashfile *f, struct object_ent
 	const unsigned hashsz = the_hash_algo->rawsz;
 
 	if (!usable_delta) {
+		prepare_default_config();
 		if (oe_type(entry) == OBJ_BLOB &&
 		    oe_size_greater_than(&to_pack, entry, big_file_threshold) &&
 		    (st = open_istream(the_repository, &entry->idx.oid, &type,
@@ -2314,6 +2315,7 @@ static void get_object_details(void)
 		sorted_by_offset[i] = to_pack.objects + i;
 	QSORT(sorted_by_offset, to_pack.nr_objects, pack_offset_sort);
 
+	prepare_default_config();
 	for (i = 0; i < to_pack.nr_objects; i++) {
 		struct object_entry *entry = sorted_by_offset[i];
 		check_object(entry, i);

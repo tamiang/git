@@ -8,6 +8,7 @@
 #include "packfile.h"
 #include "object-file.h"
 #include "object-store.h"
+#include "config.h"
 
 struct idx_entry {
 	off_t                offset;
@@ -128,6 +129,7 @@ static int verify_packfile(struct repository *r,
 		type = unpack_object_header(p, w_curs, &curpos, &size);
 		unuse_pack(w_curs);
 
+		prepare_default_config();
 		if (type == OBJ_BLOB && big_file_threshold <= size) {
 			/*
 			 * Let stream_object_signature() check it with

@@ -552,6 +552,7 @@ static void unpack_one(unsigned nr)
 
 	switch (type) {
 	case OBJ_BLOB:
+		prepare_default_config();
 		if (!dry_run && size > big_file_threshold) {
 			stream_blob(size, nr);
 			return;

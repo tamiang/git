@@ -468,6 +468,8 @@ static void *unpack_entry_data(off_t offset, unsigned long size,
 		the_hash_algo->update_fn(&c, hdr, hdrlen);
 	} else
 		oid = NULL;
+
+	prepare_default_config();
 	if (type == OBJ_BLOB && size > big_file_threshold)
 		buf = fixed_buf;
 	else
@@ -781,6 +783,7 @@ static int check_collison(struct object_entry *entry)
 	enum object_type type;
 	unsigned long size;
 
+	prepare_default_config();
 	if (entry->size <= big_file_threshold || entry->type != OBJ_BLOB)
 		return -1;
 

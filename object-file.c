@@ -2461,6 +2461,8 @@ int index_fd(struct index_state *istate, struct object_id *oid,
 {
 	int ret;
 
+	prepare_default_config();
+
 	/*
 	 * Call xsize_t() only when needed to avoid potentially unnecessary
 	 * die() for large files.
@@ -2800,6 +2802,7 @@ int read_loose_object(const char *path,
 		goto out;
 	}
 
+	prepare_default_config();
 	if (*oi->typep == OBJ_BLOB && *size > big_file_threshold) {
 		if (check_stream_oid(&stream, hdr, *size, path, expected_oid) < 0)
 			goto out;

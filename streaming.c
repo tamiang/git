@@ -11,6 +11,7 @@
 #include "replace-object.h"
 #include "packfile.h"
 #include "wrapper.h"
+#include "config.h"
 
 typedef int (*open_istream_fn)(struct git_istream *,
 			       struct repository *,
@@ -429,6 +430,7 @@ static int istream_source(struct git_istream *st,
 		st->open = open_istream_loose;
 		return 0;
 	case OI_PACKED:
+		prepare_default_config();
 		if (!oi.u.packed.is_delta && big_file_threshold < size) {
 			st->u.in_pack.pack = oi.u.packed.pack;
 			st->u.in_pack.pos = oi.u.packed.offset;

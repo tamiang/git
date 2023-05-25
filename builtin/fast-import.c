@@ -2010,6 +2010,7 @@ static void parse_and_store_blob(
 	static struct strbuf buf = STRBUF_INIT;
 	uintmax_t len;
 
+	prepare_default_config();
 	if (parse_data(&buf, big_file_threshold, &len))
 		store_object(OBJ_BLOB, &buf, last, oidout, mark);
 	else {
@@ -3375,6 +3376,7 @@ static int parse_one_option(const char *option)
 		unsigned long v;
 		if (!git_parse_ulong(option, &v))
 			return 0;
+		prepare_default_config();
 		big_file_threshold = v;
 	} else if (skip_prefix(option, "depth=", &option)) {
 		option_depth(option);

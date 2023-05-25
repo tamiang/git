@@ -210,6 +210,7 @@ static int write_archive_entry(const struct object_id *oid, const char *base,
 	}
 
 	/* Stream it? */
+	prepare_default_config();
 	if (S_ISREG(mode) && !args->convert &&
 	    oid_object_info(args->repo, oid, &size) == OBJ_BLOB &&
 	    size > big_file_threshold)
