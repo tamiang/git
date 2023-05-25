@@ -346,9 +346,12 @@ static int check_roundtrip(const char *enc_name)
 	 * space separated encodings (eg. "UTF-16, ASCII, CP1125").
 	 * Search for the given encoding in that string.
 	 */
-	const char *found = strcasestr(check_roundtrip_encoding, enc_name);
-	const char *next;
+	const char *found, *next;
 	int len;
+
+	prepare_default_config();
+	found = strcasestr(check_roundtrip_encoding, enc_name);
+
 	if (!found)
 		return 0;
 	next = found + strlen(enc_name);
