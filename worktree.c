@@ -69,6 +69,7 @@ static struct worktree *get_main_worktree(void)
 	 * This means that worktree->is_bare may be set to 0 even if the main
 	 * worktree is configured to be bare.
 	 */
+	prepare_default_config();
 	worktree->is_bare = (is_bare_repository_cfg == 1) ||
 		is_bare_repository();
 	add_head_info(worktree);

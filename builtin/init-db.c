@@ -565,6 +565,11 @@ int cmd_init_db(int argc, const char **argv, const char *prefix)
 		OPT_END()
 	};
 
+	/*
+	 * Load default config before parsing options, which might modify
+	 * is_bare_repository_cfg.
+	 */
+	prepare_default_config();
 	argc = parse_options(argc, argv, prefix, init_db_options, init_db_usage, 0);
 
 	if (real_git_dir && is_bare_repository_cfg == 1)
