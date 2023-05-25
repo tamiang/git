@@ -29,6 +29,7 @@
 #include "worktree.h"
 #include "hashmap.h"
 #include "strvec.h"
+#include "config.h"
 
 static struct ref_msg {
 	const char *gone;
@@ -1692,14 +1693,16 @@ static const char *rstrip_ref_components(const char *refname, int len)
 
 static const char *show_ref(struct refname_atom *atom, const char *refname)
 {
-	if (atom->option == R_SHORT)
+	if (atom->option == R_SHORT) {
+		prepare_default_config();
 		return shorten_unambiguous_ref(refname, warn_ambiguous_refs);
-	else if (atom->option == R_LSTRIP)
+	} else if (atom->option == R_LSTRIP) {
 		return lstrip_ref_components(refname, atom->lstrip);
-	else if (atom->option == R_RSTRIP)
+	} else if (atom->option == R_RSTRIP) {
 		return rstrip_ref_components(refname, atom->rstrip);
-	else
+	} else {
 		return xstrdup(refname);
+	}
 }
 
 static void fill_remote_ref_details(struct used_atom *atom, const char *refname,

@@ -860,6 +860,7 @@ int cmd_rev_parse(int argc, const char **argv, const char *prefix)
 			}
 			if (opt_with_value(arg, "--abbrev-ref", &arg)) {
 				abbrev_ref = 1;
+				prepare_default_config();
 				abbrev_ref_strict = warn_ambiguous_refs;
 				if (arg) {
 					if (!strcmp(arg, "strict"))
