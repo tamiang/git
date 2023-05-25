@@ -36,7 +36,6 @@ int cmd_upload_pack(int argc, const char **argv, const char *prefix)
 	};
 
 	packet_trace_identity("upload-pack");
-	read_replace_refs = 0;
 
 	argc = parse_options(argc, argv, prefix, options, upload_pack_usage, 0);
 
@@ -49,6 +48,8 @@ int cmd_upload_pack(int argc, const char **argv, const char *prefix)
 
 	if (!enter_repo(dir, strict))
 		die("'%s' does not appear to be a git repository", dir);
+
+	disable_replace_refs(the_repository);
 
 	switch (determine_protocol_version_server()) {
 	case protocol_v2:

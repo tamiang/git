@@ -609,9 +609,8 @@ int cmd_unpack_objects(int argc, const char **argv, const char *prefix UNUSED)
 	int i;
 	struct object_id oid;
 
-	read_replace_refs = 0;
-
 	git_config(git_default_config, NULL);
+	disable_replace_refs(the_repository);
 
 	quiet = !isatty(2);
 

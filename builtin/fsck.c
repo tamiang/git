@@ -929,7 +929,6 @@ int cmd_fsck(int argc, const char **argv, const char *prefix)
 	fetch_if_missing = 0;
 
 	errors_found = 0;
-	read_replace_refs = 0;
 	save_commit_buffer = 0;
 
 	argc = parse_options(argc, argv, prefix, fsck_opts, fsck_usage, 0);
@@ -955,6 +954,7 @@ int cmd_fsck(int argc, const char **argv, const char *prefix)
 
 	git_config(git_fsck_config, &fsck_obj_options);
 	prepare_repo_settings(the_repository);
+	disable_replace_refs(the_repository);
 
 	if (connectivity_only) {
 		for_each_loose_object(mark_loose_for_connectivity, NULL, 0);

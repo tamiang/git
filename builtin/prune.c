@@ -164,13 +164,14 @@ int cmd_prune(int argc, const char **argv, const char *prefix)
 
 	expire = TIME_MAX;
 	save_commit_buffer = 0;
-	read_replace_refs = 0;
 	repo_init_revisions(the_repository, &revs, prefix);
 
 	argc = parse_options(argc, argv, prefix, options, prune_usage, 0);
 
 	if (repository_format_precious_objects)
 		die(_("cannot prune in a precious-objects repo"));
+
+	disable_replace_refs(the_repository);
 
 	while (argc--) {
 		struct object_id oid;

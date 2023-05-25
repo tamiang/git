@@ -122,7 +122,6 @@ static int graph_verify(int argc, const char **argv, const char *prefix)
 	return ret;
 }
 
-extern int read_replace_refs;
 static struct commit_graph_opts write_opts;
 
 static int write_option_parse_split(const struct option *opt, const char *arg,
@@ -323,13 +322,13 @@ int cmd_commit_graph(int argc, const char **argv, const char *prefix)
 	struct option *options = parse_options_concat(builtin_commit_graph_options, common_opts);
 
 	git_config(git_default_config, NULL);
-
-	read_replace_refs = 0;
 	save_commit_buffer = 0;
 
 	argc = parse_options(argc, argv, prefix, options,
 			     builtin_commit_graph_usage, 0);
 	FREE_AND_NULL(options);
+
+	disable_replace_refs(the_repository);
 
 	return fn(argc, argv, prefix);
 }
