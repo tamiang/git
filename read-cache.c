@@ -240,6 +240,7 @@ void fill_stat_cache_info(struct index_state *istate, struct cache_entry *ce, st
 {
 	fill_stat_data(&ce->ce_stat_data, st);
 
+	prepare_default_config();
 	if (assume_unchanged)
 		ce->ce_flags |= CE_VALID;
 
@@ -1480,6 +1481,7 @@ static struct cache_entry *refresh_cache_ent(struct index_state *istate,
 		 * is not marked VALID, this is the place to mark it
 		 * valid again, under "assume unchanged" mode.
 		 */
+		prepare_default_config();
 		if (ignore_valid && assume_unchanged &&
 		    !(ce->ce_flags & CE_VALID))
 			; /* mark this one VALID again */
@@ -1515,6 +1517,7 @@ static struct cache_entry *refresh_cache_ent(struct index_state *istate,
 	 * (i.e. things to be edited) will reacquire CE_VALID bit
 	 * automatically, which is not really what we want.
 	 */
+	prepare_default_config();
 	if (!ignore_valid && assume_unchanged &&
 	    !(ce->ce_flags & CE_VALID))
 		updated->ce_flags &= ~CE_VALID;
