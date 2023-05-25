@@ -711,6 +711,7 @@ static int remove_file(struct merge_options *opt, int clean,
 			return -1;
 	}
 	if (update_working_directory) {
+		prepare_default_config();
 		if (ignore_case) {
 			struct cache_entry *ce;
 			ce = index_file_exists(opt->repo->index, path, strlen(path),
@@ -876,6 +877,7 @@ static int was_dirty(struct merge_options *opt, const char *path)
 	if (opt->priv->call_depth || !was_tracked(opt, path))
 		return !dirty;
 
+	prepare_default_config();
 	ce = index_file_exists(opt->priv->unpack_opts.src_index,
 			       path, strlen(path), ignore_case);
 	dirty = verify_uptodate(ce, &opt->priv->unpack_opts) != 0;
