@@ -18,6 +18,7 @@ int cmd__submodule_nested_repo_config(int argc, const char **argv)
 		die_usage(argv, "Wrong number of arguments.");
 
 	setup_git_directory();
+	prepare_default_config();
 
 	if (repo_submodule_init(&subrepo, the_repository, argv[1], null_oid())) {
 		die_usage(argv, "Submodule not found.");

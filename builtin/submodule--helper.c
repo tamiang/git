@@ -3404,5 +3404,7 @@ int cmd_submodule__helper(int argc, const char **argv, const char *prefix)
 	};
 	argc = parse_options(argc, argv, prefix, options, usage, 0);
 
+	prepare_default_config();
+
 	return fn(argc, argv, prefix);
 }

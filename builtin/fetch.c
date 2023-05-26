@@ -2227,6 +2227,7 @@ int cmd_fetch(int argc, const char **argv, const char *prefix)
 		free(anon);
 	}
 
+	prepare_default_config();
 	git_config(git_fetch_config, &config);
 	if (the_repository->gitdir) {
 		prepare_repo_settings(the_repository);

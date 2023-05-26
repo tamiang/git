@@ -214,6 +214,8 @@ int cmd__submodule(int argc, const char **argv)
 	if (argc < 1)
 		usage_with_options(submodule_usage, options);
 
+	prepare_default_config();
+
 	for (i = 0; i < ARRAY_SIZE(cmds); i++)
 		if (!strcmp(cmds[i].name, argv[0]))
 			return cmds[i].fn(argc, argv);
