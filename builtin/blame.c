@@ -920,6 +920,7 @@ int cmd_blame(int argc, const char **argv, const char *prefix)
 	const char **opt_usage = cmd_is_annotate ? annotate_opt_usage : blame_opt_usage;
 
 	setup_default_color_by_age();
+	prepare_default_config();
 	git_config(git_blame_config, &output_option);
 	repo_init_revisions(the_repository, &revs, NULL);
 	revs.date_mode = blame_date_mode;

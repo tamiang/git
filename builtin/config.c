@@ -821,6 +821,8 @@ int cmd_config(int argc, const char **argv, const char *prefix)
 		flags |= CONFIG_FLAGS_FIXED_VALUE;
 	}
 
+	prepare_default_config();
+
 	if (actions & PAGING_ACTIONS)
 		setup_auto_pager("config", 1);
 
