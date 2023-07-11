@@ -853,6 +853,41 @@ struct ewah_bitmap *bitmap_for_commit(struct bitmap_index *bitmap_git,
 	return lookup_stored_bitmap(kh_value(bitmap_git->bitmaps, hash_pos));
 }
 
+int for_each_commit_bitmap(struct repository *r,
+			   struct bitmap_index *b,
+			   bitmap_cb fn,
+			   void *cb_data)
+{
+	/* Skip if no table lookup. */
+	if (!b->table_lookup)
+		return 0;
+
+	for (size_t i = 0; i < b->entry_count; i++) {
+		struct bitmap_lookup_table_triplet t;
+		struct object_id oid;
+		struct commit *c;
+		struct ewah_bitmap *bitmap;
+
+		if (bitmap_lookup_table_get_triplet(b, i, &t) ||
+		    nth_bitmap_object_oid(b, &oid, t.commit_pos))
+			continue;
+
+		c = lookup_commit(r, &oid);
+
+		if (!c)
+			continue;
+
+		bitmap = bitmap_for_commit(b, c);
+		if (!bitmap)
+			continue;
+
+		if (fn(b, c, bitmap, cb_data))
+			return 1;
+	}
+
+	return 0;
+}
+
 static inline int bitmap_position_extended(struct bitmap_index *bitmap_git,
 					   const struct object_id *oid)
 {

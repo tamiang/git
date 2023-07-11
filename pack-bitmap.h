@@ -75,6 +75,17 @@ void free_bitmap_index(struct bitmap_index *);
 int bitmap_walk_contains(struct bitmap_index *,
 			 struct bitmap *bitmap, const struct object_id *oid);
 
+typedef int (*bitmap_cb)(struct bitmap_index *, struct commit *c,
+			 struct ewah_bitmap *bitmap, void *cbdata);
+/*
+ * Iterate on each commit that has a bitmap, shortcutting if the given
+ * function pointer returns non-zero.
+ */
+int for_each_commit_bitmap(struct repository *r,
+			   struct bitmap_index *b,
+			   bitmap_cb fn,
+			   void *cb_data);
+
 /*
  * After a traversal has been performed by prepare_bitmap_walk(), this can be
  * queried to see if a particular object was reachable from any of the
