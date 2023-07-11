@@ -10,10 +10,35 @@
 #include "ewah/ewok.h"
 #include "oid-array.h"
 #include "pathspec.h"
+#include "pack-bitmap.h"
+
+/*
+ * We track a global bitmap that is equal to the union of all
+ * precomputed reachability bitmaps that do not contain any of
+ * the given oids.
+ */
+static struct bitmap_index *bi;
+static struct bitmap *unreachable;
+static int unreachable_unions;
 
 /* Remember to update object flag allocation in object.h */
 #define CHECKED		(1u<<23)
 #define CAN_REACH	(1u<<24)
+
+static int object_checked(struct object *o)
+{
+	int result = 0;
+	if (o->flags & CHECKED) {
+		result = 1;
+		goto cleanup;
+	}
+
+	if (unreachable_unions)
+		result = bitmap_walk_contains(bi, unreachable, &o->oid);
+
+cleanup:
+	return result;
+}
 
 struct tree_dfs_entry {
 	/* The current tree at this DFS position. */
@@ -73,7 +98,7 @@ static int check_and_add_tree_child(const struct object_id *oid,
 		return 0;
 	}
 
-	if (o->flags & CHECKED ||
+	if (object_checked(o) ||
 	    o->type != OBJ_TREE)
 		return !!(o->flags & CAN_REACH);
 
@@ -97,7 +122,7 @@ static int tree_contains(struct repository *r,
 	ps.has_wildcard = 1;
 	ps.max_depth = -1;
 
-	if (tree->object.flags & CHECKED)
+	if (object_checked(&tree->object))
 		return !!(tree->object.flags & CAN_REACH);
 
 	tree->object.flags |= CHECKED;
@@ -173,7 +198,7 @@ static int commit_contains_dfs_commits(struct repository *r,
 	struct commit_list *stack = NULL;
 
 	/* We may have determined this earlier. */
-	if (commit->object.flags & CHECKED)
+	if (object_checked(&commit->object))
 		return !!(commit->object.flags & CAN_REACH);
 
 	/* We mark commits as CHECKED as they enter the stack. */
@@ -198,7 +223,7 @@ static int commit_contains_dfs_commits(struct repository *r,
 			if (parents->item->object.flags & CAN_REACH)
 				goto pop_stack_reachable;
 			/* Ignore checked parents. */
-			if (parents->item->object.flags & CHECKED)
+			if (object_checked(&parents->item->object))
 				continue;
 
 			parents->item->object.flags |= CHECKED;
@@ -235,18 +260,55 @@ pop_stack_reachable:
 	return 1;
 }
 
+static int check_and_union_bitmap(struct bitmap_index *b, struct commit *c,
+				  struct ewah_bitmap *bitmap, void *cbdata)
+{
+	struct oid_array *objects = cbdata;
+	struct bitmap *bm = ewah_to_bitmap(bitmap);
+
+	/* If we contain any object, skip this one. */
+	for (size_t i = 0; i < objects->nr; i++) {
+		if (bitmap_walk_contains(bi, bm, &objects->oid[i]))
+			goto cleanup;
+	}
+
+	/*
+	 * None of the objects are reachable from this bitmap, so
+	 * add its bits to the unreachable bitmap.
+	 */
+	bitmap_or(unreachable, bm);
+	unreachable_unions++;
+
+cleanup:
+	bitmap_free(bm);
+	return 0;
+}
+
+static void prepare_unreachable_bitmap(struct repository *r,
+				       struct oid_array *objects)
+{
+	if (bi)
+		return;
+
+	unreachable_unions = 0;
+	bi = prepare_bitmap_git(r);
+	unreachable = bitmap_new();
+
+	for_each_commit_bitmap(r, bi, check_and_union_bitmap, objects);
+}
+
 int commit_contains_object(struct repository *r, struct commit *commit,
 			   struct oid_array *objects)
 {
-	/*
-	 * TODO: initialize bitmaps and exclude objects that are
-	 * contained in bitmaps that don't include any of the given
-	 * objects.
-	 */
+	prepare_unreachable_bitmap(r, objects);
 	return commit_contains_dfs_commits(r, commit, objects);
 }
 
 void clear_commit_contains_object_flags(struct repository *r)
 {
+	bitmap_free(unreachable);
+	unreachable = NULL;
+	free_bitmap_index(bi);
+	bi = NULL;
 	clear_object_flags(CHECKED | CAN_REACH);
 }
