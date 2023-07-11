@@ -56,6 +56,7 @@ struct ref_filter {
 	struct commit_list *no_commit;
 	struct commit_list *reachable_from;
 	struct commit_list *unreachable_from;
+	struct oid_array contains_objects;
 
 	unsigned int with_commit_tag_algo : 1,
 		match_as_path : 1,

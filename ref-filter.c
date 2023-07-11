@@ -23,6 +23,7 @@
 #include "worktree.h"
 #include "hashmap.h"
 #include "strvec.h"
+#include "object-reach.h"
 
 static struct ref_msg {
 	const char *gone;
@@ -2306,6 +2307,18 @@ static int ref_filter_handler(const char *refname, const struct object_id *oid, 
 	}
 
 	/*
+	 * Further filter based on object reachability.
+	 */
+	if (filter->contains_objects.nr) {
+		commit = lookup_commit_reference_gently(the_repository, oid, 1);
+		if (!commit)
+			return 0;
+
+		if (!commit_contains_object(the_repository, commit, &filter->contains_objects))
+			return 0;
+	}
+
+	/*
 	 * We do not open the object yet; sort may only need refname
 	 * to do its job and the resulting list may yet to be pruned
 	 * by maxcount logic.
@@ -2465,6 +2478,9 @@ int filter_refs(struct ref_array *array, struct ref_filter *filter, unsigned int
 
 	clear_contains_cache(&ref_cbdata.contains_cache);
 	clear_contains_cache(&ref_cbdata.no_contains_cache);
+
+	if (filter->contains_objects.nr)
+		clear_commit_contains_object_flags(the_repository);
 
 	/*  Filters that need revision walking */
 	reach_filter(array, filter->reachable_from, INCLUDE_REACHED);
