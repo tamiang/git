@@ -355,6 +355,12 @@ test_expect_success \
 
      :'
 
+test_expect_success 'complain about index name' '
+	cat test-1-${packname_1}.pack >test-temp.pack &&
+	test_must_fail git index-pack -o test.temppack test-temp.pack 2>err &&
+	grep "does not end" err
+'
+
 test_expect_success 'unpacking with --strict' '
 
 	for j in a b c d e f g
