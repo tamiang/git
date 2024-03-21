@@ -662,7 +662,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
-    needs: [validate-installers]
+    needs: [validate-installers, create-linux-artifacts, create-macos-artifacts, windows_artifacts, prereqs]
     env:
       AZURE_VAULT: ${{ secrets.AZURE_VAULT }}
       GPG_PUBLIC_KEY_SECRET_NAME: ${{ secrets.GPG_PUBLIC_KEY_SECRET_NAME }}
