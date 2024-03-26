@@ -45,6 +45,20 @@ $(BUILD_DIR)/git-$(VERSION)/osx-built-keychain:
 $(BUILD_DIR)/git-$(VERSION)/osx-built:
 	[ -d $(DESTDIR)$(GIT_PREFIX) ] && $(SUDO) rm -rf $(DESTDIR) || echo ok
 	cd $(BUILD_DIR)/git-$(VERSION); $(SUBMAKE) -j $(CORES) all strip
+	echo "================"
+	echo "Dumping Linkage"
+	cd $(BUILD_DIR)/git-$(VERSION); ./git version
+	echo "===="
+	cd $(BUILD_DIR)/git-$(VERSION); /usr/bin/otool -L ./git
+	echo "===="
+	cd $(BUILD_DIR)/git-$(VERSION); /usr/bin/otool -L ./git-http-fetch
+	echo "===="
+	cd $(BUILD_DIR)/git-$(VERSION); /usr/bin/otool -L ./git-http-push
+	echo "===="
+	cd $(BUILD_DIR)/git-$(VERSION); /usr/bin/otool -L ./git-remote-http
+	echo "===="
+	cd $(BUILD_DIR)/git-$(VERSION); /usr/bin/otool -L ./git-gvfs-helper
+	echo "================"
 	touch $@
 
 $(BUILD_DIR)/git-$(VERSION)/osx-installed-bin: $(BUILD_DIR)/git-$(VERSION)/osx-built $(BUILD_DIR)/git-$(VERSION)/osx-built-keychain
