@@ -325,15 +325,14 @@ jobs:
 
           # Install x86_64 packages
           arch -x86_64 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-          arch -x86_64 /usr/local/bin/brew install gettext curl
+          arch -x86_64 /usr/local/bin/brew install gettext
 
           # Install arm64 packages
           brew install automake asciidoc xmlto docbook
           brew link --force gettext
 
-          # Make universal gettext and curl library
+          # Make universal gettext library
           lipo -create -output libintl.a /usr/local/opt/gettext/lib/libintl.a /opt/homebrew/opt/gettext/lib/libintl.a
-          lipo -create -output libcurl.dylib /opt/homebrew/opt/curl/lib/libcurl.4.dylib /usr/local/opt/curl/lib/libcurl.4.dylib
 
       - name: Set up signing/notarization infrastructure
         env:
@@ -412,9 +411,9 @@ jobs:
           LDFLAGS = -L"$(pwd)"
           EOF
 
-          # Configure the Git build to pick up the universal `libcurl.dylib`
+          # Configure the Git to use the OS supplied libcurl.
           cat >>git/config.mak <<EOF
-          CURL_LDFLAGS := -L"$(pwd)" -lcurl
+          CURL_LDFLAGS := -lcurl
           CURL_CONFIG := /usr/bin/true
           EOF
 
