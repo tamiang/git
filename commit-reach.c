@@ -117,7 +117,7 @@ static int paint_down_to_common(struct repository *r,
 				 * dispatched with a `die()`.
 				 */
 				if (ignore_missing_commits)
-					return 0;
+					goto cleanup;
 				return error(_("could not parse commit %s"),
 					     oid_to_hex(&p->object.oid));
 			}
@@ -126,6 +126,7 @@ static int paint_down_to_common(struct repository *r,
 		}
 	}
 
+cleanup:
 	clear_prio_queue(&queue);
 	return 0;
 }
