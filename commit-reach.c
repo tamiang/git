@@ -37,17 +37,6 @@ static int compare_commits_by_gen(const void *_a, const void *_b)
 	return 0;
 }
 
-static int queue_has_nonstale(struct prio_queue *queue)
-{
-	int i;
-	for (i = 0; i < queue->nr; i++) {
-		struct commit *commit = queue->array[i].data;
-		if (!(commit->object.flags & STALE))
-			return 1;
-	}
-	return 0;
-}
-
 /* all input commits in one and twos[] must have been parsed! */
 static int paint_down_to_common(struct repository *r,
 				struct commit *one, int n,
@@ -1049,6 +1038,7 @@ void ahead_behind(struct repository *r,
 {
 	struct prio_queue queue = { .compare = compare_commits_by_gen_then_commit_date };
 	size_t width = DIV_ROUND_UP(commits_nr, BITS_IN_EWORD);
+	struct oidset stale_oids = OIDSET_INIT;
 
 	if (!commits_nr || !counts_nr)
 		return;
@@ -1070,10 +1060,12 @@ void ahead_behind(struct repository *r,
 		insert_no_dup(&queue, c);
 	}
 
-	while (queue_has_nonstale(&queue)) {
+	while (oidset_size(&stale_oids) < queue.nr) {
 		struct commit *c = prio_queue_get(&queue);
 		struct commit_list *p;
 		struct bitmap *bitmap_c = get_bit_array(c, width);
+
+		oidset_remove(&stale_oids, &c->object.oid);
 
 		for (size_t i = 0; i < counts_nr; i++) {
 			int reach_from_tip = !!bitmap_get(bitmap_c, counts[i].tip_index);
@@ -1102,8 +1094,10 @@ void ahead_behind(struct repository *r,
 			 * we can stop the walk when every commit in the
 			 * queue is STALE.
 			 */
-			if (bitmap_popcount(bitmap_p) == commits_nr)
+			if (bitmap_popcount(bitmap_p) == commits_nr) {
 				p->item->object.flags |= STALE;
+				oidset_insert(&stale_oids, &p->item->object.oid);
+			}
 
 			insert_no_dup(&queue, p->item);
 		}
@@ -1115,6 +1109,7 @@ void ahead_behind(struct repository *r,
 	repo_clear_commit_marks(r, PARENT2 | STALE);
 	clear_bit_arrays(&bit_arrays);
 	clear_prio_queue(&queue);
+	oidset_clear(&stale_oids);
 }
 
 struct commit_and_index {
