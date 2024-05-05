@@ -59,6 +59,7 @@ static int paint_down_to_common(struct repository *r,
 	struct prio_queue queue = { compare_commits_by_gen_then_commit_date };
 	int i;
 	timestamp_t last_gen = GENERATION_NUMBER_INFINITY;
+	struct oidset stale_oids = OIDSET_INIT;
 
 	if (!min_generation && !corrected_commit_dates_enabled(r))
 		queue.compare = compare_commits_by_commit_date;
@@ -75,7 +76,7 @@ static int paint_down_to_common(struct repository *r,
 		prio_queue_put(&queue, twos[i]);
 	}
 
-	while (queue_has_nonstale(&queue)) {
+	while (oidset_size(&stale_oids) < queue.nr) {
 		struct commit *commit = prio_queue_get(&queue);
 		struct commit_list *parents;
 		int flags;
@@ -86,6 +87,8 @@ static int paint_down_to_common(struct repository *r,
 			    generation, last_gen,
 			    oid_to_hex(&commit->object.oid));
 		last_gen = generation;
+
+		oidset_remove(&stale_oids, &commit->object.oid);
 
 		if (generation < min_generation)
 			break;
@@ -123,10 +126,13 @@ static int paint_down_to_common(struct repository *r,
 			}
 			p->object.flags |= flags;
 			prio_queue_put(&queue, p);
+			if (flags & STALE)
+				oidset_insert(&stale_oids, &p->object.oid);
 		}
 	}
 
 cleanup:
+	oidset_clear(&stale_oids);
 	clear_prio_queue(&queue);
 	return 0;
 }
