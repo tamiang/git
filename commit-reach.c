@@ -115,7 +115,7 @@ static int paint_down_to_common(struct repository *r,
 			}
 			p->object.flags |= flags;
 			prio_queue_put(&queue, p);
-			if (flags & STALE)
+			if (p->object.flags & STALE)
 				oidset_insert(&stale_oids, &p->object.oid);
 		}
 	}
