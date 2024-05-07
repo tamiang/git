@@ -441,23 +441,32 @@ static int check_updates(struct unpack_trees_options *o,
 	clone_checkout_metadata(&state.meta, &o->meta, NULL);
 
 	if (!o->update || o->dry_run) {
+		trace2_region_enter("unpack_trees", "remove_marked_cache_entries", index->repo);
 		remove_marked_cache_entries(index, 0);
+		trace2_region_leave("unpack_trees", "remove_marked_cache_entries", index->repo);
 		goto done;
 	}
 
-	if (o->clone)
+	if (o->clone) {
+		trace2_region_enter("unpack_trees", "setup_collided_checkout_detection", index->repo);
 		setup_collided_checkout_detection(&state, index);
+		trace2_region_leave("unpack_trees", "setup_collided_checkout_detection", index->repo);
+	}
 
 	progress = get_progress(o, index);
 
 	/* Start with clean cache to avoid using any possibly outdated info. */
+
+	trace2_region_enter("unpack_trees", "invalidate_lstat_cache", index->repo);
 	invalidate_lstat_cache();
+	trace2_region_leave("unpack_trees", "invalidate_lstat_cache", index->repo);
 
 	git_attr_set_direction(GIT_ATTR_CHECKOUT);
 
 	if (should_update_submodules())
 		load_gitmodules_file(index, NULL);
 
+	trace2_region_enter("unpack_trees", "unlink_loop", index->repo);
 	for (i = 0; i < index->cache_nr; i++) {
 		const struct cache_entry *ce = index->cache[i];
 
@@ -467,19 +476,26 @@ static int check_updates(struct unpack_trees_options *o,
 			sum_unlink++;
 		}
 	}
+	trace2_region_leave("unpack_trees", "unlink_loop", index->repo);
 
+	trace2_region_enter("unpack_trees", "remove_marked_cache_entries", index->repo);
 	remove_marked_cache_entries(index, 0);
+	trace2_region_leave("unpack_trees", "remove_marked_cache_entries", index->repo);
+
 	remove_scheduled_dirs();
 
 	if (should_update_submodules())
 		load_gitmodules_file(index, &state);
 
-	if (repo_has_promisor_remote(the_repository))
+	if (repo_has_promisor_remote(the_repository)) {
 		/*
 		 * Prefetch the objects that are to be checked out in the loop
 		 * below.
 		 */
+		trace2_region_enter("unpack_trees", "prefetch_cache_entries", index->repo);
 		prefetch_cache_entries(index, must_checkout);
+		trace2_region_leave("unpack_trees", "prefetch_cache_entries", index->repo);
+	}
 
 	get_parallel_checkout_configs(&pc_workers, &pc_threshold);
 
@@ -503,11 +519,20 @@ static int check_updates(struct unpack_trees_options *o,
 			sum_checkout++;
 		}
 	}
+
+	trace2_region_enter("unpack_trees", "run_parallel_checkout", index->repo);
 	if (pc_workers > 1)
 		errs |= run_parallel_checkout(&state, pc_workers, pc_threshold,
 					      progress, &cnt);
+
+
+	trace2_region_leave("unpack_trees", "run_parallel_checkout", index->repo);
+
 	stop_progress(&progress);
+	trace2_region_enter("unpack_trees", "finish_delayed_checkout", index->repo);
 	errs |= finish_delayed_checkout(&state, o->verbose_update);
+	trace2_region_leave("unpack_trees", "finish_delayed_checkout", index->repo);
+
 	git_attr_set_direction(GIT_ATTR_CHECKIN);
 
 	if (o->clone)
