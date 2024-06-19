@@ -1,5 +1,6 @@
 #define USE_THE_INDEX_VARIABLE
 #include "builtin.h"
+#include "gvfs.h"
 #include "advice.h"
 #include "branch.h"
 #include "cache-tree.h"
@@ -1758,6 +1759,7 @@ static int checkout_main(int argc, const char **argv, const char *prefix,
 	}
 
 	opts->track = BRANCH_TRACK_UNSPECIFIED;
+	opts->ignore_skipworktree = gvfs_config_is_set(GVFS_USE_VIRTUAL_FILESYSTEM);
 
 	if (!opts->accept_pathspec && !opts->accept_ref)
 		BUG("make up your mind, you need to take _something_");
