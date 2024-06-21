@@ -38,7 +38,7 @@ One major feature that Scalar recommends is [partial clone](https://github.blog/
 which reduces the amount of data transferred in order to work with a Git repository. While several
 services such as GitHub support partial clone, Azure Repos instead has an older version of this
 functionality called
-[the GVFS protocol](https://docs.microsoft.com/en-us/azure/devops/learn/git/gvfs-architecture#gvfs-protocol).
+[the GVFS protocol](https://github.com/microsoft/VFSForGit/blob/HEAD/Protocol.md).
 The integration with the GVFS protocol present in `microsoft/git` is not appropriate to include in
 the core Git client because partial clone is the official version of that functionality.
 
