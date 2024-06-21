@@ -324,7 +324,7 @@ static void gh_client__choose_odb(void)
 		return;
 
 	for (odb = the_repository->objects->odb->next; odb; odb = odb->next) {
-		if (!strcmp(odb->path, gvfs_shared_cache_pathname.buf)) {
+		if (!fspathcmp(odb->path, gvfs_shared_cache_pathname.buf)) {
 			gh_client__chosen_odb = odb;
 			return;
 		}
