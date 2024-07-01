@@ -2262,7 +2262,6 @@ static void survey_print_results_pretty(void)
 
 int cmd_survey(int argc, const char **argv, const char *prefix)
 {
-	prepare_repo_settings(the_repository);
 	survey_load_config();
 
 	argc = parse_options(argc, argv, prefix, survey_options, survey_usage, 0);
@@ -2270,6 +2269,8 @@ int cmd_survey(int argc, const char **argv, const char *prefix)
 	color_fprintf_ln(stderr,
 			 want_color_fd(2, GIT_COLOR_AUTO) ? GIT_COLOR_YELLOW : "",
 			 "(THIS IS EXPERIMENTAL, EXPECT THE OUTPUT FORMAT TO CHANGE!)");
+
+	prepare_repo_settings(the_repository);
 
 	if (survey_opts.show_progress < 0)
 		survey_opts.show_progress = isatty(2);
