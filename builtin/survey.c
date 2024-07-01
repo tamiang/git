@@ -18,6 +18,7 @@
 #include "trace2.h"
 #include "tree.h"
 #include "tree-walk.h"
+#include "color.h"
 
 static const char * const survey_usage[] = {
 	N_("(EXPERIMENTAL!) git survey <options>"),
@@ -2265,6 +2266,10 @@ int cmd_survey(int argc, const char **argv, const char *prefix)
 	survey_load_config();
 
 	argc = parse_options(argc, argv, prefix, survey_options, survey_usage, 0);
+
+	color_fprintf_ln(stderr,
+			 want_color_fd(2, GIT_COLOR_AUTO) ? GIT_COLOR_YELLOW : "",
+			 "(THIS IS EXPERIMENTAL, EXPECT THE OUTPUT FORMAT TO CHANGE!)");
 
 	if (survey_opts.show_progress < 0)
 		survey_opts.show_progress = isatty(2);
