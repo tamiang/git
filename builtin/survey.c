@@ -1055,7 +1055,7 @@ static int maybe_count_ref(struct ref_array_item *p)
 
 			return 1;
 		}
-		return 0;		
+		return 0;
 
 	case FILTER_REFS_BRANCHES:
 		if (rw->want_all_refs || rw->want_branches) {
