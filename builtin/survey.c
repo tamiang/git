@@ -1148,9 +1148,7 @@ static int maybe_count_ref(struct ref_array_item *p)
  */
 static void do_calc_stats_refs(struct ref_array *ref_array)
 {
-	struct survey_refs_wanted *rw = &survey_opts.refs;
 	struct survey_stats_refs *prs = &survey_stats.refs;
-	struct strbuf buf = STRBUF_INIT;
 	int k;
 
 	strintmap_init(&prs->refsmap, 0);
