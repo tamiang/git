@@ -2244,7 +2244,7 @@ static void pretty_print_blobs(int indent)
 	fmt_base_object(&buf, indent1, base);
 
 	fmt_large_item_vec(&buf, indent1, psb->vec_largest_by_size_bytes);
-	
+
 	strbuf_addch(&buf, '\n');
 	fwrite(buf.buf, 1, buf.len, stdout);
 	strbuf_release(&buf);
