@@ -2111,7 +2111,6 @@ static void pretty_print_refs(int indent)
 	{
 		struct hashmap_iter iter;
 		struct strmap_entry *entry;
-		int value;
 
 		strintmap_for_each_entry(&prs->refsmap, &iter, entry) {
 			const char *key = entry->key;
