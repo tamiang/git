@@ -26,6 +26,12 @@ static int gh_server__subprocess_map_initialized;
 static struct hashmap gh_server__subprocess_map;
 static struct object_directory *gh_client__chosen_odb;
 
+static size_t block_size = 4000;
+void gh_client__init_block_size(size_t size)
+{
+	block_size = size;
+}
+
 /*
  * The "objects" capability has verbs: "get" and "post" and "prefetch".
  */

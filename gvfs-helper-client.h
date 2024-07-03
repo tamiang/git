@@ -84,4 +84,11 @@ int gh_client__drain_queue(enum gh_client__created *p_ghc);
 int gh_client__prefetch(timestamp_t seconds_since_epoch,
 			int *nr_packfiles_received);
 
+/**
+ * Allow a process to choose a block size in advance of the process run.
+ * Set to a large value when using a custom batching system through
+ * promisor_remote_get_direct().
+ */
+void gh_client__init_block_size(size_t size);
+
 #endif /* GVFS_HELPER_CLIENT_H */
