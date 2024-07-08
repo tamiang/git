@@ -16,6 +16,9 @@
 #include "string-list.h"
 #include "revision.h"
 #include "trace2.h"
+#include "progress.h"
+#include "packfile.h"
+#include "gvfs-helper-client.h"
 
 static const char * const builtin_backfill_usage[] = {
 	N_("git backfill [<options>]"),
@@ -37,15 +40,16 @@ struct type_and_oid_list
 
 static int download_batch(struct oid_array *batch)
 {
-	fprintf(stderr, "Downloading a batch of size %"PRIuMAX"\n", batch->nr);
 	promisor_remote_get_direct(the_repository, batch->oid, batch->nr);
 	oid_array_clear(batch);
+	reprepare_packed_git(the_repository);
 	return 0;
 }
 
 static int add_children(const char *base_path,
 			struct object_id *oid,
 			struct strmap *paths_to_store,
+			struct string_list *path_stack,
 			struct oid_array *batch,
 			struct oidset *added)
 {
@@ -71,7 +75,7 @@ static int add_children(const char *base_path,
 		/* Not actually true, but we will ignore submodules later. */
 		enum object_type type = S_ISDIR(entry.mode) ? OBJ_TREE : OBJ_BLOB;
 
-		/* Skip symlinks and commits. */
+		/* Skip submodules. */
 		if (S_ISGITLINK(entry.mode))
 			continue;
 
@@ -93,10 +97,12 @@ static int add_children(const char *base_path,
 			CALLOC_ARRAY(list, 1);
 			list->type = type;
 			strmap_put(paths_to_store, path.buf, list);
+			string_list_append(path_stack, path.buf);
 		}
 		oid_array_append(&list->oids, &entry.oid);
 	}
 
+	free_tree_buffer(tree);
 	strbuf_release(&path);
 	return 0;
 }
@@ -125,38 +131,33 @@ static int fill_missing_blobs(const char *path,
  * and add any found blobs to the batch (but only if they don't
  * exist and haven't been added yet).
  */
-static int do_backfill_for_depth(struct strmap *paths_to_explore,
-				 struct strmap *paths_to_store,
-				 struct oid_array *batch,
-				 struct oidset *added,
-				 int depth)
+static int do_backfill_for_path(const char *path,
+	 			struct strmap *paths_to_lists,
+				struct string_list *path_stack,
+				struct oid_array *batch,
+				struct oidset *added)
 {
-	struct hashmap_iter iter;
-	struct strmap_entry *e;
+	struct type_and_oid_list *list = strmap_get(paths_to_lists, path);
 
-	trace2_region_enter("backfill", "do_backfill_for_depth", the_repository);
-	hashmap_for_each_entry(&paths_to_explore->map, &iter, e, ent) {
-		struct type_and_oid_list *list = e->value;
-
-		if (list->type == OBJ_TREE) {
-			for (size_t i = 0; i < list->oids.nr; i++) {
-				add_children((const char *)e->key,
-					     &list->oids.oid[i],
-					     paths_to_store,
-					     batch,
-					     added);
-			}
-		} else {
-			fill_missing_blobs((const char *)e->key,
-					   &list->oids,
-					   batch);
+	if (list->type == OBJ_TREE) {
+		for (size_t i = 0; i < list->oids.nr; i++) {
+			add_children(path,
+				     &list->oids.oid[i],
+				     paths_to_lists,
+				     path_stack,
+				     batch,
+				     added);
 		}
-
-		oid_array_clear(&list->oids);
+	} else {
+		fill_missing_blobs(path,
+				   &list->oids,
+				   batch);
 	}
 
-	trace2_region_leave("backfill", "do_backfill_for_depth", the_repository);
-	return hashmap_get_size(&paths_to_store->map);
+	oid_array_clear(&list->oids);
+	strmap_remove(paths_to_lists, path, 1);
+
+	return 0;
 }
 
 /**
@@ -171,6 +172,7 @@ static int initialize_backfill(struct strmap *paths_to_store)
 	struct commit *c;
 	struct type_and_oid_list *list;
 	size_t commits_nr = 0;
+	struct progress *progress = start_progress("Exploring commit history", 0);
 
 	repo_init_revisions(the_repository, &revs, "");
 	handle_revision_arg("HEAD", &revs, 0, 0);
@@ -188,10 +190,12 @@ static int initialize_backfill(struct strmap *paths_to_store)
 
 	while ((c = get_revision(&revs)))
 	{
-		commits_nr++;
+		display_progress(progress, ++commits_nr);
 		oid_array_append(&list->oids, get_commit_tree_oid(c));
 	}
 
+	stop_progress(&progress);
+	release_revisions(&revs);
 	trace2_data_intmax("backfill", the_repository, "commits", commits_nr);
 	trace2_region_leave("backfill", "initialize_backfill", the_repository);
 
@@ -216,38 +220,40 @@ static int do_backfill(void)
 	/*
 	 * Store data by depth, then by path.
 	 */
-	struct strmap base = STRMAP_INIT;
-	struct strmap next = STRMAP_INIT;
-	int ret;
-	struct strmap *cur_base = &base;
-	struct strmap *cur_next = &next;
+	struct strmap paths_to_list = STRMAP_INIT;
+	int ret = 0;
 	struct oid_array batch = OID_ARRAY_INIT;
 	struct oidset added = OIDSET_INIT;
-	int depth = 0;
+	struct string_list stack = STRING_LIST_INIT_DUP;
+	size_t paths_nr = 0;
+	struct progress *progress;
 
-	if (initialize_backfill(&base))
-		die(_("failed to backfil during commit walk"));
+	if (initialize_backfill(&paths_to_list))
+		die(_("failed to backfill during commit walk"));
 
-	/* */
-	while ((ret = do_backfill_for_depth(cur_base,
-					    cur_next,
-					    &batch,
-					    &added,
-					    depth++)) > 0) {
-		struct strmap *t;
+	string_list_append(&stack, "");
 
-		clear_backfill_strmap(cur_base);
-		t = cur_base;
-		cur_base = cur_next;
-		cur_next = t;
+	progress = start_progress("Exploring paths", 0);
+	display_progress(progress, 0);
+
+	while (!ret && stack.nr) {
+		char *path = stack.items[stack.nr - 1].string;
+		stack.nr--;
+
+		ret = do_backfill_for_path(path,
+					   &paths_to_list,
+					   &stack,
+					   &batch,
+					   &added);
+
+		display_progress(progress, ++paths_nr);
+		free(path);
 	}
 
-	if (ret)
-		die(_("failed to walk trees"));
+	stop_progress(&progress);
 
 	ret = download_batch(&batch);
-	clear_backfill_strmap(&base);
-	clear_backfill_strmap(&next);
+	clear_backfill_strmap(&paths_to_list);
 	oidset_clear(&added);
 	return ret;
 }
@@ -265,6 +271,8 @@ int cmd_backfill(int argc, const char **argv, const char *prefix)
 			     0);
 
 	git_config(git_default_config, NULL);
+
+	gh_client__init_block_size(batch_size * 4);
 
 	return do_backfill();
 }
