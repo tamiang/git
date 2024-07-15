@@ -1301,18 +1301,27 @@ int expire_midx_packs(struct repository *r, const char *object_dir, unsigned fla
 		char *pack_name;
 		display_progress(progress, i + 1);
 
-		if (count[i])
-			continue;
+		if (count[i]) {
+trace2_printf("has %"PRIuMAX" objects: %s", count[i], m->pack_names[i]);
 
-		if (prepare_midx_pack(r, m, i))
 			continue;
+		}
 
-		if (m->packs[i]->pack_keep || m->packs[i]->is_cruft)
+		if (prepare_midx_pack(r, m, i)) {
+			trace2_printf("failed to prepare: %s", m->pack_names[i]);
 			continue;
+		}
+
+
+		if (m->packs[i]->pack_keep || m->packs[i]->is_cruft) {
+			trace2_printf("keep or cruft: %s", m->pack_names[i]);
+			continue;
+		}
 
 		pack_name = xstrdup(m->packs[i]->pack_name);
 		close_pack(m->packs[i]);
 
+		trace2_printf("dropping pack-file %s", m->pack_names[i]);
 		string_list_insert(&packs_to_drop, m->pack_names[i]);
 		unlink_pack_path(pack_name, 0);
 		free(pack_name);
