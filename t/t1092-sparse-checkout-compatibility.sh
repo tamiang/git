@@ -540,6 +540,8 @@ test_expect_success 'diff --cached' '
 test_expect_success 'diff partially-staged' '
 	init_repos &&
 
+	git -C full-checkout config advice.sparseIndexExpanded false &&
+
 	write_script edit-contents <<-\EOF &&
 	echo text >>$1
 	EOF
