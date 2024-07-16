@@ -181,13 +181,13 @@ To upgrade, you will need to repeat these steps to reinstall.
 
 *Older distributions are missing some required dependencies. Even
 though the package may appear to install successfully, `microsoft/
-git` will not function as expected. If you are running Ubuntu 18.04 or
+git` will not function as expected. If you are running `Ubuntu 20.04` or
 older, please follow the install from source instructions below
 instead of installing the debian package.
 
-### Other distributions
+### Installing From Source
 
-You will need to compile and install `microsoft/git` from source:
+On older or other distros you will need to compile and install `microsoft/git` from source:
 
 ```shell
 git clone https://github.com/microsoft/git microsoft-git
@@ -198,6 +198,14 @@ sudo make -j12 prefix=/usr/local install
 
 For more assistance building Git from source, see
 [the INSTALL file in the core Git project](https://github.com/git/git/blob/master/INSTALL).
+
+#### Common Debian based dependencies
+While the INSTALL file covers dependencies in detail, here is a shortlist of common required dependencies on older Debian/Ubuntu distros:
+
+```shell
+sudo apt-get update
+sudo apt-get install libz-dev libssl-dev libcurl4-gnutls-dev libexpat1-dev gettext cmake gcc
+```
 
 Contributing
 =========================================================
