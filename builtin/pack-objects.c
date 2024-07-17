@@ -3744,6 +3744,10 @@ static void show_commit_hint(struct commit *commit UNUSED,
 static void show_object_hint(struct object *object, const char *name,
 			     void *data UNUSED)
 {
+	struct object_entry *oe = packlist_find(&to_pack, &object->oid);
+	if (!oe)
+		return;
+
 	/*
 	 * Make a best-effort attempt to fill in the ->hash and ->no_try_delta
 	 * here using a now in order to perhaps improve the delta selection
