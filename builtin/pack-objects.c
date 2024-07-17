@@ -3792,6 +3792,12 @@ static void read_object_list_from_stdin(void)
 	revs.tag_objects = 1;
 	revs.ignore_missing_links = 1;
 
+	/*
+	 * Don't walk commit history, only use the included commit objects as
+	 * starting points for the namehash computations.
+	 */
+	revs.no_walk = 1;
+
 	for (;;) {
 		struct object_info oi = OBJECT_INFO_INIT;
 		enum object_type type = OBJ_NONE;
