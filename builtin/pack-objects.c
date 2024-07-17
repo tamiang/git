@@ -3791,6 +3791,7 @@ static void read_object_list_from_stdin(void)
 	revs.tree_objects = 1;
 	revs.tag_objects = 1;
 	revs.ignore_missing_links = 1;
+	revs.ignore_missing = 1;
 
 	/*
 	 * Don't walk commit history, only use the included commit objects as
