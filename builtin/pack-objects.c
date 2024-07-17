@@ -3808,7 +3808,7 @@ static void read_object_list_from_stdin(void)
 
 		oi.typep = &type;
 		if (oid_object_info_extended(the_repository, &oid, &oi, OBJECT_INFO_QUICK) < 0) {
-			die(_("could not get type of object %s"),  oid_to_hex(oid));
+			die(_("could not get type of object %s"),  oid_to_hex(&oid));
 		} else if (type == OBJ_COMMIT) {
 			/*
 			 * commits are used as starting points for the
