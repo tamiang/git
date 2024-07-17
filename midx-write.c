@@ -1301,7 +1301,7 @@ int expire_midx_packs(struct repository *r, const char *object_dir, unsigned fla
 		char *pack_name;
 		display_progress(progress, i + 1);
 
-		trace2_printf("%010"PRIuMAX" objects in %s", count[i], m->packs[i]->pack_name);
+		trace2_printf("%010"PRIuMAX" objects in %s", count[i], m->pack_names[i]);
 
 		if (count[i])
 			continue;
