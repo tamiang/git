@@ -1467,8 +1467,10 @@ int midx_repack(struct repository *r, const char *object_dir, size_t batch_size,
 		fill_included_packs_all(r, m, include_pack);
 
 	for (i = 0; i < m->num_packs; i++) {
-		if (include_pack[i])
+		if (include_pack[i]) {
+			trace2_printf("will repack %s", m->pack_names[i]);
 			packs_to_repack++;
+		}
 	}
 	if (packs_to_repack <= 1)
 		goto cleanup;
