@@ -3829,7 +3829,7 @@ static void read_object_list_from_stdin(void)
 			     show_object_hint,
 			     NULL);
 
-	trace2_data_intmax("pack-objects", the_repository, "stdin_packs_found",
+	trace2_data_intmax("pack-objects", the_repository, "stdin_objects_found",
 			   stdin_objects_found_nr);
 	trace2_data_intmax("pack-objects", the_repository, "stdin_packs_hints",
 			   stdin_objects_hints_nr);
