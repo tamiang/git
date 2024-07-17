@@ -3733,13 +3733,55 @@ static void read_cruft_objects(void)
 	string_list_clear(&fresh_packs, 0);
 }
 
+static long stdin_objects_hints_nr;
+
+static void show_commit_hint(struct commit *commit UNUSED,
+			     void *data UNUSED)
+{
+	/* nothing to do; commits don't have a namehash */
+}
+
+static void show_object_hint(struct object *object, const char *name,
+			     void *data UNUSED)
+{
+	/*
+	 * Make a best-effort attempt to fill in the ->hash and ->no_try_delta
+	 * here using a now in order to perhaps improve the delta selection
+	 * process.
+	 */
+	oe->hash = pack_name_hash(name);
+	oe->no_try_delta = name && no_try_delta(name);
+
+	stdin_objects_hints_nr++;
+}
+
 static void read_object_list_from_stdin(void)
 {
 	char line[GIT_MAX_HEXSZ + 1 + PATH_MAX + 2];
 	struct object_id oid;
 	const char *p;
+	struct rev_info revs;
+	long stdin_objects_found_nr = 0;
+
+	repo_init_revisions(the_repository, &revs, NULL);
+	/*
+	 * Use a revision walk to fill in the namehash of objects in the include
+	 * packs.
+	 *
+	 * That may cause us to avoid populating all of the namehash fields of
+	 * all included objects, but our goal is best-effort, since this is only
+	 * an optimization during delta selection.
+	 */
+	revs.no_kept_objects = 1;
+	revs.blob_objects = 1;
+	revs.tree_objects = 1;
+	revs.tag_objects = 1;
+	revs.ignore_missing_links = 1;
 
 	for (;;) {
+		struct object_info oi = OBJECT_INFO_INIT;
+		enum object_type type = OBJ_NONE;
+
 		if (!fgets(line, sizeof(line), stdin)) {
 			if (feof(stdin))
 				break;
@@ -3760,9 +3802,33 @@ static void read_object_list_from_stdin(void)
 		if (parse_oid_hex(line, &oid, &p))
 			die(_("expected object ID, got garbage:\n %s"), line);
 
+		oi.typep = &type;
+		if (oid_object_info_extended(the_repository, &oid, &oi, OBJECT_INFO_QUICK) < 0) {
+			die(_("could not get type of object %s"),  oid_to_hex(oid));
+		} else if (type == OBJ_COMMIT) {
+			/*
+			 * commits are used as starting points for the
+			 * subsequent revision walk
+			 */
+			add_pending_oid(&revs, NULL, &oid, 0);
+		}
+
 		add_preferred_base_object(p + 1);
 		add_object_entry(&oid, OBJ_NONE, p + 1, 0);
+		stdin_objects_found_nr++;
 	}
+	
+	if (prepare_revision_walk(&revs))
+		die(_("revision walk setup failed"));
+	traverse_commit_list(&revs,
+			     show_commit_hint,
+			     show_object_hint,
+			     NULL);
+
+	trace2_data_intmax("pack-objects", the_repository, "stdin_packs_found",
+			   stdin_objects_found_nr);
+	trace2_data_intmax("pack-objects", the_repository, "stdin_packs_hints",
+			   stdin_objects_hints_nr);
 }
 
 static void show_commit(struct commit *commit, void *data UNUSED)
