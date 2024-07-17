@@ -3,6 +3,7 @@
 #include "git-compat-util.h"
 #include "environment.h"
 #include "gettext.h"
+#include "gvfs.h"
 #include "hex.h"
 #include "list.h"
 #include "pack.h"
@@ -2297,6 +2298,9 @@ int is_promisor_object(const struct object_id *oid)
 {
 	static struct oidset promisor_objects;
 	static int promisor_objects_prepared;
+
+	if (gvfs_config_is_set(GVFS_MISSING_OK))
+		return 1;
 
 	if (!promisor_objects_prepared) {
 		if (repo_has_promisor_remote(the_repository)) {
