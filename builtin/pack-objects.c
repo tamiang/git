@@ -3821,7 +3821,7 @@ static void read_object_list_from_stdin(void)
 		add_object_entry(&oid, OBJ_NONE, p + 1, 0);
 		stdin_objects_found_nr++;
 	}
-	
+
 	if (prepare_revision_walk(&revs))
 		die(_("revision walk setup failed"));
 	traverse_commit_list(&revs,
