@@ -1326,6 +1326,8 @@ int expire_midx_packs(struct repository *r, const char *object_dir, unsigned fla
 		char *pack_name;
 		display_progress(progress, i + 1);
 
+		trace2_printf("%010"PRIuMAX" objects in %s", count[i], m->pack_names[i]);
+
 		if (count[i])
 			continue;
 
@@ -1490,8 +1492,10 @@ int midx_repack(struct repository *r, const char *object_dir, size_t batch_size,
 		fill_included_packs_all(r, m, include_pack);
 
 	for (i = 0; i < m->num_packs; i++) {
-		if (include_pack[i])
+		if (include_pack[i]) {
+			trace2_printf("will repack %s", m->pack_names[i]);
 			packs_to_repack++;
+		}
 	}
 	if (packs_to_repack <= 1)
 		goto cleanup;
