@@ -119,7 +119,7 @@ To download and validate the signature of this package, run the following:
 
 ```shell
 # Install needed packages
-apt-get install -y curl debsig-verify
+sudo apt-get install -y curl debsig-verify
 
 # Download public key signature file
 curl -s https://api.github.com/repos/microsoft/git/releases/latest \
@@ -136,12 +136,12 @@ gpg --output msft-git-public.gpg --dearmor msft-git-public.asc
 gpg --show-keys msft-git-public.asc | head -n 2 | tail -n 1 | tail -c 17
 
 # Copy de-armored public key to debsig keyring folder
-mkdir /usr/share/debsig/keyrings/B8F12E25441124E1
-mv msft-git-public.gpg /usr/share/debsig/keyrings/B8F12E25441124E1/
+sudo mkdir /usr/share/debsig/keyrings/B8F12E25441124E1
+sudo mv msft-git-public.gpg /usr/share/debsig/keyrings/B8F12E25441124E1/
 
 # Create an appropriate policy file
-mkdir /etc/debsig/policies/B8F12E25441124E1
-cat > /etc/debsig/policies/B8F12E25441124E1/generic.pol << EOL
+sudo mkdir /etc/debsig/policies/B8F12E25441124E1
+cat > generic.pol << EOL
 <?xml version="1.0"?>
 <!DOCTYPE Policy SYSTEM "https://www.debian.org/debsig/1.0/policy.dtd">
 <Policy xmlns="https://www.debian.org/debsig/1.0/">
@@ -154,6 +154,8 @@ cat > /etc/debsig/policies/B8F12E25441124E1/generic.pol << EOL
   </Verification>
 </Policy>
 EOL
+
+sudo mv generic.pol /etc/debsig/policies/B8F12E25441124E1/generic.pol
 
 # Download Debian package
 curl -s https://api.github.com/repos/microsoft/git/releases/latest \
