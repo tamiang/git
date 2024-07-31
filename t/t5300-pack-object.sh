@@ -635,4 +635,27 @@ test_expect_success 'negative window clamps to 0' '
 	check_deltas stderr = 0
 '
 
+test_expect_success 'blobless clones and incremental-repack' '
+	git init full-origin &&
+	(
+		cd full-origin &&
+		test_commit_bulk 10
+	) &&
+	git clone --filter=blob:none "file://$(pwd)/full-origin" partial-client &&
+
+	for i in $(test_seq 11 20)
+	do
+		test_commit_bulk -C full-origin 10 &&
+		git -C partial-client pull || return 1
+	done &&
+
+	for i in $(test_seq 1 15)
+	do
+		ls partial-client/.git/objects/pack >pack-list-$i &&
+		GIT_TRACE2_EVENT="$(pwd)/maint" GIT_TRACE2_PERF="$(pwd)/maint-perf" \
+			git -C partial-client \
+			maintenance run --task=incremental-repack || return 1
+	done
+'
+
 test_done

@@ -117,6 +117,10 @@ static void process_tree_contents(struct traversal_context *ctx,
 				continue;
 		}
 
+		if (ctx->revs->filter.filter_fn &&
+		    !ctx->revs->filter.filter_fn(&entry.oid, ctx->revs->filter.filter_fn_data))
+			continue;
+
 		if (S_ISDIR(entry.mode)) {
 			struct tree *t = lookup_tree(ctx->revs->repo, &entry.oid);
 			if (!t) {
@@ -354,6 +358,9 @@ static void traverse_non_commits(struct traversal_context *ctx,
 		const char *path = pending->path;
 		if (obj->flags & (UNINTERESTING | SEEN))
 			continue;
+		if (ctx->revs->filter.filter_fn &&
+		    !ctx->revs->filter.filter_fn(&obj->oid, ctx->revs->filter.filter_fn_data))
+			continue;
 		if (obj->type == OBJ_TAG) {
 			process_tag(ctx, (struct tag *)obj, name);
 			continue;
@@ -387,6 +394,11 @@ static void do_traverse(struct traversal_context *ctx)
 		r = list_objects_filter__filter_object(ctx->revs->repo,
 				LOFS_COMMIT, &commit->object,
 				NULL, NULL, ctx->filter);
+
+		if (ctx->revs->filter.filter_fn &&
+		    !ctx->revs->filter.filter_fn(&commit->object.oid,
+		    				 ctx->revs->filter.filter_fn_data))
+			continue;
 
 		/*
 		 * an uninteresting boundary commit may not have its tree

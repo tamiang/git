@@ -67,6 +67,16 @@ struct list_objects_filter_options {
 	struct list_objects_filter_options *sub;
 
 	/*
+	 * Specify a function pointer to indicate whether or not an
+	 * object_id is interesting to open and walk links to. This uses
+	 * an object_id to avoid the potential of parsing trees or
+	 * loading blobs that are not necessary for the list-objects
+	 * walk.
+	 */
+	int (*filter_fn)(struct object_id *oid, void *data);
+	void *filter_fn_data;
+
+	/*
 	 * END choice-specific parsed values.
 	 */
 };
