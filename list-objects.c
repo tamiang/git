@@ -17,6 +17,7 @@
 #include "object-store-ll.h"
 #include "trace.h"
 #include "environment.h"
+#include "trace2.h"
 
 struct traversal_context {
 	struct rev_info *revs;
@@ -56,12 +57,21 @@ static void process_blob(struct traversal_context *ctx,
 	size_t pathlen;
 	enum list_objects_filter_result r;
 
+	trace2_printf("processing blob for %s / %s at %s.%d", path->buf, name, __FILE__, __LINE__);
 	if (!ctx->revs->blob_objects)
 		return;
 	if (!obj)
 		die("bad blob object");
-	if (obj->flags & (UNINTERESTING | SEEN))
+	trace2_printf("processing blob for %s / %s at %s.%d", path->buf, name, __FILE__, __LINE__);
+	if (obj->flags & SEEN)
 		return;
+	trace2_printf("processing blob for %s / %s at %s.%d", path->buf, name, __FILE__, __LINE__);
+
+	if ((obj->flags & UNINTERESTING)) {
+		trace2_printf("UNINTERESTING but UNSEEN at %s / %s", path->buf, name);
+		return;
+	}
+	trace2_printf("processing blob for %s / %s at %s.%d", path->buf, name, __FILE__, __LINE__);
 
 	/*
 	 * Pre-filter known-missing objects when explicitly requested.
@@ -77,16 +87,21 @@ static void process_blob(struct traversal_context *ctx,
 	    is_promisor_object(&obj->oid))
 		return;
 
+	trace2_printf("processing blob for %s / %s at %s.%d", path->buf, name, __FILE__, __LINE__);
 	pathlen = path->len;
 	strbuf_addstr(path, name);
 	r = list_objects_filter__filter_object(ctx->revs->repo,
 					       LOFS_BLOB, obj,
 					       path->buf, &path->buf[pathlen],
 					       ctx->filter);
+	trace2_printf("processing blob for %s / %s at %s.%d", path->buf, name, __FILE__, __LINE__);
 	if (r & LOFR_MARK_SEEN)
 		obj->flags |= SEEN;
-	if (r & LOFR_DO_SHOW)
+	if (r & LOFR_DO_SHOW) {
+	trace2_printf("processing blob for %s / %s at %s.%d", path->buf, name, __FILE__, __LINE__);
 		show_object(ctx, obj, path->buf);
+	}
+	trace2_printf("processing blob for %s / %s at %s.%d", path->buf, name, __FILE__, __LINE__);
 	strbuf_setlen(path, pathlen);
 }
 
@@ -104,15 +119,20 @@ static void process_tree_contents(struct traversal_context *ctx,
 	enum interesting match = ctx->revs->diffopt.pathspec.nr == 0 ?
 		all_entries_interesting : entry_not_interesting;
 
+	trace2_printf("processing tree contents for %s at %s.%d", base->buf,  __FILE__, __LINE__);
 	init_tree_desc(&desc, &tree->object.oid, tree->buffer, tree->size);
 
+	trace2_printf("processing tree contents for %s at %s.%d", base->buf,  __FILE__, __LINE__);
 	while (tree_entry(&desc, &entry)) {
 		if (match != all_entries_interesting) {
 			match = tree_entry_interesting(ctx->revs->repo->index,
 						       &entry, base,
 						       &ctx->revs->diffopt.pathspec);
-			if (match == all_entries_not_interesting)
+			if (match == all_entries_not_interesting) {
+
+	trace2_printf("processing tree contents for %s at %s.%d", base->buf,  __FILE__, __LINE__);
 				break;
+			}
 			if (match == entry_not_interesting)
 				continue;
 		}
@@ -126,20 +146,25 @@ static void process_tree_contents(struct traversal_context *ctx,
 			}
 			t->object.flags |= NOT_USER_GIVEN;
 			ctx->depth++;
+	trace2_printf("processing tree contents for %s at %s.%d", base->buf,  __FILE__, __LINE__);
 			process_tree(ctx, t, base, entry.path);
+	trace2_printf("processing tree contents for %s at %s.%d", base->buf,  __FILE__, __LINE__);
 			ctx->depth--;
 		}
 		else if (S_ISGITLINK(entry.mode))
 			; /* ignore gitlink */
 		else {
 			struct blob *b = lookup_blob(ctx->revs->repo, &entry.oid);
+	trace2_printf("processing tree contents for %s at %s.%d", base->buf,  __FILE__, __LINE__);
 			if (!b) {
 				die(_("entry '%s' in tree %s has blob mode, "
 				      "but is not a blob"),
 				    entry.path, oid_to_hex(&tree->object.oid));
 			}
 			b->object.flags |= NOT_USER_GIVEN;
+	trace2_printf("processing tree contents for %s at %s.%d", base->buf,  __FILE__, __LINE__);
 			process_blob(ctx, b, base, entry.path);
+	trace2_printf("processing tree contents for %s at %s.%d", base->buf,  __FILE__, __LINE__);
 		}
 	}
 }
@@ -159,11 +184,19 @@ static void process_tree(struct traversal_context *ctx,
 		return;
 	if (!obj)
 		die("bad tree object");
+
+	trace2_printf("processing tree for %s / %s at %s.%d", base->buf, name, __FILE__, __LINE__);
+
 	if (obj->flags & (UNINTERESTING | SEEN))
 		return;
+
+	trace2_printf("processing tree for %s / %s at %s.%d", base->buf, name, __FILE__, __LINE__);
+
 	if (revs->include_check_obj &&
 	    !revs->include_check_obj(&tree->object, revs->include_check_data))
 		return;
+
+	trace2_printf("processing tree for %s / %s at %s.%d", base->buf, name, __FILE__, __LINE__);
 
 	if (ctx->depth > max_allowed_tree_depth)
 		die("exceeded maximum allowed tree depth");
@@ -186,23 +219,32 @@ static void process_tree(struct traversal_context *ctx,
 			die("bad tree object %s", oid_to_hex(&obj->oid));
 	}
 
+	trace2_printf("processing tree for %s / %s at %s.%d", base->buf, name, __FILE__, __LINE__);
 	strbuf_addstr(base, name);
 	r = list_objects_filter__filter_object(ctx->revs->repo,
 					       LOFS_BEGIN_TREE, obj,
 					       base->buf, &base->buf[baselen],
 					       ctx->filter);
+	trace2_printf("processing tree for %s / %s at %s.%d", base->buf, name, __FILE__, __LINE__);
 	if (r & LOFR_MARK_SEEN)
 		obj->flags |= SEEN;
-	if (r & LOFR_DO_SHOW)
+	if (r & LOFR_DO_SHOW) {
+	trace2_printf("processing tree for %s / %s at %s.%d", base->buf, name, __FILE__, __LINE__);
 		show_object(ctx, obj, base->buf);
+	trace2_printf("processing tree for %s / %s at %s.%d", base->buf, name, __FILE__, __LINE__);
+	}
 	if (base->len)
 		strbuf_addch(base, '/');
 
 	if (r & LOFR_SKIP_TREE)
 		trace_printf("Skipping contents of tree %s...\n", base->buf);
-	else if (!failed_parse)
+	else if (!failed_parse) {
+	trace2_printf("processing tree for %s / %s at %s.%d", base->buf, name, __FILE__, __LINE__);
 		process_tree_contents(ctx, tree, base);
+	trace2_printf("processing tree for %s / %s at %s.%d", base->buf, name, __FILE__, __LINE__);
+	}
 
+	trace2_printf("processing tree for %s / %s at %s.%d", base->buf, name, __FILE__, __LINE__);
 	r = list_objects_filter__filter_object(ctx->revs->repo,
 					       LOFS_END_TREE, obj,
 					       base->buf, &base->buf[baselen],
@@ -212,6 +254,7 @@ static void process_tree(struct traversal_context *ctx,
 	if (r & LOFR_DO_SHOW)
 		show_object(ctx, obj, base->buf);
 
+	trace2_printf("processing tree for %s / %s at %s.%d", base->buf, name, __FILE__, __LINE__);
 	strbuf_setlen(base, baselen);
 	free_tree_buffer(tree);
 }

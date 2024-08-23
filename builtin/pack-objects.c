@@ -1655,10 +1655,13 @@ static int add_object_entry(const struct object_id *oid, enum object_type type,
 	struct packed_git *found_pack = NULL;
 	off_t found_offset = 0;
 
+trace2_printf("add_object_entry %s is %s", oid_to_hex(oid), name);
 	display_progress(progress_state, ++nr_seen);
 
-	if (have_duplicate_entry(oid, exclude))
+	if (have_duplicate_entry(oid, exclude)) {
+		trace2_printf("dupe!");
 		return 0;
+	}
 
 	if (!want_object_in_pack(oid, exclude, &found_pack, &found_offset)) {
 		/* The pack is missing an object, so it will not have closure */
@@ -1667,9 +1670,11 @@ static int add_object_entry(const struct object_id *oid, enum object_type type,
 				warning(_(no_closure_warning));
 			write_bitmap_index = 0;
 		}
+		trace2_printf("don't want it!");
 		return 0;
 	}
 
+	trace2_printf("entry created with name hash");
 	create_object_entry(oid, type, pack_name_hash(name),
 			    exclude, name && no_try_delta(name),
 			    found_pack, found_offset);
@@ -1811,7 +1816,9 @@ static void add_pbase_object(struct tree_desc *tree,
 	struct name_entry entry;
 	int cmp;
 
-	while (tree_entry(tree,&entry)) {
+	trace2_printf("name: %s %s.%d", name, __FILE__, __LINE__);
+
+	while (tree_entry(tree, &entry)) {
 		if (S_ISGITLINK(entry.mode))
 			continue;
 		cmp = tree_entry_len(&entry) != cmplen ? 1 :
@@ -1821,6 +1828,7 @@ static void add_pbase_object(struct tree_desc *tree,
 		if (cmp < 0)
 			return;
 		if (name[cmplen] != '/') {
+			trace2_printf("%s.%d", __FILE__, __LINE__);
 			add_object_entry(&entry.oid,
 					 object_type(entry.mode),
 					 fullname, 1);
@@ -1838,7 +1846,9 @@ static void add_pbase_object(struct tree_desc *tree,
 			init_tree_desc(&sub, &tree->oid,
 				       tree->tree_data, tree->tree_size);
 
+			trace2_printf("%s.%d", __FILE__, __LINE__);
 			add_pbase_object(&sub, down, downlen, fullname);
+			trace2_printf("%s.%d", __FILE__, __LINE__);
 			pbase_tree_put(tree);
 		}
 	}
@@ -1886,18 +1896,22 @@ static void add_preferred_base_object(const char *name)
 	size_t cmplen;
 	unsigned hash = pack_name_hash(name);
 
+	trace2_printf("name: %s %s.%d", name, __FILE__, __LINE__);
 	if (!num_preferred_base || check_pbase_path(hash))
 		return;
 
+	trace2_printf("name:%s %s.%d",name, __FILE__, __LINE__);
 	cmplen = name_cmp_len(name);
 	for (it = pbase_tree; it; it = it->next) {
 		if (cmplen == 0) {
+			trace2_printf("%s.%d", __FILE__, __LINE__);
 			add_object_entry(&it->pcache.oid, OBJ_TREE, NULL, 1);
 		}
 		else {
 			struct tree_desc tree;
 			init_tree_desc(&tree, &it->pcache.oid,
 				       it->pcache.tree_data, it->pcache.tree_size);
+			trace2_printf("%s.%d", __FILE__, __LINE__);
 			add_pbase_object(&tree, name, cmplen, name);
 		}
 	}
@@ -1913,6 +1927,7 @@ static void add_preferred_base(struct object_id *oid)
 	if (window <= num_preferred_base++)
 		return;
 
+	trace2_printf("add_preffered_base(%s) %s.%d", oid_to_hex(oid), __FILE__, __LINE__);
 	data = read_object_with_reference(the_repository, oid,
 					  OBJ_TREE, &size, &tree_oid);
 	if (!data)
@@ -1925,6 +1940,7 @@ static void add_preferred_base(struct object_id *oid)
 		}
 	}
 
+	trace2_printf("add_preffered_base(%s) %s.%d", oid_to_hex(oid), __FILE__, __LINE__);
 	CALLOC_ARRAY(it, 1);
 	it->next = pbase_tree;
 	pbase_tree = it;
@@ -2771,14 +2787,19 @@ static void find_deltas(struct object_entry **list, unsigned *list_size,
 		       count > 1) {
 			const uint32_t tail = (idx + window - count) % window;
 			mem_usage -= free_unpacked(array + tail);
+			trace2_printf("freeing unpacked? %s.%d", __FILE__, __LINE__);
 			count--;
 		}
+
+		trace2_printf("looking at object %s %s.%d", oid_to_hex(&entry->idx.oid), __FILE__, __LINE__);
 
 		/* We do not compute delta to *create* objects we are not
 		 * going to pack.
 		 */
-		if (entry->preferred_base)
+		if (entry->preferred_base) {
+			trace2_printf("have preffered base??? %s.%d", __FILE__, __LINE__);
 			goto next;
+		}
 
 		/*
 		 * If the current object is at pack edge, take the depth the
@@ -2788,8 +2809,11 @@ static void find_deltas(struct object_entry **list, unsigned *list_size,
 		max_depth = depth;
 		if (DELTA_CHILD(entry)) {
 			max_depth -= check_delta_limit(entry, 0);
-			if (max_depth <= 0)
+			if (max_depth <= 0) {
+
+			trace2_printf("delta depth limit? %s.%d", __FILE__, __LINE__);
 				goto next;
+			}
 		}
 
 		j = window;
@@ -2805,9 +2829,18 @@ static void find_deltas(struct object_entry **list, unsigned *list_size,
 			ret = try_delta(n, m, max_depth, &mem_usage);
 			if (ret < 0)
 				break;
-			else if (ret > 0)
+			else if (ret > 0) {
+			trace2_printf("New best base (%d better than %d with size %d) %s.%d", other_idx, best_base, entry->delta_size_, __FILE__, __LINE__);
 				best_base = other_idx;
+			}
 		}
+		trace2_printf("Final best base %d  %s.%d", best_base,__FILE__, __LINE__);
+		if (best_base > 0)
+			trace2_printf("Best base for %s %s is %s with (uncompressed) delta size %d",
+				oe_type(n->entry) == OBJ_BLOB ? "blob" : "non-blob",
+				oid_to_hex(&n->entry->idx.oid),
+				oid_to_hex(&(array[best_base].entry->idx.oid)),
+				entry->delta_size_);
 
 		/*
 		 * If we decided to cache the delta data, then it is best
@@ -2843,8 +2876,10 @@ static void find_deltas(struct object_entry **list, unsigned *list_size,
 		 * depth, leaving it in the window is pointless.  we
 		 * should evict it first.
 		 */
-		if (DELTA(entry) && max_depth <= n->depth)
+		if (DELTA(entry) && max_depth <= n->depth) {
+			trace2_printf("we are at max depth NOW? %s.%d", __FILE__, __LINE__);
 			continue;
+		}
 
 		/*
 		 * Move the best delta base up in the window, after the
@@ -3116,10 +3151,12 @@ static void add_tag_chain(const struct object_id *oid)
 
 	tag = lookup_tag(the_repository, oid);
 	while (1) {
-		if (!tag || parse_tag(tag) || !tag->tagged)
+		if (!tag || parse_tag(tag) || !tag->tagged) {
 			die(_("unable to pack objects reachable from tag %s"),
 			    oid_to_hex(oid));
+		}
 
+		trace2_printf("%s.%d", __FILE__, __LINE__);
 		add_object_entry(&tag->object.oid, OBJ_TAG, NULL, 0);
 
 		if (tag->tagged->type != OBJ_TAG)
@@ -3382,8 +3419,13 @@ static void show_object_pack_hint(struct object *object, const char *name,
 				  void *data UNUSED)
 {
 	struct object_entry *oe = packlist_find(&to_pack, &object->oid);
-	if (!oe)
+trace2_printf("name hash for %s is %s", oid_to_hex(&object->oid), name);
+
+	if (!oe) {
+		trace2_printf("no object entry!");
 		return;
+	}
+
 
 	/*
 	 * Our 'to_pack' list was constructed by iterating all objects packed in
@@ -3771,12 +3813,14 @@ static void read_object_list_from_stdin(void)
 			die(_("expected object ID, got garbage:\n %s"), line);
 
 		add_preferred_base_object(p + 1);
+			trace2_printf("%s.%d", __FILE__, __LINE__);
 		add_object_entry(&oid, OBJ_NONE, p + 1, 0);
 	}
 }
 
 static void show_commit(struct commit *commit, void *data UNUSED)
 {
+			trace2_printf("%s.%d", __FILE__, __LINE__);
 	add_object_entry(&commit->object.oid, OBJ_COMMIT, NULL, 0);
 
 	if (write_bitmap_index)
@@ -3789,8 +3833,11 @@ static void show_commit(struct commit *commit, void *data UNUSED)
 static void show_object(struct object *obj, const char *name,
 			void *data UNUSED)
 {
+	trace2_printf("oid %s name: %s %s.%d", oid_to_hex(&obj->oid), name, __FILE__, __LINE__);
 	add_preferred_base_object(name);
+	trace2_printf("oid %s name: %s %s.%d", oid_to_hex(&obj->oid), name, __FILE__, __LINE__);
 	add_object_entry(&obj->oid, obj->type, name, 0);
+	trace2_printf("oid %s name: %s %s.%d", oid_to_hex(&obj->oid), name, __FILE__, __LINE__);
 
 	if (use_delta_islands) {
 		const char *p;
@@ -3892,6 +3939,7 @@ static int add_object_in_unpacked_pack(const struct object_id *oid,
 		add_cruft_object_entry(oid, OBJ_NONE, pack, offset,
 				       NULL, mtime);
 	} else {
+			trace2_printf("%s.%d", __FILE__, __LINE__);
 		add_object_entry(oid, OBJ_NONE, "", 0);
 	}
 	return 0;
@@ -3928,6 +3976,7 @@ static int add_loose_object(const struct object_id *oid, const char *path,
 		add_cruft_object_entry(oid, type, NULL, 0, NULL,
 				       st.st_mtime);
 	} else {
+			trace2_printf("%s.%d", __FILE__, __LINE__);
 		add_object_entry(oid, type, "", 0);
 	}
 	return 0;
