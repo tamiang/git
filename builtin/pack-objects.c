@@ -1655,6 +1655,8 @@ static int add_object_entry(const struct object_id *oid, enum object_type type,
 	struct packed_git *found_pack = NULL;
 	off_t found_offset = 0;
 
+	trace2_printf("add_object_entry(%s -> %s)", oid_to_hex(oid), name);
+
 	display_progress(progress_state, ++nr_seen);
 
 	if (have_duplicate_entry(oid, exclude))
@@ -2808,6 +2810,8 @@ static void find_deltas(struct object_entry **list, unsigned *list_size,
 			else if (ret > 0)
 				best_base = other_idx;
 		}
+
+		trace2_printf("best_base for %s is %d", oid_to_hex(&n->entry->idx.oid), best_base);
 
 		/*
 		 * If we decided to cache the delta data, then it is best
