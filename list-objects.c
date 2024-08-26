@@ -57,21 +57,18 @@ static void process_blob(struct traversal_context *ctx,
 	size_t pathlen;
 	enum list_objects_filter_result r;
 
-	trace2_printf("processing blob for %s / %s at %s.%d", path->buf, name, __FILE__, __LINE__);
+	trace2_printf("process_blob oid:%s name:%s%s %s.%d", oid_to_hex(&blob->object.oid), path->buf, name, __FILE__, __LINE__);
 	if (!ctx->revs->blob_objects)
 		return;
 	if (!obj)
 		die("bad blob object");
-	trace2_printf("processing blob for %s / %s at %s.%d", path->buf, name, __FILE__, __LINE__);
 	if (obj->flags & SEEN)
 		return;
-	trace2_printf("processing blob for %s / %s at %s.%d", path->buf, name, __FILE__, __LINE__);
 
 	if ((obj->flags & UNINTERESTING)) {
 		trace2_printf("UNINTERESTING but UNSEEN at %s / %s", path->buf, name);
 		return;
 	}
-	trace2_printf("processing blob for %s / %s at %s.%d", path->buf, name, __FILE__, __LINE__);
 
 	/*
 	 * Pre-filter known-missing objects when explicitly requested.
@@ -87,21 +84,17 @@ static void process_blob(struct traversal_context *ctx,
 	    is_promisor_object(&obj->oid))
 		return;
 
-	trace2_printf("processing blob for %s / %s at %s.%d", path->buf, name, __FILE__, __LINE__);
 	pathlen = path->len;
 	strbuf_addstr(path, name);
 	r = list_objects_filter__filter_object(ctx->revs->repo,
 					       LOFS_BLOB, obj,
 					       path->buf, &path->buf[pathlen],
 					       ctx->filter);
-	trace2_printf("processing blob for %s / %s at %s.%d", path->buf, name, __FILE__, __LINE__);
 	if (r & LOFR_MARK_SEEN)
 		obj->flags |= SEEN;
 	if (r & LOFR_DO_SHOW) {
-	trace2_printf("processing blob for %s / %s at %s.%d", path->buf, name, __FILE__, __LINE__);
 		show_object(ctx, obj, path->buf);
 	}
-	trace2_printf("processing blob for %s / %s at %s.%d", path->buf, name, __FILE__, __LINE__);
 	strbuf_setlen(path, pathlen);
 }
 

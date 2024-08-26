@@ -1417,7 +1417,7 @@ static int no_try_delta(const char *path)
 /*
  * When adding an object, check whether we have already added it
  * to our packing list. If so, we can skip. However, if we are
- * being asked to excludei t, but the previous mention was to include
+ * being asked to exclude it, but the previous mention was to include
  * it, make sure to adjust its flags and tweak our numbers accordingly.
  *
  * As an optimization, we pass out the index position where we would have
@@ -1440,6 +1440,7 @@ static int have_duplicate_entry(const struct object_id *oid,
 	if (exclude) {
 		if (!entry->preferred_base)
 			nr_result--;
+		trace2_printf("have_duplicate_entry(%s) %s.%d", oid_to_hex(oid), __FILE__, __LINE__);
 		entry->preferred_base = 1;
 	}
 
@@ -1449,8 +1450,10 @@ static int have_duplicate_entry(const struct object_id *oid,
 static int want_found_object(const struct object_id *oid, int exclude,
 			     struct packed_git *p)
 {
-	if (exclude)
+	if (exclude) {
+		trace2_printf("want_found_object(%s) %s.%d", oid_to_hex(oid), __FILE__, __LINE__);
 		return 1;
+	}
 	if (incremental)
 		return 0;
 
@@ -1525,6 +1528,7 @@ static int want_object_in_pack_one(struct packed_git *p,
 {
 	off_t offset;
 
+	trace2_printf("want_object_in_pack_one(%s) %s.%d", oid_to_hex(oid), __FILE__, __LINE__);
 	if (p == *found_pack)
 		offset = *found_offset;
 	else
@@ -1560,6 +1564,7 @@ static int want_object_in_pack(const struct object_id *oid,
 	struct list_head *pos;
 	struct multi_pack_index *m;
 
+	trace2_printf("want_object_in_pack(%s) %s.%d", oid_to_hex(oid), __FILE__, __LINE__);
 	if (!exclude && local && has_loose_object_nonlocal(oid))
 		return 0;
 
@@ -1628,13 +1633,17 @@ static struct object_entry *create_object_entry(const struct object_id *oid,
 {
 	struct object_entry *entry;
 
+	trace2_printf("create_object_entry(%s) %s.%d", oid_to_hex(oid), __FILE__, __LINE__);
 	entry = packlist_alloc(&to_pack, oid);
 	entry->hash = hash;
 	oe_set_type(entry, type);
-	if (exclude)
+	if (exclude) {
+		trace2_printf("want_found_object(%s) is excluded! %s.%d", oid_to_hex(oid), __FILE__, __LINE__);
 		entry->preferred_base = 1;
-	else
+	} else {
 		nr_result++;
+	}
+
 	if (found_pack) {
 		oe_set_in_pack(&to_pack, entry, found_pack);
 		entry->in_pack_offset = found_offset;
@@ -1816,6 +1825,7 @@ static void add_pbase_object(struct tree_desc *tree,
 	struct name_entry entry;
 	int cmp;
 
+	trace2_region_enter("pack-objects", "add_pbase_object", the_repository);
 	trace2_printf("name: %s %s.%d", name, __FILE__, __LINE__);
 
 	while (tree_entry(tree, &entry)) {
@@ -1825,13 +1835,17 @@ static void add_pbase_object(struct tree_desc *tree,
 		      memcmp(name, entry.path, cmplen);
 		if (cmp > 0)
 			continue;
-		if (cmp < 0)
+		if (cmp < 0) {
+
+	trace2_region_leave("pack-objects", "add_pbase_object", the_repository);
 			return;
+		}
 		if (name[cmplen] != '/') {
 			trace2_printf("%s.%d", __FILE__, __LINE__);
 			add_object_entry(&entry.oid,
 					 object_type(entry.mode),
 					 fullname, 1);
+	trace2_region_leave("pack-objects", "add_pbase_object", the_repository);
 			return;
 		}
 		if (S_ISDIR(entry.mode)) {
@@ -1846,12 +1860,11 @@ static void add_pbase_object(struct tree_desc *tree,
 			init_tree_desc(&sub, &tree->oid,
 				       tree->tree_data, tree->tree_size);
 
-			trace2_printf("%s.%d", __FILE__, __LINE__);
 			add_pbase_object(&sub, down, downlen, fullname);
-			trace2_printf("%s.%d", __FILE__, __LINE__);
 			pbase_tree_put(tree);
 		}
 	}
+	trace2_region_leave("pack-objects", "add_pbase_object", the_repository);
 }
 
 static unsigned *done_pbase_paths;
@@ -1895,26 +1908,26 @@ static void add_preferred_base_object(const char *name)
 	struct pbase_tree *it;
 	size_t cmplen;
 	unsigned hash = pack_name_hash(name);
+	int iterations = 0;
 
 	trace2_printf("name: %s %s.%d", name, __FILE__, __LINE__);
 	if (!num_preferred_base || check_pbase_path(hash))
 		return;
 
-	trace2_printf("name:%s %s.%d",name, __FILE__, __LINE__);
+	trace2_region_enter("pack-objects", "add_preferred_base_object", the_repository);
 	cmplen = name_cmp_len(name);
-	for (it = pbase_tree; it; it = it->next) {
+	for (it = pbase_tree; it; it = it->next, iterations++) {
+		trace2_printf("add_preferred_base_object %s iteration %d", name, iterations);
 		if (cmplen == 0) {
-			trace2_printf("%s.%d", __FILE__, __LINE__);
 			add_object_entry(&it->pcache.oid, OBJ_TREE, NULL, 1);
-		}
-		else {
+		} else {
 			struct tree_desc tree;
 			init_tree_desc(&tree, &it->pcache.oid,
 				       it->pcache.tree_data, it->pcache.tree_size);
-			trace2_printf("%s.%d", __FILE__, __LINE__);
 			add_pbase_object(&tree, name, cmplen, name);
 		}
 	}
+	trace2_region_leave("pack-objects", "add_preferred_base_object", the_repository);
 }
 
 static void add_preferred_base(struct object_id *oid)
@@ -2766,6 +2779,8 @@ static void find_deltas(struct object_entry **list, unsigned *list_size,
 		struct unpacked *n = array + idx;
 		int j, max_depth, best_base = -1;
 
+trace2_printf("find_deltas:\ti=%d\tidx=%d\tcount=%d\tlist_size=%d", i, idx, count, *list_size);
+
 		progress_lock();
 		if (!*list_size) {
 			progress_unlock();
@@ -2791,7 +2806,7 @@ static void find_deltas(struct object_entry **list, unsigned *list_size,
 			count--;
 		}
 
-		trace2_printf("looking at object %s %s.%d", oid_to_hex(&entry->idx.oid), __FILE__, __LINE__);
+		trace2_printf("looking at object %s with list_size:%"PRIu32" %s.%d", oid_to_hex(&entry->idx.oid), (uint32_t)(*list_size), __FILE__, __LINE__);
 
 		/* We do not compute delta to *create* objects we are not
 		 * going to pack.
@@ -3376,6 +3391,7 @@ static int add_object_entry_from_pack(const struct object_id *oid,
 	off_t ofs;
 	enum object_type type = OBJ_NONE;
 
+	trace2_printf("add_object_entry_from_pack(%s) %s.%d", oid_to_hex(oid), __FILE__, __LINE__);
 	display_progress(progress_state, ++nr_seen);
 
 	if (have_duplicate_entry(oid, 0))
