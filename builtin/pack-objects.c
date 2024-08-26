@@ -45,7 +45,7 @@
  * It contains an array (dynamically expanded) of the object data, and a map
  * that can resolve SHA1s to their position in the array.
  */
-static struct packing_data to_pack;
+static struct packing_data to_pack = PACKING_DATA_INIT;
 
 static inline struct object_entry *oe_delta(
 		const struct packing_data *pack,
@@ -2005,6 +2005,8 @@ static int can_reuse_delta(const struct object_id *base_oid,
 {
 	struct object_entry *base;
 
+	trace2_printf("can_reuse_delta(%s, %s, _)", oid_to_hex(base_oid), oid_to_hex(&delta->idx.oid));
+
 	/*
 	 * First see if we're already sending the base (or it's explicitly in
 	 * our "excluded" list).
@@ -2768,7 +2770,7 @@ static unsigned long free_unpacked(struct unpacked *n)
 static void find_deltas(struct object_entry **list, unsigned *list_size,
 			int window, int depth, unsigned *processed)
 {
-	uint32_t i, idx = 0, count = 0;
+	uint32_t idx = 0, count = 0;
 	struct unpacked *array;
 	unsigned long mem_usage = 0;
 
@@ -2779,7 +2781,7 @@ static void find_deltas(struct object_entry **list, unsigned *list_size,
 		struct unpacked *n = array + idx;
 		int j, max_depth, best_base = -1;
 
-trace2_printf("find_deltas:\ti=%d\tidx=%d\tcount=%d\tlist_size=%d", i, idx, count, *list_size);
+trace2_printf("find_deltas:\tidx=%d\tcount=%d\tlist_size=%d", idx, count, *list_size);
 
 		progress_lock();
 		if (!*list_size) {
@@ -2921,7 +2923,7 @@ trace2_printf("find_deltas:\ti=%d\tidx=%d\tcount=%d\tlist_size=%d", i, idx, coun
 			idx = 0;
 	}
 
-	for (i = 0; i < window; ++i) {
+	for (uint32_t i = 0; i < window; ++i) {
 		free_delta_index(array[i].index);
 		free(array[i].data);
 	}

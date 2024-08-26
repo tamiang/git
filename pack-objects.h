@@ -123,6 +123,17 @@ struct packing_data {
 	struct object_entry *objects;
 	uint32_t nr_objects, nr_alloc;
 
+	/*
+	 * The index is a rough hashtable that uses oidhash(oid) to bucketize
+	 * the objects. index_size _must_ be a power of 2 for the buckets to
+	 * work as expected.
+	 *
+	 * If index[i] is zero, then this bucket does not have any entries.
+	 *
+	 * Otherwise, (index[i]-1) points to the index within 'objects' for this
+	 * bucket's entry. Use that object to compare OIDs for exact matches and
+	 * go to the next index position if not matching.
+	 */
 	int32_t *index;
 	uint32_t index_size;
 
@@ -167,6 +178,8 @@ struct packing_data {
 	 */
 	uint32_t *cruft_mtime;
 };
+
+#define PACKING_DATA_INIT { 0 }
 
 void prepare_packing_data(struct repository *r, struct packing_data *pdata);
 void clear_packing_data(struct packing_data *pdata);

@@ -4,15 +4,27 @@
 #include "pack-objects.h"
 #include "packfile.h"
 #include "parse.h"
+#include "hex.h"
+#include "trace2.h"
 
+/*
+ * Follow the index hashtable to find if the object with matching oid exists
+ * and at which position. Use 'found' to indicate whether or not the object
+ * was found, and return the index into pdata->objects if found.
+ */
 static uint32_t locate_object_entry_hash(struct packing_data *pdata,
 					 const struct object_id *oid,
 					 int *found)
 {
+	/* Note that pdata->index_size must be a power of 2. */
 	uint32_t i, mask = (pdata->index_size - 1);
 
 	i = oidhash(oid) & mask;
 
+	/*
+	 * While the bucket has contents, iterate through matching bucket
+	 * entries until we find an empty entry or find a matching oid.
+	 */
 	while (pdata->index[i] > 0) {
 		uint32_t pos = pdata->index[i] - 1;
 
@@ -39,6 +51,10 @@ static inline uint32_t closest_pow2(uint32_t v)
 	return v + 1;
 }
 
+/*
+ * Regenerate the pdata->index hashtable due to noticing that the object count
+ * is growing. Requires recomputing all bucket values.
+ */
 static void rehash_objects(struct packing_data *pdata)
 {
 	uint32_t i;
@@ -67,6 +83,10 @@ static void rehash_objects(struct packing_data *pdata)
 	}
 }
 
+/*
+ * Find a pointer to the object_entry struct in pdata->objects. Use
+ * the pdata->index hashtable structure.
+ */
 struct object_entry *packlist_find(struct packing_data *pdata,
 				   const struct object_id *oid)
 {
@@ -84,10 +104,19 @@ struct object_entry *packlist_find(struct packing_data *pdata,
 	return &pdata->objects[pdata->index[i] - 1];
 }
 
+/*
+ * If there are fewer than 1024 packfiles in get_all_packs(),
+ * then initialize pdata->in_pack_by_idx to point to the packfiles
+ * as ordered by get_all_packs(). The packfiles themselves also point
+ * back to this mapping via p->index.
+ *
+ * Note that the first entry is blank. This allows p->index to be
+ * considered uninitialized if zero.
+ */
 static void prepare_in_pack_by_idx(struct packing_data *pdata)
 {
 	struct packed_git **mapping, *p;
-	int cnt = 0, nr = 1U << OE_IN_PACK_BITS;
+	int cnt = 0, nr = 1U << OE_IN_PACK_BITS; /* nr = 1024 */
 
 	ALLOC_ARRAY(mapping, nr);
 	/*
@@ -130,7 +159,9 @@ void oe_map_new_pack(struct packing_data *pack)
 	FREE_AND_NULL(pack->in_pack_by_idx);
 }
 
-/* assume pdata is already zero'd by caller */
+/*
+ * Assume pdata is pointing to memory initialized by prepare_in_pack_by_idx.
+ */
 void prepare_packing_data(struct repository *r, struct packing_data *pdata)
 {
 	pdata->repo = r;
@@ -166,6 +197,15 @@ void clear_packing_data(struct packing_data *pdata)
 	free(pdata->tree_depth);
 }
 
+/*
+ * (Re)allocate all data structures that depend on the number of
+ * objects in pdata->objects. Some arrays exist conditionally, so
+ * be careful to not accidentally allocate them if they were not
+ * already allocated.
+ *
+ * Then, insert 'oid' into the list. It is a BUG to insert an 'oid'
+ * that already exists in the pdata->objects list.
+ */
 struct object_entry *packlist_alloc(struct packing_data *pdata,
 				    const struct object_id *oid)
 {
@@ -190,20 +230,27 @@ struct object_entry *packlist_alloc(struct packing_data *pdata,
 			REALLOC_ARRAY(pdata->cruft_mtime, pdata->nr_alloc);
 	}
 
-	new_entry = pdata->objects + pdata->nr_objects++;
+	new_entry = &pdata->objects[pdata->nr_objects++];
 
 	memset(new_entry, 0, sizeof(*new_entry));
 	oidcpy(&new_entry->idx.oid, oid);
 
-	if (pdata->index_size * 3 <= pdata->nr_objects * 4)
+	/* Are we exceeding the density of our hashtable? */
+	if (pdata->index_size * 3 <= pdata->nr_objects * 4) {
 		rehash_objects(pdata);
-	else {
+	} else {
 		int found;
 		uint32_t pos = locate_object_entry_hash(pdata,
 							&new_entry->idx.oid,
 							&found);
 		if (found)
 			BUG("duplicate object inserted into hash");
+
+		/*
+		 * Add one to the index in pdata->objects to allow 0 to
+		 * imply the hashtable does not have an entry for a given
+		 * bucket.
+		 */
 		pdata->index[pos] = pdata->nr_objects;
 	}
 
@@ -222,11 +269,20 @@ struct object_entry *packlist_alloc(struct packing_data *pdata,
 	return new_entry;
 }
 
+/*
+ * Set an external delta base, for generating thin packs.
+ *
+ * Currently only consumed when reusing a delta, not when generating a thin
+ * pack and discovering a good delta externally.
+ */
 void oe_set_delta_ext(struct packing_data *pdata,
 		      struct object_entry *delta,
 		      const struct object_id *oid)
 {
 	struct object_entry *base;
+
+	trace2_printf("oe_set_delta_ext(pdata, %s, %s)",
+		      oid_to_hex(&delta->idx.oid), oid_to_hex(oid));
 
 	ALLOC_GROW(pdata->ext_bases, pdata->nr_ext + 1, pdata->alloc_ext);
 	base = &pdata->ext_bases[pdata->nr_ext++];
