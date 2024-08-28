@@ -314,6 +314,147 @@ static void add_edge_parents(struct commit *commit,
 	}
 }
 
+static void list_tree_uninteresting(struct traversal_context *ctx,
+				    struct tree *tree,
+				    struct strbuf *pathbuf);
+
+static void list_blob_uninteresting(struct traversal_context *ctx,
+				    struct blob *blob,
+				    const char *path)
+{
+	if (!blob)
+		return;
+	if (blob->object.flags & UNINTERESTING)
+		return;
+	blob->object.flags |= UNINTERESTING;
+
+	if (ctx->show_object)
+		ctx->show_object(&blob->object, path, ctx->show_data);
+}
+
+static void list_tree_contents_uninteresting(struct traversal_context *ctx,
+					     struct tree *tree,
+					     struct strbuf *pathbuf)
+{
+	struct tree_desc desc;
+	struct name_entry entry;
+	size_t pathlen = pathbuf->len;
+
+	if (parse_tree_gently(tree, 1) < 0)
+		return;
+
+	init_tree_desc(&desc, &tree->object.oid, tree->buffer, tree->size);
+	while (tree_entry(&desc, &entry)) {
+		strbuf_setlen(pathbuf, pathlen);
+		strbuf_addch(pathbuf, '/');
+		strbuf_add(pathbuf, entry.path, entry.pathlen);
+
+		switch (object_type(entry.mode)) {
+		case OBJ_TREE:
+			list_tree_uninteresting(ctx,
+						lookup_tree(ctx->revs->repo, &entry.oid),
+						pathbuf);
+			break;
+		case OBJ_BLOB:
+			list_blob_uninteresting(ctx,
+						lookup_blob(ctx->revs->repo, &entry.oid),
+						pathbuf->buf);
+			break;
+		default:
+			/* Subproject commit - not in this repository */
+			break;
+		}
+	}
+
+	/*
+	 * We don't care about the tree any more
+	 * after it has been marked uninteresting.
+	 */
+	free_tree_buffer(tree);
+}
+
+static void list_tree_uninteresting(struct traversal_context *ctx,
+				    struct tree *tree,
+				    struct strbuf *pathbuf)
+{
+	struct object *obj;
+
+	if (!tree)
+		return;
+
+	obj = &tree->object;
+	if (obj->flags & UNINTERESTING)
+		return;
+	obj->flags |= UNINTERESTING;
+	if (ctx->show_object)
+		ctx->show_object(&tree->object, pathbuf->buf, ctx->show_data);
+	list_tree_contents_uninteresting(ctx, tree, pathbuf);
+}
+
+void mark_edges_uninteresting_deep(struct traversal_context *ctx,
+				   show_edge_fn show_edge,
+				   int sparse)
+{
+	struct commit_list *list;
+	int i;
+	struct strbuf pathbuf = STRBUF_INIT;
+
+	if (sparse) {
+		struct oidset set;
+		oidset_init(&set, 16);
+
+		for (list = ctx->revs->commits; list; list = list->next) {
+			struct commit *commit = list->item;
+			struct tree *tree = repo_get_commit_tree(the_repository,
+								 commit);
+
+			if (commit->object.flags & UNINTERESTING)
+				tree->object.flags |= UNINTERESTING;
+
+			oidset_insert(&set, &tree->object.oid);
+			add_edge_parents(commit, ctx->revs, show_edge, &set);
+		}
+
+		mark_trees_uninteresting_sparse(ctx->revs->repo, &set);
+		oidset_clear(&set);
+	} else {
+		for (list = ctx->revs->commits; list; list = list->next) {
+			struct commit *commit = list->item;
+			if (commit->object.flags & UNINTERESTING) {
+				strbuf_setlen(&pathbuf, 0);
+				list_tree_uninteresting(ctx,
+							repo_get_commit_tree(the_repository, commit),
+							&pathbuf);
+				if (ctx->revs->edge_hint_aggressive && !(commit->object.flags & SHOWN)) {
+					commit->object.flags |= SHOWN;
+					show_edge(commit);
+				}
+				continue;
+			}
+			mark_edge_parents_uninteresting(commit, ctx->revs, show_edge);
+		}
+	}
+
+	if (ctx->revs->edge_hint_aggressive) {
+		for (i = 0; i < ctx->revs->cmdline.nr; i++) {
+			struct object *obj = ctx->revs->cmdline.rev[i].item;
+			struct commit *commit = (struct commit *)obj;
+			if (obj->type != OBJ_COMMIT || !(obj->flags & UNINTERESTING))
+				continue;
+			strbuf_setlen(&pathbuf, 0);
+			list_tree_uninteresting(ctx,
+						repo_get_commit_tree(the_repository, commit),
+						&pathbuf);
+			if (!(obj->flags & SHOWN)) {
+				obj->flags |= SHOWN;
+				show_edge(commit);
+			}
+		}
+	}
+
+	strbuf_release(&pathbuf);
+}
+
 void mark_edges_uninteresting(struct rev_info *revs,
 			      show_edge_fn show_edge,
 			      int sparse)
@@ -437,6 +578,8 @@ static void do_traverse(struct traversal_context *ctx)
 			struct tree *tree = repo_get_commit_tree(the_repository,
 								 commit);
 			tree->object.flags |= NOT_USER_GIVEN;
+
+	trace2_printf("add pending tree: %s", oid_to_hex(&tree->object.oid));
 			add_pending_tree(ctx->revs, tree);
 		} else if (commit->object.parsed) {
 			die(_("unable to load root tree for commit %s"),

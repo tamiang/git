@@ -4,6 +4,7 @@
 struct commit;
 struct object;
 struct rev_info;
+struct traversal_context;
 
 typedef void (*show_commit_fn)(struct commit *, void *);
 typedef void (*show_object_fn)(struct object *, const char *, void *);
@@ -12,6 +13,9 @@ typedef void (*show_edge_fn)(struct commit *);
 void mark_edges_uninteresting(struct rev_info *revs,
 			      show_edge_fn show_edge,
 			      int sparse);
+void mark_edges_uninteresting_deep(struct traversal_context *ctx,
+				   show_edge_fn show_edge,
+				   int sparse);
 
 struct oidset;
 struct list_objects_filter_options;

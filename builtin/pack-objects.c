@@ -459,6 +459,8 @@ static unsigned long write_no_reuse_object(struct hashfile *f, struct object_ent
 	struct git_istream *st = NULL;
 	const unsigned hashsz = the_hash_algo->rawsz;
 
+	trace2_printf("write_no_reuse_object(%s)", oid_to_hex(&entry->idx.oid));
+
 	if (!usable_delta) {
 		if (oe_type(entry) == OBJ_BLOB &&
 		    oe_size_greater_than(&to_pack, entry, big_file_threshold) &&
@@ -742,6 +744,14 @@ static off_t write_object(struct hashfile *f,
 		to_reuse = 1;	/* we have it in-pack undeltified,
 				 * and we do not need to deltify it.
 				 */
+
+	trace2_printf("write_object(%s) usable_delta:%d reuse_object:%d to_reuse:%d, delta:%d %s",
+		      oid_to_hex(&entry->idx.oid),
+		      usable_delta,
+		      reuse_object,
+		      to_reuse,
+		      entry->delta_idx,
+		      entry->delta_idx > 0 ? oid_to_hex(&to_pack.objects[entry->delta_idx - 1].idx.oid) : "(none)");
 
 	if (!to_reuse)
 		len = write_no_reuse_object(f, entry, limit, usable_delta);
@@ -1891,15 +1901,7 @@ static void add_pbase_object(struct tree_desc *tree,
 		if (cmp > 0)
 			continue;
 		if (cmp < 0) {
-
-	trace2_region_leave("pack-objects", "add_pbase_object", the_repository);
-			return;
-		}
-		if (name[cmplen] != '/') {
-			trace2_printf("%s.%d", __FILE__, __LINE__);
-			add_object_entry(&entry.oid,
-					 object_type(entry.mode),
-					 fullname, 1);
+			trace2_printf("LEAVING LOOP EARLY???");
 	trace2_region_leave("pack-objects", "add_pbase_object", the_repository);
 			return;
 		}
@@ -1917,6 +1919,11 @@ static void add_pbase_object(struct tree_desc *tree,
 
 			add_pbase_object(&sub, down, downlen, fullname);
 			pbase_tree_put(tree);
+		} else {
+			trace2_printf("adding object entry for %s'%s' %s.%d", oid_to_hex(&entry.oid), fullname, __FILE__, __LINE__);
+			add_object_entry(&entry.oid,
+					 object_type(entry.mode),
+					 fullname, 1);
 		}
 	}
 	trace2_region_leave("pack-objects", "add_pbase_object", the_repository);
@@ -2060,7 +2067,8 @@ static int can_reuse_delta(const struct object_id *base_oid,
 {
 	struct object_entry *base;
 
-	trace2_printf("can_reuse_delta(%s, %s, _)", oid_to_hex(base_oid), oid_to_hex(&delta->idx.oid));
+	trace2_printf("can_reuse_delta(%s, %s, _)",
+		      oid_to_hex(base_oid), oid_to_hex(&delta->idx.oid));
 
 	/*
 	 * First see if we're already sending the base (or it's explicitly in
@@ -2863,7 +2871,9 @@ trace2_printf("find_deltas:\tidx=%d\tcount=%d\tlist_size=%d", idx, count, *list_
 			count--;
 		}
 
-		trace2_printf("looking at object %s with list_size:%"PRIu32" %s.%d", oid_to_hex(&entry->idx.oid), (uint32_t)(*list_size), __FILE__, __LINE__);
+		trace2_printf("looking at object %s with list_size:%"PRIu32" %s.%d",
+			      oid_to_hex(&entry->idx.oid), (uint32_t)(*list_size),
+			      __FILE__, __LINE__);
 
 		/* We do not compute delta to *create* objects we are not
 		 * going to pack.
@@ -2971,6 +2981,8 @@ trace2_printf("find_deltas:\tidx=%d\tcount=%d\tlist_size=%d", idx, count, *list_
 		}
 
 		next:
+		trace2_printf("moving on to next... %s.%d",
+			      __FILE__, __LINE__);
 		idx++;
 		if (count + 1 < window)
 			count++;
@@ -4231,6 +4243,29 @@ static void mark_bitmap_preferred_tips(void)
 	}
 }
 
+MAYBE_UNUSED
+static void manipulate_flags(int from, int to)
+{
+	int nr_objects = get_max_object_index();
+	int num_changed = 0;
+
+	trace2_region_enter("pack-objects", "manipulate-flags", the_repository);
+
+	for (uint32_t i = 0; i < nr_objects; i++) {
+		struct object *obj = get_indexed_object(i);
+
+		if (!obj || !(obj->flags & from))
+			continue;
+
+		num_changed++;
+		obj->flags ^= from;
+		obj->flags |= to;
+	}
+
+	trace2_data_intmax("pack-objects", the_repository, "num-changed", num_changed);
+	trace2_region_leave("pack-objects", "manipulate-flags", the_repository);
+}
+
 static void get_object_list(struct rev_info *revs, int ac, const char **av)
 {
 	struct setup_revision_opt s_r_opt = {
@@ -4292,6 +4327,10 @@ static void get_object_list(struct rev_info *revs, int ac, const char **av)
 
 	if (!fn_show_object)
 		fn_show_object = show_object;
+
+/*
+	manipulate_flags(UNINTERESTING, BOUNDARY);
+*/
 	traverse_commit_list(revs,
 			     show_commit, fn_show_object,
 			     NULL);
@@ -4581,9 +4620,7 @@ int cmd_pack_objects(int argc, const char **argv, const char *prefix)
 	strvec_push(&rp, "pack-objects");
 	if (thin) {
 		use_internal_rev_list = 1;
-		strvec_push(&rp, shallow
-				? "--objects-edge-aggressive"
-				: "--objects-edge");
+		strvec_push(&rp, "--objects-edge-aggressive");
 	} else
 		strvec_push(&rp, "--objects");
 

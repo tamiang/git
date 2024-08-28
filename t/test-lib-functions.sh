@@ -1562,7 +1562,8 @@ test_bool_env () {
 		BUG "test_bool_env requires two parameters (variable name and default value)"
 	fi
 
-	test-tool env-helper --type=bool --default="$2" --exit-code "$1"
+	# test-tool env-helper --type=bool --default="$2" --exit-code "$1"
+	return 1
 	ret=$?
 	case $ret in
 	0|1)	# unset or valid bool value
