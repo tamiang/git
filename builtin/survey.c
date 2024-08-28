@@ -19,6 +19,7 @@
 #include "tree.h"
 #include "tree-walk.h"
 #include "color.h"
+#include "path-walk.h"
 
 static const char * const survey_usage[] = {
 	N_("(EXPERIMENTAL!) git survey <options>"),
