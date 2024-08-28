@@ -16,6 +16,7 @@
 #include "strmap.h"
 #include "strvec.h"
 #include "trace2.h"
+#include "blob.h"
 #include "tree.h"
 #include "tree-walk.h"
 #include "color.h"
@@ -69,6 +70,10 @@ struct survey_opts {
 
 	int show_largest_blobs_by_size_bytes;
 
+	int show_largest_paths_by_nr_entries;
+	int show_largest_paths_by_compressed_entries;
+	int show_largest_paths_by_full_size_entries;
+
 	struct survey_refs_wanted refs;
 };
 
@@ -91,6 +96,10 @@ static struct survey_opts survey_opts = {
 	.show_largest_trees_by_size_bytes = DEFAULT_SHOW_LARGEST_VALUE,
 
 	.show_largest_blobs_by_size_bytes = DEFAULT_SHOW_LARGEST_VALUE,
+
+	.show_largest_paths_by_nr_entries = 10 * DEFAULT_SHOW_LARGEST_VALUE,
+	.show_largest_paths_by_compressed_entries = 10 * DEFAULT_SHOW_LARGEST_VALUE,
+	.show_largest_paths_by_full_size_entries = 10 * DEFAULT_SHOW_LARGEST_VALUE,
 
 	.refs.want_all_refs = 0,
 
@@ -224,6 +233,8 @@ static int survey_load_config_cb(const char *var, const char *value,
 		survey_opts.show_largest_blobs_by_size_bytes = git_config_ulong(var, value, ctx->kvi);
 		return 0;
 	}
+
+	/* TODO: add config for path scopes. */
 
 	return git_default_config(var, value, ctx, pvoid);
 }
@@ -731,6 +742,391 @@ static void alloc_blob_by_size(void)
 					     OBJ_BLOB);
 }
 
+/*
+ * Remember the largest n _paths_ for some scaling dimension.  This
+ * could be the observed object size or number of different versions.
+ * We'll use this to generate a sorted vector in the output for that
+ * dimension.
+ */
+struct large_path {
+	uint64_t size;
+
+	/**
+	 * Duplicate the given path.
+	 */
+	struct strbuf path;
+};
+
+struct large_path_vec_labels {
+	const char *dimension;
+	const char *item;
+};
+
+struct large_path_vec {
+	const struct large_path_vec_labels *labels_json;
+	const struct large_path_vec_labels *labels_pretty;
+	uint64_t nr_items;
+	enum object_type type;
+	struct large_path items[FLEX_ARRAY]; /* nr_items */
+};
+
+static struct large_path_vec *alloc_large_path_vec(
+	const struct large_path_vec_labels *labels_json,
+	const struct large_path_vec_labels *labels_pretty,
+	uint64_t nr_items,
+	enum object_type type)
+{
+	struct large_path_vec *vec;
+	size_t flex_len = nr_items * sizeof(struct large_path);
+
+	if (!nr_items)
+		return NULL;
+
+	vec = xcalloc(1, (sizeof(struct large_path_vec) + flex_len));
+	vec->labels_json = labels_json;
+	vec->labels_pretty = labels_pretty;
+	vec->nr_items = nr_items;
+	vec->type = type;
+
+	for (uint64_t k = 0; k < nr_items; k++) {
+		strbuf_init(&vec->items[k].path, 64);
+	}
+
+	return vec;
+}
+
+static void free_large_path_vec(struct large_path_vec *vec)
+{
+	size_t k;
+
+	for (k = 0; k < vec->nr_items; k++) {
+		strbuf_release(&vec->items[k].path);
+	}
+
+	free(vec);
+}
+
+static void maybe_insert_large_path(struct large_path_vec *vec,
+				    uint64_t size,
+				    const char *path)
+{
+	size_t rest_len;
+	size_t k;
+
+	if (!vec || !vec->nr_items)
+		return;
+
+	/*
+	 * Since the odds an object being among the largest n
+	 * is small, shortcut and see if it is smaller than
+	 * the smallest one in our set and quickly reject it.
+	 */
+	if (size < vec->items[vec->nr_items - 1].size)
+		return;
+
+	for (k = 0; k < vec->nr_items; k++) {
+		struct strbuf old_buf;
+		if (size < vec->items[k].size)
+			continue;
+
+		/* grab the old buffer for reuse later */
+		memcpy(&old_buf, &vec->items[vec->nr_items - 1].path, sizeof(struct strbuf));
+
+		/* push items[k..] down one and insert data for this item here */
+
+		rest_len = (vec->nr_items - k - 1) * sizeof(struct large_path);
+		if (rest_len)
+			memmove(&vec->items[k + 1], &vec->items[k], rest_len);
+
+		memset(&vec->items[k], 0, sizeof(struct large_path));
+		vec->items[k].size = size;
+
+		strbuf_setlen(&old_buf, 0);
+		strbuf_addstr(&old_buf, path);
+		memcpy(&vec->items[k].path, &old_buf, sizeof(struct strbuf));
+		return;
+	}
+}
+
+/*
+ * Stats for objects by path.
+ */
+struct survey_paths {
+	struct survey_stats_base_object base;
+
+	/*
+	 * Keep a vector of the most-frequently updated trees.
+	 */
+	struct large_path_vec *vec_largest_dir_by_num_trees;
+
+	/*
+	 * Keep a vector of the most-frequently updated blob.
+	 */
+	struct large_path_vec *vec_largest_file_by_num_blobs;
+
+	/*
+	 * Keep a vector of the directories with largest total
+	 * on-disk size and by inflated size.
+	 */
+	struct large_path_vec *vec_largest_dir_by_disk_size;
+	struct large_path_vec *vec_largest_dir_by_inflated_size;
+
+	/*
+	 * Keep a vector of the directories with largest total
+	 * on-disk size and by inflated size.
+	 */
+	struct large_path_vec *vec_largest_file_by_disk_size;
+	struct large_path_vec *vec_largest_file_by_inflated_size;
+
+	/*
+	 * A histogram of the directory paths and their number of
+	 * changes in history.
+	 */
+	struct obj_hist_bin tree_iterations_qbin[QBIN_LEN];
+
+	/*
+	 * A histogram of the directory paths and their size
+	 * across history.
+	 */
+	struct obj_hist_bin tree_size_bin[HBIN_LEN];
+
+	/*
+	 * A histogram of the file paths and their number of
+	 * changes in history.
+	 */
+	struct obj_hist_bin blob_iterations_qbin[QBIN_LEN];
+
+	/*
+	 * A histogram of the file paths and their sizes across history.
+	 * Includes on-disk and inflated sizes.
+	 */
+	struct obj_hist_bin blob_size_bin[HBIN_LEN];
+};
+
+struct survey_paths survey_paths;
+
+static void alloc_dir_by_iterations(void)
+{
+	static struct large_path_vec_labels json = {
+		.dimension = "largest_dirs_by_iterations",
+		.item = "iterations",
+	};
+	static struct large_path_vec_labels pretty = {
+		.dimension = "Largest Directories by Number of Versions",
+		.item = "Iterations",
+	};
+
+	if (survey_opts.show_largest_paths_by_nr_entries) {
+		survey_paths.vec_largest_dir_by_num_trees =
+			alloc_large_path_vec(&json, &pretty,
+					     survey_opts.show_largest_paths_by_nr_entries,
+					     OBJ_BLOB);
+	}
+}
+
+static void alloc_dir_by_size_on_disk(void)
+{
+	static struct large_path_vec_labels json = {
+		.dimension = "largest_dirs_by_disk_size",
+		.item = "size",
+	};
+	static struct large_path_vec_labels pretty = {
+		.dimension = "Largest Directories by Disk Size",
+		.item = "Size",
+	};
+
+	if (survey_opts.show_largest_paths_by_compressed_entries) {
+		survey_paths.vec_largest_dir_by_disk_size =
+			alloc_large_path_vec(&json, &pretty,
+					     survey_opts.show_largest_paths_by_compressed_entries,
+					     OBJ_BLOB);
+	}
+}
+
+static void alloc_dir_by_inflated_size(void)
+{
+	static struct large_path_vec_labels json = {
+		.dimension = "largest_dirs_by_inflatd_size",
+		.item = "size",
+	};
+	static struct large_path_vec_labels pretty = {
+		.dimension = "Largest Directories by Inflated Size",
+		.item = "Size",
+	};
+
+	if (survey_opts.show_largest_paths_by_full_size_entries) {
+		survey_paths.vec_largest_dir_by_inflated_size =
+			alloc_large_path_vec(&json, &pretty,
+					     survey_opts.show_largest_paths_by_full_size_entries,
+					     OBJ_BLOB);
+	}
+}
+
+static void alloc_file_by_iterations(void)
+{
+	static struct large_path_vec_labels json = {
+		.dimension = "largest_files_by_iterations",
+		.item = "iterations",
+	};
+	static struct large_path_vec_labels pretty = {
+		.dimension = "Largest Files by Number of Versions",
+		.item = "Iterations",
+	};
+
+	if (survey_opts.show_largest_paths_by_nr_entries) {
+		survey_paths.vec_largest_file_by_num_blobs =
+			alloc_large_path_vec(&json, &pretty,
+					     survey_opts.show_largest_paths_by_nr_entries,
+					     OBJ_BLOB);
+	}
+}
+
+static void alloc_file_by_size_on_disk(void)
+{
+	static struct large_path_vec_labels json = {
+		.dimension = "largest_files_by_disk_size",
+		.item = "size",
+	};
+	static struct large_path_vec_labels pretty = {
+		.dimension = "Largest Files by Disk Size",
+		.item = "Size",
+	};
+
+	if (survey_opts.show_largest_paths_by_compressed_entries) {
+		survey_paths.vec_largest_file_by_disk_size =
+			alloc_large_path_vec(&json, &pretty,
+					     survey_opts.show_largest_paths_by_compressed_entries,
+					     OBJ_BLOB);
+	}
+}
+
+static void alloc_file_by_inflated_size(void)
+{
+	static struct large_path_vec_labels json = {
+		.dimension = "largest_files_by_inflatd_size",
+		.item = "size",
+	};
+	static struct large_path_vec_labels pretty = {
+		.dimension = "Largest Files by Inflated Size",
+		.item = "Size",
+	};
+
+	if (survey_opts.show_largest_paths_by_full_size_entries) {
+		survey_paths.vec_largest_file_by_inflated_size =
+			alloc_large_path_vec(&json, &pretty,
+					     survey_opts.show_largest_paths_by_full_size_entries,
+					     OBJ_BLOB);
+	}
+}
+
+static int fill_in_path_object(struct object *object,
+			       enum object_type type_expected,
+			       unsigned long *p_object_length,
+			       off_t *p_disk_sizep)
+{
+	struct object_info oi = OBJECT_INFO_INIT;
+	unsigned oi_flags = OBJECT_INFO_FOR_PREFETCH;
+	unsigned long object_length = 0;
+	off_t disk_sizep = 0;
+	enum object_type type;
+
+	oi.typep = &type;
+	oi.sizep = &object_length;
+	oi.disk_sizep = &disk_sizep;
+
+	if (oid_object_info_extended(the_repository, &object->oid, &oi, oi_flags) < 0 ||
+	    type != type_expected) {
+		return 1;
+	}
+
+
+	if (p_object_length)
+		*p_object_length = object_length;
+	if (p_disk_sizep)
+		*p_disk_sizep = disk_sizep;
+
+	return 0;
+}
+
+static int check_tree_stats(const char *path,
+			    struct oid_array *oids,
+			    enum object_type type,
+			    void *data)
+{
+	struct survey_paths *pdata = data;
+	size_t total_iterations = oids->nr;
+	off_t total_disk_size = 0;
+	off_t total_inflate_size = 0;
+	int disk_bin;
+
+	for (size_t i = 0; i < oids->nr; i++) {
+		struct object_id *oid = &oids->oid[i];
+		struct tree *tree = lookup_tree(the_repository, oid);
+		unsigned long object_length = 0;
+		off_t disk_size = 0;
+
+		fill_in_path_object(&tree->object, OBJ_TREE, &object_length, &disk_size);
+
+		total_disk_size += disk_size;
+		total_inflate_size += object_length;
+	}
+
+	disk_bin = hbin(total_disk_size);
+
+	maybe_insert_large_path(pdata->vec_largest_dir_by_disk_size, total_disk_size, path);
+	maybe_insert_large_path(pdata->vec_largest_dir_by_inflated_size, total_inflate_size, path);
+	maybe_insert_large_path(pdata->vec_largest_dir_by_num_trees, total_iterations, path);
+
+	incr_obj_hist_bin(&pdata->tree_size_bin[disk_bin], total_inflate_size, total_disk_size);
+
+	return 0;
+}
+
+static int check_blob_stats(const char *path,
+			    struct oid_array *oids,
+			    enum object_type type,
+			    void *data)
+{
+	struct survey_paths *pdata = data;
+	size_t total_iterations = oids->nr;
+	off_t total_disk_size = 0;
+	off_t total_inflate_size = 0;
+	int disk_bin;
+
+	for (size_t i = 0; i < oids->nr; i++) {
+		struct object_id *oid = &oids->oid[i];
+		struct blob *blob = lookup_blob(the_repository, oid);
+		unsigned long object_length;
+		off_t disk_size;
+
+		fill_in_path_object(&blob->object, OBJ_BLOB, &object_length, &disk_size);
+
+		total_disk_size += disk_size;
+		total_inflate_size += object_length;
+	}
+
+	disk_bin = hbin(total_disk_size);
+
+	maybe_insert_large_path(pdata->vec_largest_file_by_disk_size, total_disk_size, path);
+	maybe_insert_large_path(pdata->vec_largest_file_by_inflated_size, total_inflate_size, path);
+	maybe_insert_large_path(pdata->vec_largest_file_by_num_blobs, total_iterations, path);
+
+	incr_obj_hist_bin(&pdata->blob_size_bin[disk_bin], total_inflate_size, total_disk_size);
+	return 0;
+}
+
+static int check_path_stats(const char *path,
+			    struct oid_array *oids,
+			    enum object_type type,
+			    void *data)
+{
+
+	if (type == OBJ_TREE)
+		return check_tree_stats(path, oids, type, data);
+	else
+		return check_blob_stats(path, oids, type, data);
+}
+
 static void do_load_refs(struct ref_array *ref_array)
 {
 	struct ref_filter filter = REF_FILTER_INIT;
@@ -1023,6 +1419,36 @@ static void do_treewalk_reachable(struct ref_array *ref_array)
 	release_revisions(&rev_info);
 }
 
+static int run_path_stat_calculations(struct ref_array *ref_array)
+{
+	int ret;
+	struct rev_info revs = REV_INFO_INIT;
+	struct path_walk_info info = PATH_WALK_INFO_INIT;
+
+	reset_revision_walk();
+
+	repo_init_revisions(the_repository, &revs, NULL);
+	load_rev_info(&revs, ref_array);
+
+	info.revs = &revs;
+	info.path_fn = check_path_stats;
+	info.path_fn_data = &survey_paths;
+
+	alloc_dir_by_iterations();
+	alloc_dir_by_size_on_disk();
+	alloc_dir_by_inflated_size();
+
+	alloc_file_by_iterations();
+	alloc_file_by_size_on_disk();
+	alloc_file_by_inflated_size();
+
+	ret = walk_objects_by_path(&info);
+
+	release_revisions(&revs);
+
+	return ret;
+}
+
 /*
  * If we want this type of ref, increment counters and return 1.
  */
@@ -1250,6 +1676,10 @@ static void survey_phase_refs(void)
 	trace2_region_enter("survey", "phase/calcstats", the_repository);
 	do_calc_stats_refs(&ref_array);
 	trace2_region_leave("survey", "phase/calcstats", the_repository);
+
+	trace2_region_enter("survey", "phase/pathstats", the_repository);
+	run_path_stat_calculations(&ref_array);
+	trace2_region_leave("survey", "phase/pathstats", the_repository);
 
 	if (survey_opts.show_name_rev) {
 		trace2_region_enter("survey", "phase/namerev", the_repository);
@@ -1986,6 +2416,70 @@ static void fmt_large_item_vec(struct strbuf *buf,
 	fmt_large_item_hr(buf, indent, name_length, name_rev_length);
 }
 
+static void fmt_large_path_hdr(struct strbuf *buf,
+			       int indent,
+			       int name_length,
+			       const char *item_hdr_label)
+{
+	if (indent)
+		strbuf_addchars(buf, ' ', indent);
+
+	strbuf_addf(buf, "%-*s | %14s\n", name_length, "Path", item_hdr_label);
+}
+
+static void fmt_large_path_hr(struct strbuf *buf,
+			      int indent,
+			      int name_length)
+{
+	if (indent)
+		strbuf_addchars(buf, ' ', indent);
+
+	strbuf_addchars(buf, '-', name_length);
+	strbuf_addstr(buf, "-+-");
+	strbuf_addchars(buf, '-', 14);
+	strbuf_addch(buf, '\n');
+}
+
+static void fmt_large_path_row(struct strbuf *buf,
+			       int indent,
+			       int name_length,
+			       struct large_path *pitem)
+{
+	if (indent)
+		strbuf_addchars(buf, ' ', indent);
+
+	strbuf_addf(buf, " %-*s | ", name_length, pitem->path.buf);
+	strbuf_addf(buf, "%14"PRIuMAX"\n", pitem->size);
+}
+
+static void fmt_large_path_vec(struct strbuf *buf,
+			       int indent,
+			       struct large_path_vec *pvec)
+{
+	int name_length = 0;
+	int k;
+
+	/* Add "Name" column for trees and blobs. This is relative pathname. */
+	for (k = 0; k < pvec->nr_items; k++)
+		if (name_length < pvec->items[k].path.len)
+			name_length = pvec->items[k].path.len;
+	if (name_length < 4) /* strlen("Name") */
+		name_length = 4;
+
+	strbuf_addch(buf, '\n');
+	fmt_txt_line(buf, indent, pvec->labels_pretty->dimension);
+	fmt_large_path_hr(buf, indent, name_length);
+	fmt_large_path_hdr(buf, indent, name_length, pvec->labels_pretty->item);
+	fmt_large_path_hr(buf, indent, name_length);
+
+	for (k = 0; k < pvec->nr_items; k++) {
+		struct large_path *pk = &pvec->items[k];
+		fmt_large_path_row(buf, indent, name_length, pk);
+	}
+
+	fmt_large_path_hr(buf, indent, name_length);
+}
+
 static void pretty_print_survey_hdr(void)
 {
 	struct strbuf buf = STRBUF_INIT;
@@ -2248,6 +2742,36 @@ static void pretty_print_blobs(int indent)
 	strbuf_release(&buf);
 }
 
+static void pretty_print_path_stats(int indent)
+{
+	struct strbuf buf = STRBUF_INIT;
+	int indent1 = indent + 4;
+	int k;
+
+	const char *intro[] = {
+		"",
+		"PATHS",
+		"-------------------------------------------------------------------------------",
+		"",
+		NULL
+	};
+
+	k = 0;
+	while (intro[k])
+		fmt_txt_line(&buf, indent, intro[k++]);
+
+	fmt_large_path_vec(&buf, indent1, survey_paths.vec_largest_dir_by_num_trees);
+	fmt_large_path_vec(&buf, indent1, survey_paths.vec_largest_dir_by_disk_size);
+	fmt_large_path_vec(&buf, indent1, survey_paths.vec_largest_dir_by_inflated_size);
+	fmt_large_path_vec(&buf, indent1, survey_paths.vec_largest_file_by_num_blobs);
+	fmt_large_path_vec(&buf, indent1, survey_paths.vec_largest_file_by_disk_size);
+	fmt_large_path_vec(&buf, indent1, survey_paths.vec_largest_file_by_inflated_size);
+
+	strbuf_addch(&buf, '\n');
+	fwrite(buf.buf, 1, buf.len, stdout);
+	strbuf_release(&buf);
+}
+
 /*
  * Print all of the stats that we have collected in a more pretty format.
  */
@@ -2259,6 +2783,8 @@ static void survey_print_results_pretty(void)
 	pretty_print_commits(0);
 	pretty_print_trees(0);
 	pretty_print_blobs(0);
+
+	pretty_print_path_stats(0);
 }
 
 int cmd_survey(int argc, const char **argv, const char *prefix)
@@ -2292,11 +2818,19 @@ int cmd_survey(int argc, const char **argv, const char *prefix)
 		survey_print_results_pretty();
 
 	strvec_clear(&survey_vec_refs_wanted);
+
 	free_large_item_vec(survey_stats.commits.vec_largest_by_nr_parents);
 	free_large_item_vec(survey_stats.commits.vec_largest_by_size_bytes);
 	free_large_item_vec(survey_stats.trees.vec_largest_by_nr_entries);
 	free_large_item_vec(survey_stats.trees.vec_largest_by_size_bytes);
 	free_large_item_vec(survey_stats.blobs.vec_largest_by_size_bytes);
+
+	free_large_path_vec(survey_paths.vec_largest_dir_by_num_trees);
+	free_large_path_vec(survey_paths.vec_largest_dir_by_disk_size);
+	free_large_path_vec(survey_paths.vec_largest_dir_by_inflated_size);
+	free_large_path_vec(survey_paths.vec_largest_file_by_num_blobs);
+	free_large_path_vec(survey_paths.vec_largest_file_by_disk_size);
+	free_large_path_vec(survey_paths.vec_largest_file_by_inflated_size);
 
 	return 0;
 }
