@@ -148,7 +148,6 @@ static int walk_path(struct path_walk_info *info,
 	}
 
 	/* Evaluate function pointer on this data. */
-	trace2_printf("calling path_fn on %s", path);
 	ret = info->path_fn(path, &list->oids, list->type, info->path_fn_data);
 
 	/* Expand data for children. */
