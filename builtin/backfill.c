@@ -61,7 +61,7 @@ static int fill_missing_blobs(const char *path,
 	struct backfill_context *ctx = data;
 
 	if (type != OBJ_BLOB)
-		return 0;
+		BUG("fill_missing_blobs only takes blob objects");
 
 	for (size_t i = 0; i < list->nr; i++) {
 		off_t size = 0;

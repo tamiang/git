@@ -83,6 +83,10 @@ static int add_children(struct path_walk_context *ctx,
 		if (S_ISGITLINK(entry.mode))
 			continue;
 
+		/* If the caller doesn't want blobs, then don't bother. */
+		if (!ctx->info->blobs && type == OBJ_BLOB)
+			continue;
+
 		if (type == OBJ_TREE) {
 			struct tree *child = lookup_tree(ctx->repo, &entry.oid);
 			o = child ? &child->object : NULL;
@@ -164,9 +168,11 @@ static int walk_path(struct path_walk_context *ctx,
 
 	list = strmap_get(&ctx->paths_to_lists, path);
 
-	/* Evaluate function pointer on this data. */
-	ret = ctx->info->path_fn(path, &list->oids, list->type,
-				 ctx->info->path_fn_data);
+	/* Evaluate function pointer on this data, if requested. */
+	if ((list->type == OBJ_TREE && ctx->info->trees) ||
+	    (list->type == OBJ_BLOB && ctx->info->blobs))
+		ret = ctx->info->path_fn(path, &list->oids, list->type,
+					ctx->info->path_fn_data);
 
 	/* Expand data for children. */
 	if (list->type == OBJ_TREE) {
@@ -206,7 +212,8 @@ int walk_objects_by_path(struct path_walk_info *info)
 	int ret = 0;
 	size_t commits_nr = 0, paths_nr = 0;
 	struct commit *c;
-	struct type_and_oid_list *list;
+	struct type_and_oid_list *commit_list;
+	struct type_and_oid_list *root_tree_list;
 	struct path_walk_context ctx = {
 		.repo = info->revs->repo,
 		.revs = info->revs,
@@ -217,26 +224,48 @@ int walk_objects_by_path(struct path_walk_info *info)
 
 	trace2_region_enter("path-walk", "commit-walk", info->revs->repo);
 
+	CALLOC_ARRAY(commit_list, 1);
+	commit_list->type = OBJ_COMMIT;
+
 	/* Insert a single list for the root tree into the paths. */
-	CALLOC_ARRAY(list, 1);
-	list->type = OBJ_TREE;
-	strmap_put(&ctx.paths_to_lists, "", list);
+	CALLOC_ARRAY(root_tree_list, 1);
+	root_tree_list->type = OBJ_TREE;
+	strmap_put(&ctx.paths_to_lists, "", root_tree_list);
 
 	if (prepare_revision_walk(info->revs))
 		die(_("failed to setup revision walk"));
 
 	while ((c = get_revision(info->revs))) {
-		struct object_id *oid = get_commit_tree_oid(c);
-		struct tree *t = lookup_tree(info->revs->repo, oid);
+		struct object_id *oid;
+		struct tree *t;
+		commits_nr++;
+
+		if (info->commits)
+			oid_array_append(&commit_list->oids,
+					 &c->object.oid);
+		
+		/* If we only care about commits, then skip trees. */
+		if (!info->trees && !info->blobs)
+			continue;
+
+		oid = get_commit_tree_oid(c);
+		t = lookup_tree(info->revs->repo, oid);
 
 		if (t && (c->object.flags & UNINTERESTING))
 			t->object.flags |= UNINTERESTING;
 
-		oid_array_append(&list->oids, oid);
+		oid_array_append(&root_tree_list->oids, oid);
 	}
 
 	trace2_data_intmax("path-walk", ctx.repo, "commits", commits_nr);
 	trace2_region_leave("path-walk", "commit-walk", info->revs->repo);
+
+	/* Track all commits. */
+	if (info->commits)
+		ret = info->path_fn("", &commit_list->oids, OBJ_COMMIT,
+				    info->path_fn_data);
+	oid_array_clear(&commit_list->oids);
+	free(commit_list);
 
 	string_list_append(&ctx.path_stack, "");
 

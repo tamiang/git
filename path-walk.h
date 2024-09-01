@@ -33,6 +33,14 @@ struct path_walk_info {
 	void *path_fn_data;
 
 	/**
+	 * Initialize which object types the path_fn should be called on. This
+	 * could also limit the walk to skip blobs if not set.
+	 */
+	int commits;
+	int trees;
+	int blobs;
+
+	/**
 	 * Specify a sparse-checkout definition to match our paths to. Do not
 	 * walk outside of this sparse definition. If the patterns are in
 	 * cone mode, then the search may prune directories that are outside
@@ -43,7 +51,9 @@ struct path_walk_info {
 	struct pattern_list *pl;
 };
 
-#define PATH_WALK_INFO_INIT { 0 }
+#define PATH_WALK_INFO_INIT {   \
+	.blobs = 1,		\
+}
 
 /**
  * Given the configuration of 'info', walk the commits based on 'info->revs' and
