@@ -12,6 +12,7 @@
 #include "oid-array.h"
 
 struct path_walk_test_data {
+	uint32_t commit_nr;
 	uint32_t tree_nr;
 	uint32_t blob_nr;
 };
@@ -23,6 +24,11 @@ static int emit_block(const char *path, struct oid_array *oids,
 	const char *typestr;
 
 	switch (type) {
+	case OBJ_COMMIT:
+		typestr = "COMMIT";
+		tdata->commit_nr += oids->nr;
+		break;
+
 	case OBJ_TREE:
 		typestr = "TREE";
 		tdata->tree_nr += oids->nr;
@@ -55,6 +61,12 @@ int cmd__path_walk(int argc, const char **argv)
 	revs.repo = the_repository;
 
 	for (argi = 0; argi < argc; argi++) {
+		if (!strcmp(argv[argi], "--no-blobs"))
+			info.blobs = 0;
+		if (!strcmp(argv[argi], "--no-trees"))
+			info.trees = 0;
+		if (!strcmp(argv[argi], "--no-commits"))
+			info.commits = 0;
 		if (!strcmp(argv[argi], "--"))
 			break;
 	}
@@ -70,8 +82,8 @@ int cmd__path_walk(int argc, const char **argv)
 
 	res = walk_objects_by_path(&info);
 
-	printf("trees:%d\nblobs:%d\n",
-	       data.tree_nr, data.blob_nr);
+	printf("commits:%d\ntrees:%d\nblobs:%d\n",
+	       data.commit_nr, data.tree_nr, data.blob_nr);
 
 	return res;
 }
