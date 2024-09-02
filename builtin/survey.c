@@ -619,6 +619,9 @@ static int survey_objects_path_walk_fn(const char *path,
 				type, oids->nr);
 	increment_object_totals(ctx, oids, type);
 
+	ctx->progress_nr += oids->nr;
+	display_progress(ctx->progress, ctx->progress_nr);
+
 	return 0;
 }
 
@@ -682,6 +685,11 @@ static void survey_phase_objects(struct survey_context *ctx)
 
 	repo_init_revisions(ctx->repo, &revs, "");
 
+	ctx->progress_nr = 0;
+	ctx->progress_total = ctx->ref_array.nr;
+	if (ctx->opts.show_progress)
+		ctx->progress = start_progress(_("Preparing object walk"),
+					       ctx->progress_total);
 	for (size_t i = 0; i < ctx->ref_array.nr; i++) {
 		struct ref_array_item *item = ctx->ref_array.items[i];
 		struct object_id peeled;
@@ -709,9 +717,17 @@ static void survey_phase_objects(struct survey_context *ctx)
 		default:
 			break;
 		}
-	}
 
+		display_progress(ctx->progress, ++(ctx->progress_nr));
+	}
+	stop_progress(&ctx->progress);
+
+	ctx->progress_nr = 0;
+	ctx->progress_total = 0;
+	if (ctx->opts.show_progress)
+		ctx->progress = start_progress(_("Walking objects"), 0);
 	walk_objects_by_path(&info);
+	stop_progress(&ctx->progress);
 
 	release_revisions(&revs);
 	trace2_region_leave("survey", "phase/objects", ctx->repo);
