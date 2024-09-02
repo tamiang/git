@@ -73,13 +73,14 @@ struct survey_report_object_size_summary {
 	size_t num_missing;
 };
 
-typedef int (*survey_top_size_cmp)(struct survey_report_object_size_summary *s1,
-				   struct survey_report_object_size_summary *s2);
+typedef int (*survey_top_cmp)(void *v1,
+			      void *v2);
 
-MAYBE_UNUSED
-static int cmp_by_nr(struct survey_report_object_size_summary *s1,
-		     struct survey_report_object_size_summary *s2)
+static int cmp_by_nr(void *v1, void *v2)
 {
+	struct survey_report_object_size_summary *s1 = v1;
+	struct survey_report_object_size_summary *s2 = v2;
+
 	if (s1->nr < s2->nr)
 		return -1;
 	if (s1->nr > s2->nr)
@@ -87,10 +88,11 @@ static int cmp_by_nr(struct survey_report_object_size_summary *s1,
 	return 0;
 }
 
-MAYBE_UNUSED
-static int cmp_by_disk_size(struct survey_report_object_size_summary *s1,
-			    struct survey_report_object_size_summary *s2)
+static int cmp_by_disk_size(void *v1, void *v2)
 {
+	struct survey_report_object_size_summary *s1 = v1;
+	struct survey_report_object_size_summary *s2 = v2;
+
 	if (s1->disk_size < s2->disk_size)
 		return -1;
 	if (s1->disk_size > s2->disk_size)
@@ -98,10 +100,11 @@ static int cmp_by_disk_size(struct survey_report_object_size_summary *s1,
 	return 0;
 }
 
-MAYBE_UNUSED
-static int cmp_by_inflated_size(struct survey_report_object_size_summary *s1,
-				struct survey_report_object_size_summary *s2)
+static int cmp_by_inflated_size(void *v1, void *v2)
 {
+	struct survey_report_object_size_summary *s1 = v1;
+	struct survey_report_object_size_summary *s2 = v2;
+
 	if (s1->inflated_size < s2->inflated_size)
 		return -1;
 	if (s1->inflated_size > s2->inflated_size)
@@ -114,42 +117,51 @@ static int cmp_by_inflated_size(struct survey_report_object_size_summary *s1,
  * inserting a new category, reorder the list and free the one that
  * got ejected (if any).
  */
-struct survey_report_top_sizes {
+struct survey_report_top_table {
 	const char *name;
-	survey_top_size_cmp cmp_fn;
-	struct survey_report_object_size_summary *data;
+	survey_top_cmp cmp_fn;
 	size_t nr;
 	size_t alloc;
+
+	/**
+	 * 'data' stores an array of structs and must be cast into
+	 * the proper array type before evaluating an index.
+	 */
+	void *data;
 };
 
-MAYBE_UNUSED
-static void init_top_sizes(struct survey_report_top_sizes *top,
+static void init_top_sizes(struct survey_report_top_table *top,
 			   size_t limit, const char *name,
-			   survey_top_size_cmp cmp)
+			   survey_top_cmp cmp)
 {
+	struct survey_report_object_size_summary *sz_array;
+
 	top->name = name;
+	top->cmp_fn = cmp;
 	top->alloc = limit;
 	top->nr = 0;
-	CALLOC_ARRAY(top->data, limit);
-	top->cmp_fn = cmp;
+
+	CALLOC_ARRAY(sz_array, limit);
+	top->data = sz_array;
 }
 
 MAYBE_UNUSED
-static void clear_top_sizes(struct survey_report_top_sizes *top)
+static void clear_top_sizes(struct survey_report_top_table *top)
 {
+	struct survey_report_object_size_summary *sz_array = top->data;
 	for (size_t i = 0; i < top->nr; i++)
-		free(top->data[i].label);
+		free(sz_array[i].label);
 	free(top->data);
 }
 
-MAYBE_UNUSED
-static void maybe_insert_into_top_size(struct survey_report_top_sizes *top,
+static void maybe_insert_into_top_size(struct survey_report_top_table *top,
 				       struct survey_report_object_size_summary *summary)
 {
+	struct survey_report_object_size_summary *sz_array = top->data;
 	size_t pos = top->nr;
 
 	/* Compare against list from the bottom. */
-	while (pos > 0 && top->cmp_fn(&top->data[pos - 1], summary) < 0)
+	while (pos > 0 && top->cmp_fn(&sz_array[pos - 1], summary) < 0)
 		pos--;
 
 	/* Not big enough! */
@@ -158,15 +170,15 @@ static void maybe_insert_into_top_size(struct survey_report_top_sizes *top,
 
 	/* We need to shift the data. */
 	if (top->nr == top->alloc)
-		free(top->data[top->nr - 1].label);
+		free(sz_array[top->nr - 1].label);
 	else
 		top->nr++;
 
 	for (size_t i = top->nr - 1; i > pos; i--)
-		memcpy(&top->data[i], &top->data[i - 1], sizeof(*top->data));
+		memcpy(&sz_array[i], &sz_array[i - 1], sizeof(*sz_array));
 
-	memcpy(&top->data[pos], summary, sizeof(*summary));
-	top->data[pos].label = xstrdup(summary->label);
+	memcpy(&sz_array[pos], summary, sizeof(*summary));
+	sz_array[pos].label = xstrdup(summary->label);
 }
 
 /**
@@ -178,6 +190,10 @@ struct survey_report {
 	struct survey_report_object_summary reachable_objects;
 
 	struct survey_report_object_size_summary *by_type;
+
+	struct survey_report_top_table *top_paths_by_count;
+	struct survey_report_top_table *top_paths_by_disk;
+	struct survey_report_top_table *top_paths_by_inflate;
 };
 
 #define REPORT_TYPE_COMMIT 0
@@ -420,6 +436,13 @@ static void survey_report_object_sizes(const char *title,
 	clear_table(&table);
 }
 
+static void survey_report_plaintext_sorted_size(
+		struct survey_report_top_table *top)
+{
+	survey_report_object_sizes(top->name,  _("Path"),
+				   top->data, top->nr);
+}
+
 static void survey_report_plaintext(struct survey_context *ctx)
 {
 	printf("GIT SURVEY for \"%s\"\n", ctx->repo->worktree);
@@ -430,6 +453,21 @@ static void survey_report_plaintext(struct survey_context *ctx)
 				   _("Object Type"),
 				   ctx->report.by_type,
 				   REPORT_TYPE_COUNT);
+
+	survey_report_plaintext_sorted_size(
+		&ctx->report.top_paths_by_count[REPORT_TYPE_TREE]);
+	survey_report_plaintext_sorted_size(
+		&ctx->report.top_paths_by_count[REPORT_TYPE_BLOB]);
+
+	survey_report_plaintext_sorted_size(
+		&ctx->report.top_paths_by_disk[REPORT_TYPE_TREE]);
+	survey_report_plaintext_sorted_size(
+		&ctx->report.top_paths_by_disk[REPORT_TYPE_BLOB]);
+
+	survey_report_plaintext_sorted_size(
+		&ctx->report.top_paths_by_inflate[REPORT_TYPE_TREE]);
+	survey_report_plaintext_sorted_size(
+		&ctx->report.top_paths_by_inflate[REPORT_TYPE_BLOB]);
 }
 
 /*
@@ -670,7 +708,8 @@ static void increment_totals(struct survey_context *ctx,
 
 static void increment_object_totals(struct survey_context *ctx,
 				    struct oid_array *oids,
-				    enum object_type type)
+				    enum object_type type,
+				    const char *path)
 {
 	struct survey_report_object_size_summary *total;
 	struct survey_report_object_size_summary summary = { 0 };
@@ -702,6 +741,27 @@ static void increment_object_totals(struct survey_context *ctx,
 	total->disk_size += summary.disk_size;
 	total->inflated_size += summary.inflated_size;
 	total->num_missing += summary.num_missing;
+
+	if (type == OBJ_TREE || type == OBJ_BLOB) {
+		int index = type == OBJ_TREE ?
+			    REPORT_TYPE_TREE : REPORT_TYPE_BLOB;
+		struct survey_report_top_table *top;
+
+		/*
+		 * Temporarily store (const char *) here, but it will
+		 * be duped if inserted and will not be freed.
+		 */
+		summary.label = (char *)path;
+
+		top = ctx->report.top_paths_by_count;
+		maybe_insert_into_top_size(&top[index], &summary);
+
+		top = ctx->report.top_paths_by_disk;
+		maybe_insert_into_top_size(&top[index], &summary);
+
+		top = ctx->report.top_paths_by_inflate;
+		maybe_insert_into_top_size(&top[index], &summary);
+	}
 }
 
 static int survey_objects_path_walk_fn(const char *path,
@@ -713,7 +773,7 @@ static int survey_objects_path_walk_fn(const char *path,
 
 	increment_object_counts(&ctx->report.reachable_objects,
 				type, oids->nr);
-	increment_object_totals(ctx, oids, type);
+	increment_object_totals(ctx, oids, type, path);
 
 	ctx->progress_nr += oids->nr;
 	display_progress(ctx->progress, ctx->progress_nr);
@@ -723,11 +783,31 @@ static int survey_objects_path_walk_fn(const char *path,
 
 static void initialize_report(struct survey_context *ctx)
 {
+	const int top_limit = 100;
+
 	CALLOC_ARRAY(ctx->report.by_type, REPORT_TYPE_COUNT);
 	ctx->report.by_type[REPORT_TYPE_COMMIT].label = xstrdup(_("Commits"));
 	ctx->report.by_type[REPORT_TYPE_TREE].label = xstrdup(_("Trees"));
 	ctx->report.by_type[REPORT_TYPE_BLOB].label = xstrdup(_("Blobs"));
 	ctx->report.by_type[REPORT_TYPE_TAG].label = xstrdup(_("Tags"));
+
+	CALLOC_ARRAY(ctx->report.top_paths_by_count, REPORT_TYPE_COUNT);
+	init_top_sizes(&ctx->report.top_paths_by_count[REPORT_TYPE_TREE],
+		       top_limit, _("TOP DIRECTORIES BY COUNT"), cmp_by_nr);
+	init_top_sizes(&ctx->report.top_paths_by_count[REPORT_TYPE_BLOB],
+		       top_limit, _("TOP FILES BY COUNT"), cmp_by_nr);
+
+	CALLOC_ARRAY(ctx->report.top_paths_by_disk, REPORT_TYPE_COUNT);
+	init_top_sizes(&ctx->report.top_paths_by_disk[REPORT_TYPE_TREE],
+		       top_limit, _("TOP DIRECTORIES BY DISK SIZE"), cmp_by_disk_size);
+	init_top_sizes(&ctx->report.top_paths_by_disk[REPORT_TYPE_BLOB],
+		       top_limit, _("TOP FILES BY DISK SIZE"), cmp_by_disk_size);
+
+	CALLOC_ARRAY(ctx->report.top_paths_by_inflate, REPORT_TYPE_COUNT);
+	init_top_sizes(&ctx->report.top_paths_by_inflate[REPORT_TYPE_TREE],
+		       top_limit, _("TOP DIRECTORIES BY INFLATED SIZE"), cmp_by_inflated_size);
+	init_top_sizes(&ctx->report.top_paths_by_inflate[REPORT_TYPE_BLOB],
+		       top_limit, _("TOP FILES BY INFLATED SIZE"), cmp_by_inflated_size);
 }
 
 static void survey_phase_objects(struct survey_context *ctx)
