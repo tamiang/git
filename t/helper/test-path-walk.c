@@ -49,8 +49,15 @@ static int emit_block(const char *path, struct oid_array *oids,
 		BUG("we do not understand this type");
 	}
 
-	for (size_t i = 0; i < oids->nr; i++)
-		printf("%s:%s:%s\n", typestr, path, oid_to_hex(&oids->oid[i]));
+	for (size_t i = 0; i < oids->nr; i++) {
+		struct object *o = lookup_unknown_object(the_repository,
+							 &oids->oid[i]);
+		printf("%s:%s:%s", typestr, path, oid_to_hex(&oids->oid[i]));
+
+		if (o->flags & UNINTERESTING)
+			printf(":UNINTERESTING");
+		printf("\n");
+	}
 
 	return 0;
 }
@@ -75,6 +82,8 @@ int cmd__path_walk(int argc, const char **argv)
 			info.commits = 0;
 		if (!strcmp(argv[argi], "--no-tags"))
 			info.tags = 0;
+		if (!strcmp(argv[argi], "--prune"))
+			info.prune_all_uninteresting = 1;
 		if (!strcmp(argv[argi], "--"))
 			break;
 	}
