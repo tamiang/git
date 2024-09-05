@@ -44,6 +44,7 @@ struct options {
 		followtags : 1,
 		dry_run : 1,
 		thin : 1,
+		path_walk : 1,
 		/* One of the SEND_PACK_PUSH_CERT_* constants. */
 		push_cert : 2,
 		deepen_relative : 1,
@@ -1371,6 +1372,8 @@ static int push_git(struct discovery *heads, int nr_spec, const char **specs)
 
 	if (options.thin)
 		strvec_push(&args, "--thin");
+	if (options.path_walk)
+		strvec_push(&args, "--path-walk");
 	if (options.dry_run)
 		strvec_push(&args, "--dry-run");
 	if (options.push_cert == SEND_PACK_PUSH_CERT_ALWAYS)
@@ -1551,6 +1554,7 @@ int cmd_main(int argc, const char **argv)
 	struct strbuf buf = STRBUF_INIT;
 	int nongit;
 	int ret = 1;
+	int path_walk = 0;
 
 	setup_git_directory_gently(&nongit);
 	if (argc < 2) {
@@ -1563,6 +1567,9 @@ int cmd_main(int argc, const char **argv)
 	options.thin = 1;
 	string_list_init_dup(&options.deepen_not);
 	string_list_init_dup(&options.push_options);
+
+	if (!git_config_get_bool("push.pathwalk", &path_walk) && path_walk)
+		options.path_walk = 1;
 
 	/*
 	 * Just report "remote-curl" here (folding all the various aliases
