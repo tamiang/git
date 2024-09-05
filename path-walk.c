@@ -271,7 +271,7 @@ int walk_objects_by_path(struct path_walk_info *info)
 	CALLOC_ARRAY(root_tree_list, 1);
 	root_tree_list->type = OBJ_TREE;
 	root_tree_list->maybe_interesting = 1;
-	strmap_put(&ctx.paths_to_lists, "", root_tree_list);
+	strmap_put(&ctx.paths_to_lists, "/", root_tree_list);
 
 	if (prepare_revision_walk(info->revs))
 		die(_("failed to setup revision walk"));
@@ -284,7 +284,7 @@ int walk_objects_by_path(struct path_walk_info *info)
 		if (info->commits)
 			oid_array_append(&commit_list->oids,
 					 &c->object.oid);
-		
+
 		/* If we only care about commits, then skip trees. */
 		if (!info->trees && !info->blobs)
 			continue;
@@ -306,10 +306,27 @@ int walk_objects_by_path(struct path_walk_info *info)
 
 	/* Track all commits. */
 	if (info->commits)
-		ret = info->path_fn("", &commit_list->oids, OBJ_COMMIT,
+		ret = info->path_fn("initial", &commit_list->oids, OBJ_COMMIT,
 				    info->path_fn_data);
 	oid_array_clear(&commit_list->oids);
 	free(commit_list);
+
+	if (info->tags) {
+		struct oid_array tags = OID_ARRAY_INIT;
+		/*
+		 * Walk any pending objects at this point, but they should only
+		 * be tags.
+		 */
+		for (size_t i = 0; i < info->revs->pending.nr; i++) {
+			struct object_array_entry *pending = info->revs->pending.objects + i;
+			struct object *obj = pending->item;
+			oid_array_append(&tags, &obj->oid);
+		}
+
+		info->path_fn("initial", &tags, OBJ_TAG, info->path_fn_data);
+
+		oid_array_clear(&tags);
+	}
 
 	/*
 	 * Before performing a DFS of our paths and emitting them as interesting,

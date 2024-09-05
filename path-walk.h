@@ -36,6 +36,7 @@ struct path_walk_info {
 	 * Initialize which object types the path_fn should be called on. This
 	 * could also limit the walk to skip blobs if not set.
 	 */
+	int tags;
 	int commits;
 	int trees;
 	int blobs;
