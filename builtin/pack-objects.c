@@ -4534,6 +4534,7 @@ int cmd_pack_objects(int argc, const char **argv, const char *prefix)
 
 	disable_replace_refs();
 
+	path_walk = git_env_bool("GIT_TEST_PACK_PATH_WALK", 0);
 	sparse = git_env_bool("GIT_TEST_PACK_SPARSE", -1);
 	if (the_repository->gitdir) {
 		prepare_repo_settings(the_repository);
