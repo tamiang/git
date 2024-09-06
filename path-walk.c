@@ -334,13 +334,16 @@ int walk_objects_by_path(struct path_walk_info *info)
 	 * the sparse algorithm if prune_all_uninteresting was set.
 	 */
 	if (has_uninteresting) {
+		trace2_region_enter("path-walk", "uninteresting-walk", info->revs->repo);
 		if (info->prune_all_uninteresting)
 			mark_trees_uninteresting_sparse(ctx.repo, &root_tree_set);
 		else
 			mark_trees_uninteresting_dense(ctx.repo, &root_tree_set);
+		trace2_region_leave("path-walk", "uninteresting-walk", info->revs->repo);
 	}
 	oidset_clear(&root_tree_set);
 
+	trace2_region_enter("path-walk", "path-walk", info->revs->repo);
 	string_list_append(&ctx.path_stack, root_path);
 
 	while (!ret && ctx.path_stack.nr) {
@@ -353,6 +356,7 @@ int walk_objects_by_path(struct path_walk_info *info)
 		free(path);
 	}
 	trace2_data_intmax("path-walk", ctx.repo, "paths", paths_nr);
+	trace2_region_leave("path-walk", "path-walk", info->revs->repo);
 
 	clear_strmap(&ctx.paths_to_lists);
 	string_list_clear(&ctx.path_stack, 0);
