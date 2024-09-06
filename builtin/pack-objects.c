@@ -4287,15 +4287,15 @@ static void get_object_list(struct rev_info *revs, int ac, const char **av)
 	if (write_bitmap_index)
 		mark_bitmap_preferred_tips();
 
+	if (!fn_show_object)
+		fn_show_object = show_object;
+
 	if (path_walk) {
 		get_object_list_path_walk(revs);
 	} else {
 		if (prepare_revision_walk(revs))
 			die(_("revision walk setup failed"));
 		mark_edges_uninteresting(revs, show_edge, sparse);
-
-		if (!fn_show_object)
-			fn_show_object = show_object;
 		traverse_commit_list(revs,
 				show_commit, fn_show_object,
 				NULL);

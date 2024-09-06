@@ -271,7 +271,7 @@ int walk_objects_by_path(struct path_walk_info *info)
 	CALLOC_ARRAY(root_tree_list, 1);
 	root_tree_list->type = OBJ_TREE;
 	root_tree_list->maybe_interesting = 1;
-	strmap_put(&ctx.paths_to_lists, "/", root_tree_list);
+	strmap_put(&ctx.paths_to_lists, root_path, root_tree_list);
 
 	if (prepare_revision_walk(info->revs))
 		die(_("failed to setup revision walk"));
