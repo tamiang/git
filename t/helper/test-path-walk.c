@@ -15,6 +15,7 @@ struct path_walk_test_data {
 	uint32_t commit_nr;
 	uint32_t tree_nr;
 	uint32_t blob_nr;
+	uint32_t tag_nr;
 };
 
 static int emit_block(const char *path, struct oid_array *oids,
@@ -37,6 +38,11 @@ static int emit_block(const char *path, struct oid_array *oids,
 	case OBJ_BLOB:
 		typestr = "BLOB";
 		tdata->blob_nr += oids->nr;
+		break;
+
+	case OBJ_TAG:
+		typestr = "TAG";
+		tdata->tag_nr += oids->nr;
 		break;
 
 	default:
@@ -67,6 +73,8 @@ int cmd__path_walk(int argc, const char **argv)
 			info.trees = 0;
 		if (!strcmp(argv[argi], "--no-commits"))
 			info.commits = 0;
+		if (!strcmp(argv[argi], "--no-tags"))
+			info.tags = 0;
 		if (!strcmp(argv[argi], "--"))
 			break;
 	}
@@ -82,8 +90,8 @@ int cmd__path_walk(int argc, const char **argv)
 
 	res = walk_objects_by_path(&info);
 
-	printf("commits:%d\ntrees:%d\nblobs:%d\n",
-	       data.commit_nr, data.tree_nr, data.blob_nr);
+	printf("commits:%d\ntrees:%d\nblobs:%d\ntags:%d\n",
+	       data.commit_nr, data.tree_nr, data.blob_nr, data.tag_nr);
 
 	return res;
 }
