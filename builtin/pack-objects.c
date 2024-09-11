@@ -268,10 +268,13 @@ static struct oidmap configured_exclusions;
 static struct oidset excluded_by_config;
 static int use_full_name_hash = -1;
 
-static inline uint32_t pack_name_hash_fn(const char *name)
+static inline uint64_t pack_name_hash_fn(const char *name)
 {
 	if (use_full_name_hash)
-		return pack_full_name_hash(name);
+		/* Use name-hash as most-significant bits. */
+		return (((uint64_t)pack_name_hash(name)) << 32) |
+			(uint64_t) pack_full_name_hash(name);
+
 	return pack_name_hash(name);
 }
 

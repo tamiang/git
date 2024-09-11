@@ -88,7 +88,7 @@ struct object_entry {
 	struct pack_idx_entry idx;
 	void *delta_data;	/* cached delta (uncompressed) */
 	off_t in_pack_offset;
-	uint32_t hash;			/* name hint hash */
+	uint64_t hash;			/* name hint hash */
 	unsigned size_:OE_SIZE_BITS;
 	unsigned size_valid:1;
 	uint32_t delta_idx;	/* delta base object */
