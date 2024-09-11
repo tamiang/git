@@ -268,16 +268,6 @@ static struct oidmap configured_exclusions;
 static struct oidset excluded_by_config;
 static int use_full_name_hash = -1;
 
-static inline uint64_t pack_name_hash_fn(const char *name)
-{
-	if (use_full_name_hash)
-		/* Use name-hash as most-significant bits. */
-		return (((uint64_t)pack_name_hash(name)) << 32) |
-			(uint64_t) pack_full_name_hash(name);
-
-	return pack_name_hash(name);
-}
-
 /*
  * stats
  */
@@ -1660,6 +1650,7 @@ static int want_object_in_pack(const struct object_id *oid,
 static struct object_entry *create_object_entry(const struct object_id *oid,
 						enum object_type type,
 						uint32_t hash,
+						uint32_t full_hash,
 						int exclude,
 						int no_try_delta,
 						struct packed_git *found_pack,
@@ -1669,6 +1660,7 @@ static struct object_entry *create_object_entry(const struct object_id *oid,
 
 	entry = packlist_alloc(&to_pack, oid);
 	entry->hash = hash;
+	entry->full_hash = full_hash;
 	oe_set_type(entry, type);
 	if (exclude)
 		entry->preferred_base = 1;
@@ -1709,7 +1701,8 @@ static int add_object_entry(const struct object_id *oid, enum object_type type,
 		return 0;
 	}
 
-	create_object_entry(oid, type, pack_name_hash_fn(name),
+	create_object_entry(oid, type, pack_name_hash(name),
+			    pack_full_name_hash(name),
 			    exclude, name && no_try_delta(name),
 			    found_pack, found_offset);
 	return 1;
@@ -1728,7 +1721,7 @@ static int add_object_entry_from_bitmap(const struct object_id *oid,
 	if (!want_object_in_pack(oid, 0, &pack, &offset))
 		return 0;
 
-	create_object_entry(oid, type, name_hash, 0, 0, pack, offset);
+	create_object_entry(oid, type, name_hash, 0, 0, 0, pack, offset);
 	return 1;
 }
 
@@ -1923,7 +1916,7 @@ static void add_preferred_base_object(const char *name)
 {
 	struct pbase_tree *it;
 	size_t cmplen;
-	unsigned hash = pack_name_hash_fn(name);
+	unsigned hash = pack_name_hash(name);
 
 	if (!num_preferred_base || check_pbase_path(hash))
 		return;
@@ -2493,6 +2486,48 @@ static int type_size_sort(const void *_a, const void *_b)
 	return a < b ? -1 : (a > b);  /* newest first */
 }
 
+/*
+ * We search for deltas in a list sorted by type, by filename hash, and then
+ * by size, so that we see progressively smaller and smaller files.
+ * That's because we prefer deltas to be from the bigger file
+ * to the smaller -- deletes are potentially cheaper, but perhaps
+ * more importantly, the bigger file is likely the more recent
+ * one.  The deepest deltas are therefore the oldest objects which are
+ * less susceptible to be accessed often.
+ */
+static int type_full_size_sort(const void *_a, const void *_b)
+{
+	const struct object_entry *a = *(struct object_entry **)_a;
+	const struct object_entry *b = *(struct object_entry **)_b;
+	const enum object_type a_type = oe_type(a);
+	const enum object_type b_type = oe_type(b);
+	const unsigned long a_size = SIZE(a);
+	const unsigned long b_size = SIZE(b);
+
+	if (a_type > b_type)
+		return -1;
+	if (a_type < b_type)
+		return 1;
+	if (a->full_hash > b->full_hash)
+		return -1;
+	if (a->full_hash < b->full_hash)
+		return 1;
+	if (a->preferred_base > b->preferred_base)
+		return -1;
+	if (a->preferred_base < b->preferred_base)
+		return 1;
+	if (use_delta_islands) {
+		const int island_cmp = island_delta_cmp(&a->idx.oid, &b->idx.oid);
+		if (island_cmp)
+			return island_cmp;
+	}
+	if (a_size > b_size)
+		return -1;
+	if (a_size < b_size)
+		return 1;
+	return a < b ? -1 : (a > b);  /* newest first */
+}
+
 struct unpacked {
 	struct object_entry *entry;
 	void *data;
@@ -3004,7 +3039,8 @@ static void *threaded_find_deltas(void *arg)
 }
 
 static void ll_find_deltas(struct object_entry **list, unsigned list_size,
-			   int window, int depth, unsigned *processed)
+			   int window, int depth, unsigned *processed,
+			   int use_full_name)
 {
 	struct thread_params *p;
 	int i, ret, active_threads = 0;
@@ -3037,8 +3073,12 @@ static void ll_find_deltas(struct object_entry **list, unsigned list_size,
 
 		/* try to split chunks on "path" boundaries */
 		while (sub_size && sub_size < list_size &&
-		       list[sub_size]->hash &&
-		       list[sub_size]->hash == list[sub_size-1]->hash)
+		       ((use_full_name &&
+			 list[sub_size]->full_hash &&
+			 list[sub_size]->full_hash == list[sub_size-1]->full_hash) ||
+			(!use_full_name &&
+			 list[sub_size]->hash &&
+			 list[sub_size]->hash == list[sub_size-1]->hash)))
 			sub_size++;
 
 		p[i].list = list;
@@ -3092,8 +3132,13 @@ static void ll_find_deltas(struct object_entry **list, unsigned list_size,
 		if (victim) {
 			sub_size = victim->remaining / 2;
 			list = victim->list + victim->list_size - sub_size;
-			while (sub_size && list[0]->hash &&
-			       list[0]->hash == list[-1]->hash) {
+			while (sub_size &&
+			       ((use_full_name &&
+				 list[0]->full_hash &&
+				 list[0]->full_hash == list[-1]->full_hash) ||
+				(!use_full_name &&
+				 list[0]->hash &&
+				 list[0]->hash == list[-1]->hash))) {
 				list++;
 				sub_size--;
 			}
@@ -3242,11 +3287,18 @@ static void prepare_pack(int window, int depth)
 	if (nr_deltas && n > 1) {
 		unsigned nr_done = 0;
 
+		if (use_full_name_hash) {
+			nr_done = 0;
+			QSORT(delta_list, n, type_full_size_sort);
+			ll_find_deltas(delta_list, n, window+1, depth, &nr_done, 1);
+			nr_done = 0;
+		}
+
 		if (progress)
 			progress_state = start_progress(_("Compressing objects"),
 							nr_deltas);
 		QSORT(delta_list, n, type_size_sort);
-		ll_find_deltas(delta_list, n, window+1, depth, &nr_done);
+		ll_find_deltas(delta_list, n, window+1, depth, &nr_done, 0);
 		stop_progress(&progress_state);
 		if (nr_done != nr_deltas)
 			die(_("inconsistency with delta count"));
@@ -3406,7 +3458,7 @@ static int add_object_entry_from_pack(const struct object_id *oid,
 		stdin_packs_found_nr++;
 	}
 
-	create_object_entry(oid, type, 0, 0, 0, p, ofs);
+	create_object_entry(oid, type, 0, 0, 0, 0, p, ofs);
 
 	return 0;
 }
@@ -3433,7 +3485,8 @@ static void show_object_pack_hint(struct object *object, const char *name,
 	 * here using a now in order to perhaps improve the delta selection
 	 * process.
 	 */
-	oe->hash = pack_name_hash_fn(name);
+	oe->hash = pack_name_hash(name);
+	oe->full_hash = pack_full_name_hash(name);
 	oe->no_try_delta = name && no_try_delta(name);
 
 	stdin_packs_hints_nr++;
@@ -3583,7 +3636,8 @@ static void add_cruft_object_entry(const struct object_id *oid, enum object_type
 	entry = packlist_find(&to_pack, oid);
 	if (entry) {
 		if (name) {
-			entry->hash = pack_name_hash_fn(name);
+			entry->hash = pack_name_hash(name);
+			entry->full_hash = pack_full_name_hash(name);
 			entry->no_try_delta = no_try_delta(name);
 		}
 	} else {
@@ -3606,7 +3660,8 @@ static void add_cruft_object_entry(const struct object_id *oid, enum object_type
 			return;
 		}
 
-		entry = create_object_entry(oid, type, pack_name_hash_fn(name),
+		entry = create_object_entry(oid, type, pack_name_hash(name),
+					    pack_full_name_hash(name),
 					    0, name && no_try_delta(name),
 					    pack, offset);
 	}

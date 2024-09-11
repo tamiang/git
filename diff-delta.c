@@ -297,7 +297,7 @@ struct delta_index * create_delta_index(const void *buf, unsigned long bufsize)
 
 void free_delta_index(struct delta_index *index)
 {
-	free(index);
+	FREE_AND_NULL(index);
 }
 
 unsigned long sizeof_delta_index(struct delta_index *index)
