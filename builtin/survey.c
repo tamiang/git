@@ -3,10 +3,12 @@
 #include "builtin.h"
 #include "config.h"
 #include "environment.h"
+#include "hashmap.h"
 #include "hex.h"
 #include "object.h"
 #include "object-name.h"
 #include "object-store-ll.h"
+#include "pack-objects.h"
 #include "parse-options.h"
 #include "path-walk.h"
 #include "progress.h"
@@ -16,6 +18,8 @@
 #include "strbuf.h"
 #include "strvec.h"
 #include "tag.h"
+#include "tree.h"
+#include "tree-walk.h"
 #include "trace2.h"
 
 static const char * const survey_usage[] = {
@@ -113,6 +117,27 @@ static int cmp_by_inflated_size(void *v1, void *v2)
 	return 0;
 }
 
+struct name_hash_bucket {
+	uint32_t name_hash_value;
+	uint32_t num_collisions;
+	struct string_list suffixes;
+};
+
+static int name_hash_bucket_cmp(void *v1, void *v2)
+{
+	struct name_hash_bucket *b1 = v1;
+	struct name_hash_bucket *b2 = v2;
+
+	if (b1->num_collisions < b2->num_collisions)
+		return -1;
+	if (b1->num_collisions > b2->num_collisions)
+		return 1;
+
+	if (b1->name_hash_value < b2->name_hash_value)
+		return -1;
+	return 1;
+}
+
 /**
  * Store a list of "top" categories by some sorting function. When
  * inserting a new category, reorder the list and free the one that
@@ -195,6 +220,9 @@ struct survey_report {
 	struct survey_report_top_table *top_paths_by_count;
 	struct survey_report_top_table *top_paths_by_disk;
 	struct survey_report_top_table *top_paths_by_inflate;
+
+	struct survey_report_top_table top_name_hash_collisions;
+	struct survey_report_top_table top_full_name_hash_collisions;
 };
 
 #define REPORT_TYPE_COMMIT 0
@@ -469,6 +497,9 @@ static void survey_report_plaintext(struct survey_context *ctx)
 		&ctx->report.top_paths_by_inflate[REPORT_TYPE_TREE]);
 	survey_report_plaintext_sorted_size(
 		&ctx->report.top_paths_by_inflate[REPORT_TYPE_BLOB]);
+
+	survey_report_plaintext_sorted_size(
+		&ctx->report.top_name_hash_collisions);
 }
 
 /*
@@ -658,6 +689,171 @@ static void survey_phase_refs(struct survey_context *ctx)
 	trace2_region_leave("survey", "phase/refs", ctx->repo);
 }
 
+/**
+ * Used as the key/value pair in a hashmap.
+ */
+struct hash_to_bucket {
+	struct hashmap_entry ent;
+	uint32_t hash;
+	uint32_t nr;
+	struct string_list suffixes;
+};
+
+static int hash_to_bucket_cmp(const void *hashmap_cmp_fn_data,
+			      const struct hashmap_entry *eptr,
+			      const struct hashmap_entry *entry_or_key,
+			      const void *keydata)
+{
+	const struct hash_to_bucket *b1, *b2;
+
+	b1 = container_of(eptr, const struct hash_to_bucket, ent);
+	b2 = container_of(entry_or_key, const struct hash_to_bucket, ent);
+	return b1->hash != b2->hash;
+}
+
+struct tree_walk_stack_entry {
+	struct tree *tree;
+	char *path;
+};
+
+typedef void (*walk_trees_callback)(const char *path, void *data);
+
+static void walk_paths_simple(struct tree *root,
+			      walk_trees_callback fn,
+			      void *data)
+{
+	struct tree_walk_stack_entry *stack;
+	size_t nr = 0, alloc = 128;
+
+	CALLOC_ARRAY(stack, alloc);
+
+	stack[0].tree = root;
+	stack[0].path = xstrdup("");
+	nr++;
+
+	while (nr) {
+		struct tree_desc desc;
+		struct name_entry entry;
+		struct tree_walk_stack_entry stack_item = stack[nr--];
+
+		fn(stack_item.path, data);
+
+		parse_tree(stack_item.tree);
+		init_tree_desc(&desc, &stack_item.tree->object.oid,
+			       stack_item.tree->buffer, stack_item.tree->size);
+		while (tree_entry(&desc, &entry)) {
+			struct strbuf path = STRBUF_INIT;
+			if (S_ISGITLINK(entry.mode))
+				continue;
+
+			strbuf_addstr(&path, stack_item.path);
+			strbuf_addch(&path, '/');
+			strbuf_add(&path, entry.path, entry.pathlen);
+
+			if (!S_ISDIR(entry.mode)) {
+				fn(path.buf, data);
+				strbuf_release(&path);
+				continue;
+			}
+
+			ALLOC_GROW(stack, nr + 1, alloc);
+			stack[nr].tree = lookup_tree(the_repository, &entry.oid);
+			stack[nr].path = strbuf_detach(&path, NULL);
+			nr++;
+		}
+
+		free(stack_item.path);
+	}
+
+	free(stack);
+}
+
+struct name_hash_maps {
+	struct hashmap name_hash;
+	struct hashmap full_name_hash;
+};
+
+static void add_path_to_name_hash_counts(const char *path, void *data)
+{
+	struct hash_to_bucket b_name = { 0 };
+	struct hash_to_bucket b_full = { 0 };
+	struct name_hash_maps *maps = data;
+	size_t len = strlen(path);
+	uint32_t name_hash = pack_name_hash(path);
+	uint32_t full_name_hash = pack_full_name_hash(path);
+
+	if (hashmap_get(&maps->name_hash, &b_name.ent, &name_hash)) {
+		const char *suffix = path;
+
+		if (len > 16)
+			suffix = path + len - 16;
+
+		b_name.nr++;
+		if (!string_list_has_string(&b_name.suffixes, suffix))
+			string_list_insert(&b_name.suffixes, xstrdup(suffix));
+	} else {
+		hashmap_entry_init(&b_name.ent, memhash(&name_hash, sizeof(uint32_t)));
+		hashmap_add(&maps->name_hash, &b_name.ent);
+	}
+
+	if (hashmap_get(&maps->full_name_hash, &b_full.ent, &full_name_hash)) {
+		b_full.nr++;
+		if (!string_list_has_string(&b_full.suffixes, path))
+			string_list_insert(&b_full.suffixes, xstrdup(path));
+	} else {
+		hashmap_entry_init(&b_full.ent, memhash(&full_name_hash, sizeof(uint32_t)));
+		hashmap_add(&maps->full_name_hash, &b_full.ent);
+	}
+}
+
+static void maybe_insert_into_top_collisions(
+			struct survey_report_top_table *table,
+			struct hash_to_bucket *bucket)
+{
+
+}
+
+static void add_top_paths_collisions_to_table(
+			struct hashmap *map,
+			struct survey_report_top_table *table)
+{
+	struct hashmap_entry *entry;
+	struct hashmap_iter iter;
+
+	hashmap_iter_init(map, &iter);
+	while ((entry = hashmap_iter_next(&iter))) {
+		struct hash_to_bucket *b = container_of(entry,
+							struct hash_to_bucket,
+							ent);
+
+		maybe_insert_into_top_collisions(table, b);
+	}
+}
+
+static void survey_phase_HEAD(struct survey_context *ctx)
+{
+	struct commit *c;
+	struct tree *root;
+	struct name_hash_maps maps = {
+		.name_hash = HASHMAP_INIT(hash_to_bucket_cmp, NULL),
+		.full_name_hash = HASHMAP_INIT(hash_to_bucket_cmp, NULL),
+	};
+
+	trace2_region_enter("survey", "phase/HEAD", ctx->repo);
+
+	c = lookup_commit_reference_by_name("HEAD");
+	root = repo_get_commit_tree(the_repository, c);
+
+	walk_paths_simple(root, add_path_to_name_hash_counts, &maps);
+
+	add_top_paths_collisions_to_table(&maps.name_hash,
+					  &ctx->report.top_name_hash_collisions);
+	add_top_paths_collisions_to_table(&maps.full_name_hash,
+					  &ctx->report.top_full_name_hash_collisions);
+
+	trace2_region_leave("survey", "phase/HEAD", ctx->repo);
+}
+
 static void increment_object_counts(
 		struct survey_report_object_summary *summary,
 		enum object_type type,
@@ -811,6 +1007,13 @@ static void initialize_report(struct survey_context *ctx)
 		       ctx->opts.top_nr, _("TOP DIRECTORIES BY INFLATED SIZE"), cmp_by_inflated_size);
 	init_top_sizes(&ctx->report.top_paths_by_inflate[REPORT_TYPE_BLOB],
 		       ctx->opts.top_nr, _("TOP FILES BY INFLATED SIZE"), cmp_by_inflated_size);
+
+	init_top_sizes(&ctx->report.top_name_hash_collisions,
+		       ctx->opts.top_nr, _("TOP NAME-HASH COLLISIONS"),
+		       name_hash_bucket_cmp);
+	init_top_sizes(&ctx->report.top_full_name_hash_collisions,
+		       ctx->opts.top_nr, _("TOP FULL-NAME-HASH COLLISIONS"),
+		       name_hash_bucket_cmp);
 }
 
 static void survey_phase_objects(struct survey_context *ctx)
@@ -824,8 +1027,6 @@ static void survey_phase_objects(struct survey_context *ctx)
 	info.revs = &revs;
 	info.path_fn = survey_objects_path_walk_fn;
 	info.path_fn_data = ctx;
-
-	initialize_report(ctx);
 
 	repo_init_revisions(ctx->repo, &revs, "");
 	revs.tag_objects = 1;
@@ -903,8 +1104,11 @@ int cmd_survey(int argc, const char **argv, const char *prefix)
 		ctx.opts.show_progress = isatty(2);
 
 	fixup_refs_wanted(&ctx);
+	initialize_report(&ctx);
 
 	survey_phase_refs(&ctx);
+
+	survey_phase_HEAD(&ctx);
 
 	survey_phase_objects(&ctx);
 
