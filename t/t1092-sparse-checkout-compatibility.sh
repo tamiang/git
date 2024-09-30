@@ -2448,4 +2448,12 @@ test_expect_success 'advice.sparseIndexExpanded' '
 	grep "The sparse index is expanding to a full index" err
 '
 
+test_expect_success 'ensure_full_index_with_reason' '
+	init_repos &&
+
+	GIT_TRACE2_EVENT="$(pwd)/ls-files-trace" \
+		git -C sparse-index ls-files --no-sparse HEAD &&
+	test_trace2_data "sparse-index" "expansion-reason" "ls-files" <ls-files-trace
+'
+
 test_done
