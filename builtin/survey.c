@@ -692,8 +692,8 @@ static void pretty_print_bin_table(const char *title_caption,
 
 	for (int k = 0; k < bin_len; k++) {
 		struct obj_hist_bin *p = bin + k;
-		uint64_t lower_k = lower;
-		uint64_t upper_k = upper;
+		uintmax_t lower_k = lower;
+		uintmax_t upper_k = upper;
 
 		lower = upper+1;
 		upper = (upper << bin_shift) + bin_mask;
@@ -702,16 +702,16 @@ static void pretty_print_bin_table(const char *title_caption,
 			continue;
 
 		strbuf_reset(&bucket);
-		strbuf_addf(&bucket, "%"PRIu64"..%"PRIu64, lower_k, upper_k);
+		strbuf_addf(&bucket, "%"PRIuMAX"..%"PRIuMAX, lower_k, upper_k);
 
 		strbuf_reset(&cnt_seen);
-		strbuf_addf(&cnt_seen, "%"PRIu64, (uintmax_t)p->cnt_seen);
+		strbuf_addf(&cnt_seen, "%"PRIuMAX, (uintmax_t)p->cnt_seen);
 
 		strbuf_reset(&sum_size);
-		strbuf_addf(&sum_size, "%"PRIu64, (uintmax_t)p->sum_size);
+		strbuf_addf(&sum_size, "%"PRIuMAX, (uintmax_t)p->sum_size);
 
 		strbuf_reset(&sum_disk_size);
-		strbuf_addf(&sum_disk_size, "%"PRIu64, (uintmax_t)p->sum_disk_size);
+		strbuf_addf(&sum_disk_size, "%"PRIuMAX, (uintmax_t)p->sum_disk_size);
 
 		insert_table_rowv(&table, bucket.buf,
 			     cnt_seen.buf, sum_size.buf, sum_disk_size.buf);
