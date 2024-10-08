@@ -714,7 +714,7 @@ static void pretty_print_bin_table(const char *title_caption,
 		strbuf_addf(&sum_disk_size, "%"PRIuMAX, (uintmax_t)p->sum_disk_size);
 
 		insert_table_rowv(&table, bucket.buf,
-			     cnt_seen.buf, sum_size.buf, sum_disk_size.buf);
+			     cnt_seen.buf, sum_size.buf, sum_disk_size.buf, NULL);
 	}
 	strbuf_release(&bucket);
 	strbuf_release(&cnt_seen);
