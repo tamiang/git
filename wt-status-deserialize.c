@@ -568,8 +568,6 @@ static int wt_deserialize_parse(const struct wt_status *cmd_s, struct wt_status 
 	const char *line;
 	const char *arg;
 
-	memset(s, 0, sizeof(*s));
-
 	if ((line = my_packet_read_line(fd, &line_len)) &&
 	    (skip_prefix(line, "version ", &arg))) {
 		int version = (int)strtol(arg, NULL, 10);
@@ -612,6 +610,12 @@ static int wt_deserialize_fd(const struct wt_status *cmd_s, struct wt_status *de
 		trace_printf_key(&trace_deserialize, "reject: pathspec");
 		return DESERIALIZE_ERR;
 	}
+
+	/*
+	 * Copy over some required fields from the current command.
+	 */
+	des_s->repo = cmd_s->repo;
+	des_s->index_file = cmd_s->index_file;
 
 	/*
 	 * Deserialize cached status
@@ -700,7 +704,6 @@ static int wt_deserialize_fd(const struct wt_status *cmd_s, struct wt_status *de
 	/*
 	 * Copy over display-related fields from the current command.
 	 */
-	des_s->repo = cmd_s->repo;
 	des_s->verbose = cmd_s->verbose;
 	/* amend */
 	/* whence */
