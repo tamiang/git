@@ -1571,7 +1571,6 @@ static void survey_phase_objects(struct survey_context *ctx)
 	release_revisions(&revs);
 	trace2_region_leave("survey", "phase/objects", ctx->repo);
 
-
 	if (ctx->opts.show_name_rev) {
 		trace2_region_enter("survey", "phase/namerev", the_repository);
 		do_lookup_name_rev(ctx);
