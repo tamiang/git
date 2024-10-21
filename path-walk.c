@@ -280,6 +280,28 @@ int walk_objects_by_path(struct path_walk_info *info)
 	if (prepare_revision_walk(info->revs))
 		die(_("failed to setup revision walk"));
 
+	if (info->edge_aggressive) {
+		for (struct commit_list *list = info->revs->commits;
+		     list;
+		     list = list->next) {
+			struct commit *commit = list->item;
+			if (commit->object.flags & UNINTERESTING) {
+				struct tree *t = repo_get_commit_tree(info->revs->repo, commit);
+				mark_tree_uninteresting(info->revs->repo, t);
+				if (!(commit->object.flags & SHOWN))
+					commit->object.flags |= SHOWN;
+			}
+		}
+		for (size_t i = 0; i < info->revs->cmdline.nr; i++) {
+			struct object *obj = info->revs->cmdline.rev[i].item;
+			struct commit *commit = (struct commit *)obj;
+			if (obj->type != OBJ_COMMIT || !(obj->flags & UNINTERESTING))
+				continue;
+			mark_tree_uninteresting(info->revs->repo,
+						repo_get_commit_tree(info->revs->repo, commit));
+		}
+	}
+
 	info->revs->blob_objects = info->revs->tree_objects = 0;
 
 	if (info->tags) {

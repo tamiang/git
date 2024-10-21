@@ -464,17 +464,6 @@ test_expect_success 'fetch in shallow repo unreachable shallow objects' '
 	)
 '
 
-# At the moment, the --path-walk option may provide more objects
-# when combined with --shallow than the --no-path-walk option.
-if test_bool_env GIT_TEST_PACK_PATH_WALK false
-then
-	EXPECTED_SHALLOW_OBJECTS=3 &&
-	export EXPECTED_SHALLOW_OBJECTS
-else
-	EXPECTED_SHALLOW_OBJECTS=1 &&
-	export EXPECTED_SHALLOW_OBJECTS
-fi
-
 test_expect_success 'fetch creating new shallow root' '
 	(
 		git clone "file://$(pwd)/." shallow10 &&
@@ -483,7 +472,7 @@ test_expect_success 'fetch creating new shallow root' '
 		git fetch --depth=1 --progress 2>actual &&
 		# This should fetch only the empty commit, no tree or
 		# blob objects
-		test_grep "remote: Total $EXPECTED_SHALLOW_OBJECTS" actual
+		test_grep "remote: Total 1" actual
 	)
 '
 
