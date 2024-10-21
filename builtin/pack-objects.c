@@ -4812,10 +4812,6 @@ int cmd_pack_objects(int argc,
 		warning(_("cannot use delta islands with --path-walk"));
 		path_walk = 0;
 	}
-	if (path_walk && shallow) {
-		warning(_("cannot use --shallow with --path-walk"));
-		path_walk = 0;
-	}
 	if (path_walk) {
 		strvec_push(&rp, "--boundary");
 		 /*
